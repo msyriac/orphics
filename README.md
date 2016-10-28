@@ -1,3 +1,3 @@
-Orphics: A Python Cosmology Theory Library
-==========================================
+Orphics: A Library for Theory and Analysis in Cosmology
+=======================================================
 
