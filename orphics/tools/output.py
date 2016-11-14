@@ -1,3 +1,8 @@
+import matplotlib
+matplotlib.rcParams['mathtext.fontset'] = 'custom'
+matplotlib.rcParams['mathtext.rm'] = 'Bitstream Vera Sans'
+matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
+matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
 import matplotlib.pyplot as plt
 
 class bcolors:
@@ -34,7 +39,9 @@ class Plotter:
 
     def legendOn(self,loc='upper left',labsize=18,**kwargs):
         handles, labels = self._ax.get_legend_handles_labels()
-        self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,**kwargs)
+        legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)
+
+        return legend
            
     def add(self,x,y,**kwargs):
 

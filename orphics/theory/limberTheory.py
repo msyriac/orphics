@@ -191,8 +191,11 @@ class XCorrIntegrator(object):
             self.kernels[tag]['W'] =  retvals *1.5*(self.omch2+self.ombh2+self.omnuh2)*100.*100.*(1.+self.zs)*self.chis/self.Hzs/self._cSpeedKmPerSec
             self.kernels[tag]['type'] = 'lensing'
         else:
-            # FAILS FOR DELTA FUNTION AND STEP !!!!
-            self.kernels[tag]['W'] = bias*self.kernels[tag]['dndz'](self.zs)
+            # FAILS FOR STEP !!!!
+            assert self.kernels[tag]['dndz']!="delta"
+            self.kernels[tag]['W'] = self.zs*0.+bias*self.kernels[tag]['dndz'](self.zs)
+            self.kernels[tag]['W'][self.zs<self.kernels[tag]['zmin']] = 0.
+            self.kernels[tag]['W'][self.zs>self.kernels[tag]['zmax']] = 0.
             self.kernels[tag]['type'] = 'counts'
             if magbias!=None:
                 retvals = self._lensWindow(self.kernels[tag],numzIntegral)
