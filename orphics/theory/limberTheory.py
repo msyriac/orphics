@@ -51,7 +51,7 @@ class XCorrIntegrator(object):
 
         
         print "initializing power..."
-        self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=True,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zs[-1])
+        self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zs[-1])
         self.precalcFactor = self.Hzs**2. /self.chis/self.chis/self._cSpeedKmPerSec**2.
 
 
