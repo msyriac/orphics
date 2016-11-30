@@ -1,9 +1,39 @@
+import matplotlib
 import healpy as hp
-import enmap as en
 import numpy as np
-from curvedsky import alm2map
-import enlib
+from .output import bcolors
+import os
+import ctypes
+import numpy.ctypeslib as npct
 
+#import enmap as en
+#from curvedsky import alm2map
+#import enlib
+
+
+
+def slowRotatorGtoC(hpMap,nside,verbose=True):
+
+    if verbose: print "Upgrading map..."
+    
+    nsideUp = nside*2
+    
+    hpUp = hp.ud_grade(hpMap,nsideUp)
+
+    array_1d_double = npct.ndpointer(dtype=np.double, ndim=1, flags='C_CONTIGUOUS')
+    libcd = npct.load_library("/astro/u/msyriac/repos/orphics/orphics/tools/deg2hp.so", ".")
+
+    libcd.RotateMapGtoC.restype = None
+    libcd.RotateMapGtoC.argtypes = [array_1d_double,array_1d_double,ctypes.c_long]
+
+    retMap = hpUp.copy()*0.
+    if verbose: print "Rotating ..."
+    ret = libcd.RotateMapGtoC(hpUp, retMap, nsideUp)
+    
+    if verbose: print "Downgrading map..."
+
+    return hp.ud_grade(retMap,nside)
+    
 
 def quickMapView(hpMap,saveLoc=None,min=None,max=None,transform=True):
     '''
@@ -25,7 +55,8 @@ class healpixTools:
     def __init__(self):
 
 
-        deg2pix = ctypes.CDLL('lib/deg2healpix.so')
+        libpath = os.path.dirname(__file__)
+        deg2pix = ctypes.CDLL(libpath + '/deg2hp.so')        
         self._pix2radec = deg2pix.getRaDec
         self._pix2radec.argtypes = (ctypes.c_long, ctypes.c_long, ctypes.POINTER(ctypes.c_double), ctypes.POINTER(ctypes.c_double))
 
@@ -92,16 +123,16 @@ def rotateHealpixFromEquToGal(hpmap):
 
 
 
-print "loading planck"
-#Planck
-saveRoot = "/astro/astronfs01/workarea/msyriac/SkyData/"
-planckRoot = saveRoot+'cmb/'
-planckMaskPath = planckRoot+'planck2015_mask.fits'
-mask15 = hp.read_map(planckMaskPath,verbose=True)
+# print "loading planck"
+# #Planck
+# saveRoot = "/astro/astronfs01/workarea/msyriac/SkyData/"
+# planckRoot = saveRoot+'cmb/'
+# planckMaskPath = planckRoot+'planck2015_mask.fits'
+# mask15 = hp.read_map(planckMaskPath,verbose=True)
 
-from hpTools import quickMapView
+# from hpTools import quickMapView
 
-quickMapView(mask15,"galactic.png")
+# quickMapView(mask15,"galactic.png")
 
-quickMapView(rotateHealpixFromEquToGal(mask15),"equ.png")
+# quickMapView(rotateHealpixFromEquToGal(mask15),"equ.png")
 
