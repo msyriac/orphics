@@ -78,10 +78,9 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 
 
 
-def whiteNoise2D(noiseLevels,beamArcmin,modLMap):
-    # Returns 2d map noise in units of uK**2.
+def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6):
+    # Returns 2d map noise in units of uK**0.
 
-    TCMB = 2.725e6
 
     Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
     ell = np.arange(0.,modLMap.max()+1.,1.)
