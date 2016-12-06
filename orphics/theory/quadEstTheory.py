@@ -164,6 +164,15 @@ class QuadNorm(object):
 
             else:
                 preG = np.nan_to_num(1./cltotTTArrY)
+
+                # from orphics.tools.output import Plotter
+                # import sys
+                # X = preG
+                # pl = Plotter()
+                # pl.plot2d(np.log10(fftshift(X)))
+                # pl.done("debug.png")
+                # sys.exit()
+                
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr*np.nan_to_num(1./cltotTTArrX)/2.            
