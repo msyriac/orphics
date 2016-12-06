@@ -81,8 +81,10 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 def whiteNoise2D(noiseLevels,beamArcmin,modLMap):
     # Returns 2d map noise in units of uK**2.
 
+    TCMB = 2.725e6
+
     Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
-    ell = np.arange(0.,modLMap.max(),1.)
+    ell = np.arange(0.,modLMap.max()+1.,1.)
     filt = np.exp(ell*ell*Sigma*Sigma)
 
 
@@ -90,7 +92,7 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap):
     filt2d =   makeTemplate(ell,filt,modLMap)#,debug=True)  # make template noise map
 
     for noiseLevel in noiseLevels:
-        noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2.   # add instrument noise to noise power map
+        noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  # add instrument noise to noise power map
         retList.append(filt2d.copy()*noiseForFilter)
 
     return retList
@@ -98,3 +100,21 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap):
 
     
 
+
+def fourierMask(lx,ly,modLMap, lxcut = None, lycut = None, lmin = None, lmax = None):
+    output = np.zeros(modLMap.shape, dtype = int)
+    output[:] = 1
+    if lmin != None:
+        wh = np.where(modLMap <= lmin)
+        output[wh] = 0
+    if lmax != None:
+        wh = np.where(modLMap >= lmax)
+        output[wh] = 0
+    if lxcut != None:
+        wh = np.where(np.abs(lx) < lxcut)
+        output[:,wh] = 0
+    if lycut != None:
+        wh = np.where(np.abs(ly) < lycut)
+        output[wh,:] = 0
+    return output
+            

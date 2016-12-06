@@ -16,7 +16,7 @@ class QuadNorm(object):
 
     
         '''
-        
+
         self.lx,self.ly,self.modLMap,self.thetaMap,dlx,dly = fmaps.getFTAttributesFromLiteMap(templateMap)
         self.lxHat = np.nan_to_num(self.lx / self.modLMap)
         self.lyHat = np.nan_to_num(self.ly / self.modLMap)
@@ -29,6 +29,8 @@ class QuadNorm(object):
 
         self.lmax_T=9000.
         self.lmax_P=9000.
+        self.defaultMaskT = fmaps.fourierMask(dlx,dly,self.modLMap,lmin=2,lmax=self.lmax_T)
+        self.defaultMaskP = fmaps.fourierMask(dlx,dly,self.modLMap,lmin=2,lmax=self.lmax_P)
         self.bigell=9000.
         self.gradCut = self.bigell
         if gradCut is not None: self.gradCut = gradCut
@@ -72,7 +74,14 @@ class QuadNorm(object):
         '''
         # check if fourier mask is int!
         self.noiseXX = power2dData.copy()
-        if fourierMask is not None: self.noiseXX[fourierMask==0] = np.inf
+        if fourierMask is not None:
+            self.noiseXX[fourierMask==0] = np.inf
+        else:
+            if XX=='TT':
+                self.noiseXX[self.defaultMaskT==0] = np.inf
+            else:
+                self.noiseXX[self.defaultMaskP==0] = np.inf
+
     def addNoise2DPowerYY(self,YY,power2dData,fourierMask=None):
         '''
         Noise power for the Y leg of the quadratic estimator
@@ -84,7 +93,13 @@ class QuadNorm(object):
         '''
         # check if fourier mask is int!
         self.noiseYY = power2dData.copy()
-        if fourierMask is not None: self.noiseYY[fourierMask==0] = np.inf
+        if fourierMask is not None:
+            self.noiseYY[fourierMask==0] = np.inf
+        else:
+            if YY=='TT':
+                self.noiseYY[self.defaultMaskT==0] = np.inf
+            else:
+                self.noiseYY[self.defaultMaskP==0] = np.inf
         
     def addClkk2DPower(self,power2dData):
         '''
@@ -159,13 +174,6 @@ class QuadNorm(object):
 
                     
                     calc = 2.*ell1*ell2*fft2(ifft2(preF)*ifft2(preG)+ifft2(preFX)*ifft2(preGX)/2.)
-                    from orphics.tools.output import Plotter
-                    import sys
-                    X = calc.real
-                    pl = Plotter()
-                    pl.plot2d((fftshift(X)))
-                    pl.done("p2d.png")
-                    sys.exit()
                     allTerms += [calc]
           
 
@@ -511,25 +519,26 @@ class QuadNorm(object):
             sys.exit(1)    
         
                         
-        ALinv = np.real(np.sum( allTerms, axis = 0)) 
-        NL = lmap**2. * (lmap + 1.)**2 / 4. / ALinv
-
-
-        
+        ALinv = np.real(np.sum( allTerms, axis = 0))
+        NL = np.nan_to_num(lmap**2. * (lmap + 1.)**2 / 4. / ALinv)
         NL[np.where(np.logical_or(lmap >= self.bigell, lmap == 0.))] = 0.
         NL *= ftMap.Nx * ftMap.Ny
         ftHolder = ftMap.copy()
         ftHolder.kMap = np.sqrt(NL)
-
-        
         #kappaNoise2D = fftTools.powerFromFFT(ftHolder, ftHolder)
-
         mapFFT = ftHolder.kMap
         area =ftHolder.Nx*ftHolder.Ny*ftHolder.pixScaleX*ftHolder.pixScaleY
         p2d = np.real(np.conjugate(mapFFT)*mapFFT)*area/(ftHolder.Nx*ftHolder.Ny*1.0)**2
 
         
 
+        # from orphics.tools.output import Plotter
+        # import sys
+        # X = p2d
+        # pl = Plotter()
+        # pl.plot2d(np.log10(fftshift(X)))
+        # pl.done("p2d.png")
+        # sys.exit()
 
         
         return p2d
