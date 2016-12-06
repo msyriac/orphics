@@ -14,8 +14,8 @@ class QuadNorm(object):
         '''
         
         self.lx,self.ly,self.modLMap,self.thetaMap,dlx,dly = fmaps.getFTAttributesFromLiteMap(templateMap)
-        self.lxHat = np.nan_to_num(self.lx / self.modLmap)
-        self.lyHat = np.nan_to_num(self.ly / self.modLmap)
+        self.lxHat = np.nan_to_num(self.lx / self.modLMap)
+        self.lyHat = np.nan_to_num(self.ly / self.modLMap)
 
         self.uClNow2d = {}
         self.uClFid2d = {}
