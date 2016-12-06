@@ -21,7 +21,7 @@ def getStats(listOfBinned):
     
     
     arr = np.asarray(listOfBinned)
-    N = arr.shape[]
+    N = arr.shape[0] # CHECK!!!
     ret = {}
     ret['mean'] = np.nanmean(arr,axis=0)
     ret['cov'] = np.cov(arr.transpose())
@@ -114,3 +114,32 @@ def loadBinFile(binfile,delimiter='\t',returnBinner=True):
     else:
         return left,right,center
 
+
+def binInAnnuli(p2d, binfile = 'binningTest'):
+
+    # Modified form of Alex van Engelen's routine
+
+    lower, upper, center =  np.loadtxt(binfile,delimiter=" ",unpack=True)#,skiprows=1)
+    bins = np.concatenate(([lower[0]], upper))
+
+    #note, include the right hand endpoints by adding a half to bins.  This should be avoidable if your version of digitize has the "right" keyword as an option; mine does not.
+    digitized = np.digitize(np.ndarray.flatten(p2d.modLMap), bins + .5)
+
+    data = np.ndarray.flatten(p2d.powerMap)
+    #this is the one for loop.
+
+    bin_means = np.zeros(len(center))
+    bin_stds = np.zeros(len(center))
+    bincount = np.zeros(len(center))
+
+    for i in range(1, len(bins)):
+        thisd = data[digitized == i]
+        bin_means[i-1] = thisd.mean()
+        bin_stds[i-1] = thisd.std()
+        #we use half because only one half-plane is independent, if the field is real
+        bincount[i-1] = len(thisd)/2
+
+    # bin_means = [data[digitized == i].mean() for i in range(1, len(bins))]
+    # bin_stds = [data[digitized == i].std() for i in range(1, len(bins))]
+
+    return lower, upper, center, bin_means, bin_stds, bincount

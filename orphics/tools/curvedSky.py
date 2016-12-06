@@ -6,9 +6,16 @@ import os
 import ctypes
 import numpy.ctypeslib as npct
 
-#import enmap as en
-#from curvedsky import alm2map
-#import enlib
+
+def flatFitsToHealpix(fitsFile,nside,downgrade=1):
+
+    from enlib import enmap
+
+    imap  = enmap.read_map(fitsFile)
+    if downgrade>1:
+        imap = enmap.downgrade(imap, args.downgrade)
+    omap  = imap.to_healpix(nside=args.nside)
+    return omap
 
 
 
@@ -35,15 +42,15 @@ def slowRotatorGtoC(hpMap,nside,verbose=True):
     return hp.ud_grade(retMap,nside)
     
 
-def quickMapView(hpMap,saveLoc=None,min=None,max=None,transform=True):
+def quickMapView(hpMap,saveLoc=None,min=None,max=None,transform=True,**kwargs):
     '''
     Input map in galactic is shown in equatorial
     '''
 
     if transform:
-        hp.mollview(hpMap,coord=['G','C'],min=min,max=max)
+        hp.mollview(hpMap,coord=['G','C'],min=min,max=max,**kwargs)
     else:    
-        hp.mollview(hpMap,min=min,max=max,coord='C')
+        hp.mollview(hpMap,min=min,max=max,coord='C',**kwargs)
     if saveLoc==None: saveLoc="output/debug.png"
     matplotlib.pyplot.savefig(saveLoc)
 
@@ -121,18 +128,4 @@ def rotateHealpixFromEquToGal(hpmap):
     return m1.at(pos2)
 
 
-
-
-# print "loading planck"
-# #Planck
-# saveRoot = "/astro/astronfs01/workarea/msyriac/SkyData/"
-# planckRoot = saveRoot+'cmb/'
-# planckMaskPath = planckRoot+'planck2015_mask.fits'
-# mask15 = hp.read_map(planckMaskPath,verbose=True)
-
-# from hpTools import quickMapView
-
-# quickMapView(mask15,"galactic.png")
-
-# quickMapView(rotateHealpixFromEquToGal(mask15),"equ.png")
 

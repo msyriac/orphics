@@ -58,7 +58,7 @@ class XCorrIntegrator(object):
         
 
 
-    def generateCls(self,ellrange,autoOnly=False):
+    def generateCls(self,ellrange,autoOnly=False,zmin=0.):
 
 
 
@@ -78,10 +78,10 @@ class XCorrIntegrator(object):
             w[k<1e-4]=0
             w[k>=self.kmax]=0
             pkin = self.PK.P(self.zs, k, grid=False)
-            common = (w*pkin)*self.precalcFactor
+            common = ((w*pkin)*self.precalcFactor)[self.zs>=zmin]
     
             for key1,key2 in listKeys:
-                estCl = np.dot(self.dchis, common*self.kernels[key1]['W']*self.kernels[key2]['W'])
+                estCl = np.dot(self.dchis[self.zs>=zmin], common*(self.kernels[key1]['W']*self.kernels[key2]['W'])[self.zs>=zmin])
                 retList[key1+","+key2].append(estCl)
                 
         for key1,key2 in listKeys:

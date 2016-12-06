@@ -1,9 +1,10 @@
 
+import numpy as np
 
 class QuadNorm(object):
 
     
-    def __init__(self,templateMap,gradCut=10000.):
+    def __init__(self,templateMap):
         '''
 
         templateFT is a template liteMap FFT object
@@ -15,6 +16,11 @@ class QuadNorm(object):
         self.uClNow2d = {}
         self.uClFid2d = {}
         self.lClFid2d = {}
+        self.noiseXX2d = {}
+        self.noiseYY2d = {}
+
+
+        self.template = templateMap.copy()
         
 
     def addUnlensedFilter2DPower(self,XY,power2d):
@@ -24,6 +30,7 @@ class QuadNorm(object):
         These Cls belong in the Wiener filters, and will not
         be perturbed if/when calculating derivatives.
         '''
+        self.uClFid2d[XY] = power2d.powerMap.copy()
     def addUnlensedNorm2DPower(self,XY,power2d):
         '''
         XY = TT, TE, EE, EB or TB
@@ -31,6 +38,7 @@ class QuadNorm(object):
         These Cls belong in the CMB normalization, and will
         be perturbed if/when calculating derivatives.
         '''
+        self.uClNow2d[XY] = power2d.powerMap.copy()
     def addLensedFilter2DPower(self,XY,power2d):
         '''
         XY = TT, TE, EE, EB or TB
@@ -38,6 +46,7 @@ class QuadNorm(object):
         These Cls belong in the Wiener filters, and will not
         be perturbed if/when calculating derivatives.
         '''
+        self.lClFid2d[XY] = power2d.powerMap.copy()
     def addNoise2DPowerXX(self,XX,power2d,fourierMask):
         '''
         Noise power for the X leg of the quadratic estimator
@@ -47,7 +56,9 @@ class QuadNorm(object):
         infinite and 1 where not. It should be in the same
         fftshift state as power2d.powerMap
         '''
-        
+        # check if fourier mask is int!
+        self.noiseXX = power2d.powerMap()
+        self.noiseXX[fourierMask==0] = np.inf
     def addNoise2DPowerYY(self,YY,power2d,fourierMask):
         '''
         Noise power for the Y leg of the quadratic estimator
@@ -57,6 +68,9 @@ class QuadNorm(object):
         infinite and 1 where not. It should be in the same
         fftshift state as power2d.powerMap
         '''
+        # check if fourier mask is int!
+        self.noiseYY = power2d.powerMap()
+        self.noiseYY[fourierMask==0] = np.inf
         
     def addClkk2DPower(self,power2d):
         '''
@@ -64,234 +78,15 @@ class QuadNorm(object):
         Used if delensing
         power2d is a flipper power2d object            
         '''
-
+        self.clkk2d = power2d.powerMap()
             
-        #self._TCMB = 2.7255e6
-    
-
-        self.ftMap = fftTools.fftFromLiteMap(templateMap)
-        self.lx, self.ly = np.meshgrid(self.ftMap.lx, self.ftMap.ly)
-        self.lmap = self.ftMap.modLMap
-        self.lxHat = np.nan_to_num(self.lx / self.lmap)
-        self.lyHat = np.nan_to_num(self.ly / self.lmap)
-
-
-        self.templatePower = fftTools.powerFromLiteMap(templateMap)
-        self.templatePower.powerMap *= 0.
-
-        self._Noisy = False
-        self.lmax_T = lmax_T
-        self.lmax_P = lmax_P
-        self.bigell = 2.*max(ellsUNow[-1],ellsUFid[-1],ellsLFid[-1])
-        self.gradCut = gradCut
-        
-
-        # Initialize a 2d power map for the normalization
-        for key in self._c:
-            
-
-            if uClsNow[self._c[key]] == None: continue
-            
-            self.uClNow2d[key] = makeTemplate(ellsUNow,uClsNow[self._c[key]],self.templatePower)
-            self.uClFid2d[key] = makeTemplate(ellsUFid,uClsFid[self._c[key]],self.templatePower)
-            self.lClFid2d[key] = makeTemplate(ellsLFid,lClsFid[self._c[key]],self.templatePower)
-            
-        
-
-            self.clPPArr = makeTemplate(elldd,clpp,self.templatePower)
-
-            # pl = Plotter(scaleX='log',scaleY='log')
-            # pl.add(elldd,clpp)
-            # pl.done('output/pp1d.png')
-
-                
-    def addPickled1DNoise(self,noiseFileT,noiseFileE,ellCutTuple,fgPowerFile=None,noiseCuts = None):
-        TCMB = self._TCMB
-
-        self._Noisy = True
-
-        
-        ellT, f_ellT = np.loadtxt(noiseFileT,usecols=[0,1],unpack=True)        
-        ellE, f_ellE = np.loadtxt(noiseFileE,usecols=[0,1],unpack=True)        
-
-
-        lxcut,lycut,lmin,lmax = ellCutTuple
-
-        if noiseCuts!=None:
-            lminT,lmaxT,lminE,lmaxE = noiseCuts
-        else:
-            lminT = lmin
-            lminE = lmin
-            lmaxT = lmax
-            lmaxE = lmax    
-
-        
-        p2dNoise = self.templatePower.copy()
-        noiseForFilter1 = p2dNoise.powerMap.copy()   # template noise map
-        noiseForFilter2 = p2dNoise.powerMap.copy()
-        
-        noiseForFilter1[:] = 1. / (TCMB )**2    # add instrument noise to noise power map
-        noiseForFilter2[:] = 1. / (TCMB )**2    # add instrument noise to noise power map
-        
-        filt2dT =   makeTemplate(ellT,f_ellT,p2dNoise)  # make template noise map
-        filt2dE =   makeTemplate(ellE,f_ellE,p2dNoise)  # make template noise map
-
-        #self.nonwhite = (ellT,f_ellT*noiseForFilter1[0,0])
-        filterMaskT = fourierMask(p2dNoise, lxcut = lxcut, lycut = lycut, lmin = lminT, lmax = lmaxT)
-        filterMaskE = fourierMask(p2dNoise, lxcut = lxcut, lycut = lycut, lmin = lminE, lmax = lmaxE)
-        filt2dT[filterMaskT == 0] =  1.e90
-        filt2dE[filterMaskE == 0] =  1.e90
-
-        # pl = Plotter(figsize=(20, 20),dpi=400)
-        # pl.plot2d(fftshift(filterMask))
-        # pl.done("fmask.png")
-        # sys.exit()
-    
-        noiseForFilter1[:] = noiseForFilter1[:] * filt2dT[:]
-        noiseForFilter2[:] = noiseForFilter2[:] * filt2dE[:]
-
-
-        if fgPowerFile!=None:
-            fgPower = numpy.loadtxt(fgPowerFile)
-            (ls_fg, fgPower) = numpy.loadtxt(fgPowerFile).transpose()
-            fgPower2d = makeTemplate(ls_fg, fgPower / TCMB**2, p2dNoise)
-            noiseForFilter1 += fgPower2d
-            noiseForFilter2 += fgPower2d
-                                 
-
-        self.noiseArray = [noiseForFilter1,noiseForFilter2.copy(),noiseForFilter2.copy()]
+    def getNlkk2d(self,XY,halo=False):
+        lx,ly = self.template.lx,self.template.ly
+        ftMap = self.template
+        lmap = self.template.modLMap
 
 
 
-    def addACT2DNoise(self,beamFileTxt,noisePower2DPklTT,noisePower2DPklEE,noisePower2DPklBB,ellCutTuple):
-        self._Noisy = True
-        lxcut,lycut,lmin,lmax = ellCutTuple
-
-        TCMB = self._TCMB
-        ell, f_ell = np.transpose(np.loadtxt(beamFileTxt))[0:2,:]
-        filt = 1./(np.array(f_ell)**2.)       # add beam to filter
-        p2dNoise = self.templatePower.copy()
-        filt2d =   makeTemplate(ell,filt,p2dNoise)  # make template noise map       
-        filterMask = fourierMask(p2dNoise, lxcut = lxcut, lycut = lycut, lmin = lmin, lmax = lmax)
-        filt2d[filterMask == 0] =  1.e90
-     
-        noise2dTT = fftshift(pickle.load(open(noisePower2DPklTT,'r'))) * (np.pi / (180. * 60))**2./(TCMB)**2.
-        noise2dEE = fftshift(pickle.load(open(noisePower2DPklEE,'r')))* (np.pi / (180. * 60))**2./(TCMB)**2.
-        noise2dBB = fftshift(pickle.load(open(noisePower2DPklBB,'r')))* (np.pi / (180. * 60))**2./(TCMB)**2.
-
-    
-        noiseForFilter1 = noise2dTT[:] * filt2d[:]
-        noiseForFilter2 = noise2dEE[:] * filt2d[:]
-        noiseForFilter3 = noise2dBB[:] * filt2d[:]
-
-        self.noiseArray = [noiseForFilter1,noiseForFilter2,noiseForFilter3]
-
-    def addWhiteNoiseBeamFile(self,noiseLevelT,noiseLevelP,beamFile,ellCutTuple):
-        TCMB = self._TCMB
-
-        self._Noisy = True
-
-        
-
-
-        ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
-        lxcut,lycut,lmin,lmax = ellCutTuple
-
-        filt = 1./(np.array(f_ell)**2.)       # add beam to filter
-
-
-        p2dNoise = self.templatePower.copy()
-        noiseForFilter1 = p2dNoise.powerMap.copy()   # template noise map                                                                                                                                                            
-        noiseForFilter2 = p2dNoise.powerMap.copy()
-        noiseForFilter1[:] = (np.pi / (180. * 60))**2 / (TCMB )**2 * noiseLevelT**2   # add instrument noise to noise power map                                                                                                       
-        noiseForFilter2[:] = (np.pi / (180. * 60))**2 / (TCMB )**2 * noiseLevelP**2   # add instrument noise to noise power map
-
-        self.NlTT = (ell,filt*(np.pi / (180. * 60))**2. / (TCMB )**2. * noiseLevelT**2.)
-        self.NlEE = (ell,filt*(np.pi / (180. * 60))**2. / (TCMB )**2. * noiseLevelP**2.)
-        
-        filt2d =   makeTemplate(ell,filt,p2dNoise)  # make template noise map
-
-        #self.white = (ell,filt*noiseForFilter1[0,0])
-    
-        filterMask = fourierMask(p2dNoise, lxcut = lxcut, lycut = lycut, lmin = lmin, lmax = lmax)
-        filt2d[filterMask == 0] =  1.e90
-    
-        noiseForFilter1[:] = noiseForFilter1[:] * filt2d[:]
-        noiseForFilter2[:] = noiseForFilter2[:] * filt2d[:]
-
-        self.noiseArray = [noiseForFilter1,noiseForFilter2.copy(),noiseForFilter2.copy()]
-
-
-    def addWhiteNoise(self,noiseLevelT,noiseLevelP,beamArcmin,ellCutTuple,noiseCuts = None):
-        TCMB = self._TCMB
-
-        self._Noisy = True
-
-        
-
-
-        Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))     # radian
-        ell = np.arange(0.,25000.,1.)
-        filt = np.exp(ell*ell*Sigma*Sigma)
-
-        #ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
-        #filt = 1./(np.array(f_ell)**2.)       # add beam to filter
-        
-        lxcut,lycut,lmin,lmax = ellCutTuple
-
-
-        if noiseCuts!=None:
-            lminT,lmaxT,lminE,lmaxE = noiseCuts
-        else:
-            lminT = lmin
-            lminE = lmin
-            lmaxT = lmax
-            lmaxE = lmax    
-
-        p2dNoise = self.templatePower.copy()
-        noiseForFilter1 = p2dNoise.powerMap.copy()   # template noise map
-        noiseForFilter2 = p2dNoise.powerMap.copy()
-
-        
-        
-        noiseForFilter1[:] = (np.pi / (180. * 60))**2 / (TCMB )**2 * noiseLevelT**2   # add instrument noise to noise power map                                                                                                       
-        noiseForFilter2[:] = (np.pi / (180. * 60))**2 / (TCMB )**2 * noiseLevelP**2   # add instrument noise to noise power map
-
-        self.NlTT = (ell,filt*(np.pi / (180. * 60))**2 / (TCMB )**2 * noiseLevelT**2)
-        self.NlEE = (ell,filt*(np.pi / (180. * 60))**2 / (TCMB )**2 * noiseLevelP**2)
-
-        
-        filt2dT =   makeTemplate(ell,filt,p2dNoise)#,debug=True)  # make template noise map
-        filt2dE =   makeTemplate(ell,filt,p2dNoise)#,debug=True)  # make template noise map
-
-        #self.white = (ell,filt*noiseForFilter1[0,0])
-    
-        filterMaskT = fourierMask(p2dNoise, lxcut = lxcut, lycut = lycut, lmin = lminT, lmax = lmaxT)
-        filterMaskE = fourierMask(p2dNoise, lxcut = lxcut, lycut = lycut, lmin = lminE, lmax = lmaxE)
-        filt2dT[filterMaskT == 0] =  np.inf #1.e90
-        filt2dE[filterMaskE == 0] =  np.inf #1.e90
-
-        
-        noiseForFilter1[:] = noiseForFilter1[:] * filt2dT[:]
-        noiseForFilter2[:] = noiseForFilter2[:] * filt2dE[:]
-
-        self.noiseArray = [noiseForFilter1,noiseForFilter2.copy(),noiseForFilter2.copy()]
-
-
-        
-    
-    def getNlkk(self,binEdges=None,shiftEllMin=None,shiftEllMax=None,shiftH=0.,shiftCl=0,inverted=True,halo=False):
-        XY = self._XY
-        c = self._c
-        lx,ly = self.lx,self.ly
-        ftMap = self.ftMap
-        lmap = self.lmap
-
-
-
-            
-        B=0.
-        a = time.time()
             
         h=0.
 
@@ -301,35 +96,26 @@ class QuadNorm(object):
             
             clunlenTTArrNow = self.uClNow2d['TT'].copy()
             clunlenTTArr = self.uClFid2d['TT'].copy()
-            cltotTTArr =self.lClFid2d['TT'].copy() + self.noiseArray[0]
-            cltotTTArr[np.where(lmap >= self.lmax_T)] = np.inf
 
-            # For derivatives
-            if shiftEllMin!=None and shiftEllMax!=None:
-                #print "shifting"
-                annulus = clunlenTTArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)].copy()
-                annmean = annulus.mean()
-                clunlenTTArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)] = annulus + 0.5*shiftH * annmean
-                h = shiftH*annmean
+            cltotTTArrX =self.lClFid2d['TT'].copy() + self.noiseXX
+            cltotTTArrX[np.where(lmap >= self.lmax_T)] = np.inf
 
-
+            cltotTTArrY =self.lClFid2d['TT'].copy() + self.noiseYY
+            cltotTTArrY[np.where(lmap >= self.lmax_T)] = np.inf
 
                 
-            lx = self.lx
-            ly = self.ly
-
 
             if halo:
             
                 clunlenTTArrNow[np.where(lmap >= self.gradCut)] = 0.
 
                 
-                preG = 1./cltotTTArr
+                preG = 1./cltotTTArrY
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr/cltotTTArr
-                    preFX = ell1*clunlenTTArrNow/cltotTTArr
-                    preGX = ell2*clunlenTTArr/cltotTTArr
+                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr/cltotTTArrX
+                    preFX = ell1*clunlenTTArrNow/cltotTTArrX
+                    preGX = ell2*clunlenTTArr/cltotTTArrY
                     
 
                     calc = ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG)+np.fft.ifft2(preFX)*np.fft.ifft2(preGX))
@@ -741,15 +527,9 @@ class QuadNorm(object):
             kappaNoise2D.powerMap[:] = 1. / kappaNoise2D.powerMap[:]
       
 
-        ## Bin the 2D p.s. in annuli to obtain 1D curve. 
-        lLower,lUpper,lBin,NlBinKK,clBinSd,binWeight = aveBinInAnnuli(kappaNoise2D,binfile = binfile)
-        Btime = time.time()
-        B += time.time() - Btime
-            
-        if verbose: print 'Total time for N(L) estimation: %.1f seconds' % (time.time() - a)
 
         
-        return lBin, NlBinKK, h
+        return kappaNoise2D
         
         
                   

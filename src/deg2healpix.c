@@ -8,7 +8,7 @@
 The only slow step in making healpix maps is converting
 from ra,dec to healpix pixel index.
 The C function getPixIndex here uses the other helper functions
-here to do it quickly. fastCat.py uses ctypes to call
+here to do it quickly. makeMap.py uses ctypes to call
 this function and make a healpix map in around 3 minutes.
 
 Use scripts/MakeDeg.sh to compile this module into a shared library.
@@ -21,7 +21,7 @@ ftp://ftp.eso.org/scisoft/scisoft4/linux/redhat9/saoimage/saoimage-1.29.3/wcscon
 */
 
 
-/* Transform J2000 equatorial coordinates to IAU 1958 galactic coordinates */
+/* Transform degrees to radians and back */
 
 double degrad( deg)
      double  deg ;
@@ -217,8 +217,10 @@ fk52gal (dtheta,dphi)
   return;
 }
 
+
+// Convert an ra,dec to healpix index in galactic coordinates
    
-long getPixIndex(const long nside, double ra_degree, double dec_degree)
+long getPixIndexGalactic(const long nside, double ra_degree, double dec_degree)
 {
 
   double long_rad;
@@ -229,7 +231,6 @@ long getPixIndex(const long nside, double ra_degree, double dec_degree)
   long pix;
   long *ipring = &pix;
 
-  //long nside = 2048;
   long Npix = 12*nside*nside;
 
   ra = &ra_degree;
@@ -239,8 +240,8 @@ long getPixIndex(const long nside, double ra_degree, double dec_degree)
   fk52gal(ra,dec) ;
 
   // validate l,b
-  if (ra_degree<0. || ra_degree>360.) {printf("\n%s\n","Angle error."); return;}
-  if (dec_degree<-90. || dec_degree>90.) {printf("\n%s\n","Angle error."); return;}
+  /* if (ra_degree<0. || ra_degree>360.) {printf("\n%s\n","Angle error."); return;} */
+  /* if (dec_degree<-90. || dec_degree>90.) {printf("\n%s\n","Angle error."); return;} */
 
   
   // convert to radians
@@ -249,8 +250,8 @@ long getPixIndex(const long nside, double ra_degree, double dec_degree)
 
 
   // validate radians
-  if (colat_rad<0. || colat_rad>M_PI) {printf("\n%s\n","Angle error."); return;}
-  if (long_rad<0. || long_rad>(2.0*M_PI)) {printf("\n%s\n","Angle error."); return;}
+  /* if (colat_rad<0. || colat_rad>M_PI) {printf("\n%s\n","Angle error."); return;} */
+  /* if (long_rad<0. || long_rad>(2.0*M_PI)) {printf("\n%s\n","Angle error."); return;} */
 
 	  
   // convert to healpix ring index
@@ -258,54 +259,13 @@ long getPixIndex(const long nside, double ra_degree, double dec_degree)
 
 
   // validate pixel
-  if (pix<0 || pix>Npix) {printf("\n%s\n","Pixel index error."); return;}
+  /* if (pix<0 || pix>Npix) {printf("\n%s\n","Pixel index error."); return;} */
 
   return pix;
 }
 
 
 
-void getRaDec(const long nside, const long pixInd, double *raDeg, double *decDeg)
-{
-
-
-  double l , b  ;
-
-
-
-
-  double colat_rad;
-  double *theta = &colat_rad;
-
-  double long_rad;
-  double *phi = &long_rad;
-
-
-  pix2ang_ring(nside, pixInd, theta, phi);
-
-
-
-  // convert to degrees
-  l = raddeg(long_rad);
-  b =  raddeg(M_PI/2.0 - colat_rad);
-
-
-  double *raOut, *decOut ;
-  raOut = &l;
-  decOut = &b;
-
-  // convert l,b to ra, dec
-  gal2fk5(raOut,decOut) ;
-
-
-  *raDeg = *raOut;
-  *decDeg = *decOut;
-
-
-
-
-  return;
-}
 
 
 
@@ -369,6 +329,68 @@ int RotateIndexGtoC(const long nside, const long pixInd)
 }
 
 
+long getPixIndexEquatorial(const long nside, double ra_degree, double dec_degree)
+{
+
+  /*
+    Pseudo-code
+
+    l,b = fk52gal(ra,dec) 
+      long = l
+      colat = pi/2 - b
+      indG = ang2pix(long,colat)
+        long, colat = pix2ang(indG)
+        l = long
+        b = pi/2 - colat
+    x,y = fk52gal(l,b) 
+    long = x
+    colat = pi/2 - y;
+    ingE = ang2pix(long,colat)
+
+   */
+
+
+  /* long pix1, pix2; */
+
+  /* pix1 = getPixIndexGalactic(nside, ra_degree, dec_degree); */
+  /* pix2 = RotateIndexGtoC(nside,pix1); */
+
+  long pix;
+  double *ra, *dec;
+  long *ipring = &pix;
+
+  ra = &ra_degree;
+  dec = &dec_degree;
+
+  // convert to l,b
+  fk52gal(ra,dec) ;
+  // convert to l,b
+  fk52gal(ra,dec) ;
+
+
+  double thetaPass, phiPass;
+
+  thetaPass = M_PI/2.0 - degrad(*dec);
+  phiPass = degrad(*ra);
+
+
+  // convert to healpix ring index
+  ang2pix_ring(nside, thetaPass, phiPass, ipring);
+
+  
+  /* printf("%d,", pix2); */
+  /* printf("%d,", pix); */
+
+  return pix;
+
+
+}
+
+
+
+
+
+
 /* This function hasn't been tested. */
 void RotateMapGtoC(double * hpInMap, double * hpOutMap, const long nside)
 {
@@ -393,4 +415,49 @@ void RotateMapGtoC(double * hpInMap, double * hpOutMap, const long nside)
 
     }
 
+}
+
+
+
+
+void getRaDec(const long nside, const long pixInd, double *raDeg, double *decDeg)
+{
+
+
+  double l , b  ;
+
+
+
+
+  double colat_rad;
+  double *theta = &colat_rad;
+
+  double long_rad;
+  double *phi = &long_rad;
+
+
+  pix2ang_ring(nside, pixInd, theta, phi);
+
+
+
+  // convert to degrees
+  l = raddeg(long_rad);
+  b =  raddeg(M_PI/2.0 - colat_rad);
+
+
+  double *raOut, *decOut ;
+  raOut = &l;
+  decOut = &b;
+
+  // convert l,b to ra, dec
+  gal2fk5(raOut,decOut) ;
+
+
+  *raDeg = *raOut;
+  *decDeg = *decOut;
+
+
+
+
+  return;
 }
