@@ -1,10 +1,10 @@
-
 import numpy as np
+import orphics.analysis.flatMaps as fmaps 
 
 class QuadNorm(object):
 
     
-    def __init__(self,templateMap):
+    def __init__(self,templateMap,gradCut=None):
         '''
 
         templateFT is a template liteMap FFT object
@@ -13,41 +13,49 @@ class QuadNorm(object):
     
         '''
         
+        self.lx,self.ly,self.modLMap,self.thetaMap = fmaps.getFTAttributesFromLiteMap(templateMap)
+
         self.uClNow2d = {}
         self.uClFid2d = {}
         self.lClFid2d = {}
         self.noiseXX2d = {}
         self.noiseYY2d = {}
 
+        self.lmax_T=9000.
+        self.lmax_P=9000.
+        self.bigell=9000.
+        self.gradCut = self.bigell
+        if gradCut is not None: self.gradCut = gradCut
+
 
         self.template = templateMap.copy()
         
 
-    def addUnlensedFilter2DPower(self,XY,power2d):
+    def addUnlensedFilter2DPower(self,XY,power2dData):
         '''
         XY = TT, TE, EE, EB or TB
         power2d is a flipper power2d object
         These Cls belong in the Wiener filters, and will not
         be perturbed if/when calculating derivatives.
         '''
-        self.uClFid2d[XY] = power2d.powerMap.copy()
-    def addUnlensedNorm2DPower(self,XY,power2d):
+        self.uClFid2d[XY] = power2dData.copy()
+    def addUnlensedNorm2DPower(self,XY,power2dData):
         '''
         XY = TT, TE, EE, EB or TB
         power2d is a flipper power2d object
         These Cls belong in the CMB normalization, and will
         be perturbed if/when calculating derivatives.
         '''
-        self.uClNow2d[XY] = power2d.powerMap.copy()
-    def addLensedFilter2DPower(self,XY,power2d):
+        self.uClNow2d[XY] = power2dData.copy()
+    def addLensedFilter2DPower(self,XY,power2dData):
         '''
         XY = TT, TE, EE, EB or TB
         power2d is a flipper power2d object
         These Cls belong in the Wiener filters, and will not
         be perturbed if/when calculating derivatives.
         '''
-        self.lClFid2d[XY] = power2d.powerMap.copy()
-    def addNoise2DPowerXX(self,XX,power2d,fourierMask):
+        self.lClFid2d[XY] = power2dData.copy()
+    def addNoise2DPowerXX(self,XX,power2dData,fourierMask=None):
         '''
         Noise power for the X leg of the quadratic estimator
         XX = TT, EE, BB
@@ -57,9 +65,9 @@ class QuadNorm(object):
         fftshift state as power2d.powerMap
         '''
         # check if fourier mask is int!
-        self.noiseXX = power2d.powerMap()
-        self.noiseXX[fourierMask==0] = np.inf
-    def addNoise2DPowerYY(self,YY,power2d,fourierMask):
+        self.noiseXX = power2dData.copy()
+        if fourierMask is not None: self.noiseXX[fourierMask==0] = np.inf
+    def addNoise2DPowerYY(self,YY,power2dData,fourierMask=None):
         '''
         Noise power for the Y leg of the quadratic estimator
         XX = TT, EE, BB
@@ -69,21 +77,33 @@ class QuadNorm(object):
         fftshift state as power2d.powerMap
         '''
         # check if fourier mask is int!
-        self.noiseYY = power2d.powerMap()
-        self.noiseYY[fourierMask==0] = np.inf
+        self.noiseYY = power2dData.copy()
+        if fourierMask is not None: self.noiseYY[fourierMask==0] = np.inf
         
-    def addClkk2DPower(self,power2d):
+    def addClkk2DPower(self,power2dData):
         '''
         Fiducial Clkk power
         Used if delensing
         power2d is a flipper power2d object            
         '''
-        self.clkk2d = power2d.powerMap()
+        self.clkk2d = power2dData.copy()
+
+
+    def WXY(self,XY):
+        X,Y = XY
+        if Y=='B': Y='E'
+        return self.uClFid2d[X+Y]/(self.lClFid2d[X+X]+self.noiseXX)        
+
+    def WY(self,YY):
+        return 1./(self.lClFid2d[YY]+self.noiseYY)        
+
+    def getCurlNlkk2d(self,XY,halo=False):
+        pass
             
     def getNlkk2d(self,XY,halo=False):
-        lx,ly = self.template.lx,self.template.ly
+        lx,ly = self.lx,self.ly
         ftMap = self.template
-        lmap = self.template.modLMap
+        lmap = self.modLMap
 
 
 
@@ -144,13 +164,6 @@ class QuadNorm(object):
             cltotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
 
             
-            # For derivatives
-            if shiftEllMin!=None and shiftEllMax!=None:
-                #print "shifting"
-                annulus = clunlenEEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)].copy()
-                annmean = annulus.mean()
-                clunlenEEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)] = annulus + 0.5*shiftH * annmean
-                h = shiftH*annmean
 
 
             sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
@@ -220,21 +233,6 @@ class QuadNorm(object):
             cltotBBArr =self.lClFid2d['BB'].copy() + self.noiseArray[2]
             cltotBBArr[np.where(lmap >= self.lmax_P)] = np.inf
 
-            if shiftEllMin!=None and shiftEllMax!=None:
-                #print "shifting"
-                if shiftCl==0:
-                    #print "THIS SHOULDNT BE PRINTING!"
-                    annulus = clunlenEEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)].copy()
-                    annmean = annulus.mean()
-                    clunlenEEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)] = annulus + 0.5*shiftH * annmean
-                else:
-                    #print "ok"
-                    annulus = clunlenBBArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)].copy()
-                    annmean = annulus.mean()
-                    clunlenBBArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)] = annulus + 0.5*shiftH * annmean    
-                h = shiftH*annmean
-
-
 
             if True:
                 if halo: clunlenEEArrNow[np.where(lmap >= self.gradCut)] = 0.
@@ -276,12 +274,6 @@ class QuadNorm(object):
             cltotEEArr =self.lClFid2d['EE'].copy() + self.noiseArray[1]
             cltotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
 
-
-            if shiftEllMin!=None and shiftEllMax!=None:
-                annulus = clunlenTEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)].copy()
-                annmean = annulus.mean()
-                clunlenTEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)] = annulus + 0.5*shiftH * annmean
-                h = shiftH*annmean
 
 
 
@@ -367,11 +359,6 @@ class QuadNorm(object):
             cltotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
 
 
-            if shiftEllMin!=None and shiftEllMax!=None:
-                annulus = clunlenTEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)].copy()
-                annmean = annulus.mean()
-                clunlenTEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)] = annulus + 0.5*shiftH * annmean
-                h = shiftH*annmean
 
 
 
@@ -469,11 +456,6 @@ class QuadNorm(object):
             cltotBBArr =self.lClFid2d['BB'].copy() + self.noiseArray[2]
             cltotBBArr[np.where(lmap >= self.lmax_P)] = np.inf
 
-            if shiftEllMin!=None and shiftEllMax!=None:
-                annulus = clunlenTEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)].copy()
-                annmean = annulus.mean()
-                clunlenTEArrNow[np.logical_and(self.lmap>shiftEllMin,self.lmap<shiftEllMax)] = annulus + 0.5*shiftH * annmean
-                h = shiftH*annmean
 
 
             if halo: clunlenTEArrNow[np.where(lmap >= self.gradCut)] = 0.
@@ -518,18 +500,15 @@ class QuadNorm(object):
         NL = lmap**2. * (lmap + 1.)**2 / 4. / ALinv
         NL[np.where(np.logical_or(lmap >= self.bigell, lmap == 0.))] = 0.
         NL *= ftMap.Nx * ftMap.Ny
-        ftHolder = self.ftMap.copy()
+        ftHolder = ftMap.copy()
         ftHolder.kMap = np.sqrt(NL)
         kappaNoise2D = fftTools.powerFromFFT(ftHolder, ftHolder)
-        self.NlPPnowArr = kappaNoise2D.powerMap[:] *4./lmap**2./(lmap+1.)**2.
+        #self.NlPPnowArr = kappaNoise2D.powerMap[:] *4./lmap**2./(lmap+1.)**2.
 
-        if inverted:
-            kappaNoise2D.powerMap[:] = 1. / kappaNoise2D.powerMap[:]
-      
 
 
         
-        return kappaNoise2D
+        return kappaNoise2D.powerMap
         
         
                   

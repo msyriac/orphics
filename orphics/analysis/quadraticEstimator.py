@@ -1,5 +1,5 @@
 import numpy as np
-from ..theory.quadEstTheory import quadNorm
+from ..theory.quadEstTheory import QuadNorm
 
 '''
 This module relies heavily on FFTs, so the keywords
@@ -26,22 +26,64 @@ class Estimator(object):
     '''
 
 
-    def __init__(self,templateLiteMap,theorySpectraForFilters,theorySpectraForNorm=None,noiseX2d=None,noiseY2d=None,doCurl=False,TOnly=False):
+    def __init__(self,templateLiteMap,
+                 theorySpectraForFilters,
+                 theorySpectraForNorm=None,
+                 noiseX2dTEB=[None,None,None],
+                 noiseY2dTEB=[None,None,None],
+                 fmaskX2dTEB=[None,None,None],
+                 fmaskY2dTEB=[None,None,None],
+                 doCurl=False,
+                 TOnly=False,
+                 halo=False,
+                 gradCut=None,
+                 verbose=False):
 
-        self.lx,self.ly,self.modLMap,self.thetaMap = getFTAttributesFromLiteMap(templateLiteMap)
-        self.thetaMap *= np.pi/180.
-        self.Nx = templateLiteMap.Nx
-        self.Ny = templateLiteMap.Ny
         self.doCurl = doCurl
+        self.halo = halo
+        self.verbose = verbose
 
         # initialize norm and filters
-        # For T
-        
-        # For P
-        if not(TOnly):
-            
-            self.phaseY = np.cos(2.*self.thetaMap)+1.j*np.sin(2.*self.thetaMap)
 
+        self.AL = {}
+        if doCurl: self.OmAL = {}
+
+        self.N = quadNorm(templateLiteMap,gradCut=gradCut)
+
+        if TOnly: 
+            nList = ['TT']
+            cmbList = ['TT']
+            estList = ['TT']
+        else:
+            self.phaseY = np.cos(2.*self.N.thetaMap)+1.j*np.sin(2.*self.N.thetaMap)
+            nList = ['TT','EE','BB']
+            cmbList = ['TT','TE','EE','BB']
+            estList = ['TT','TE','ET','EB','EE','TB']
+
+        
+
+
+        for cmb in cmbList:
+            uClFilt = self.theorySpectraForFilters.uCl(cmb,self.N.modLMap)
+            if theorySpectraForNorm is not None:
+                uClNorm = self.theorySpectraForNorm.uCl(cmb,self.N.modLMap)
+            else:
+                uClNorm = uClFilt
+            lClFilt = self.theorySpectraForFilters.lCl(cmb,self.N.modLMap)
+            self.N.addUnlensedFilter2DPower(cmb,uClFilt)
+            self.N.addLensedFilter2DPower(cmb,lClFilt)
+            self.N.addUnlensedNorm2DPower(cmb,uClNorm)
+        for i,noise in enumerate(nList):
+            self.N.addNoise2DPowerXX(noise,noiseX2dTEB[i],fmaskX2dTEB[i])
+            self.N.addNoise2DPowerYY(noise,noiseY2dTEB[i],fmaskY2dTEB[i])
+
+
+
+        for est in estList:
+            self.AL[est] = self.N.getNlkk2d(est,halo=halo)
+            if doCurl: self.OmAL[est] = self.N.getCurlNlkk2d(est,halo=halo)
+
+        
 
     def updateTEB_X(self,T2DData,E2DData=None,B2DData=None):
         '''
@@ -99,8 +141,9 @@ class Estimator(object):
         assert self._hasX and self._hasY
         assert XY in ['TT','TE','ET','EB','TB','EE']
         X,Y = XY
-        WXY = self.getGradFilter(XY)
-        WY = self.getHighFilter(Y)
+
+        WXY = self.N.WXY(XY)
+        WY = self.N.WY(Y+Y)
 
         if Y in ['E','B']:
             phaseY = self.phaseY
@@ -125,30 +168,3 @@ class Estimator(object):
 
 
 
-def getFTAttributesFromLiteMap(templateLM):
-    '''
-    Given a liteMap, return the fourier frequencies,
-    magnitudes and phases.
-    '''
-
-        
-    Nx = templateLM.Nx
-    Ny = templateLM.Ny
-    pixScaleX = templateLM.pixScaleX 
-    pixScaleY = templateLM.pixScaleY
-    
-    
-    lx =  2*np.pi  * fftfreq( Nx, d = pixScaleX )
-    ly =  2*np.pi  * fftfreq( Ny, d = pixScaleY )
-    
-    ix = np.mod(np.arange(Nx*Ny),Nx)
-    iy = np.arange(Nx*Ny)/Nx
-    
-    modLMap = np.zeros([Ny,Nx])
-    modLMap[iy,ix] = np.sqrt(lx[ix]**2 + ly[iy]**2)
-    
-    thetaMap = np.zeros([Ny,Nx])
-    thetaMap[iy[:],ix[:]] = np.arctan2(ly[iy[:]],lx[ix[:]])
-    thetaMap *=180./np.pi
-
-    return lx,ly,modLMap,thetaMap

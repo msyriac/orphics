@@ -1,5 +1,6 @@
 from scipy.interpolate import interp1d
 import numpy as np
+from orphics.tools.cmb import validateMapType
 
 class TheorySpectra:
     '''
