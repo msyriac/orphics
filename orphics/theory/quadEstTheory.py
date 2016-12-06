@@ -13,7 +13,9 @@ class QuadNorm(object):
     
         '''
         
-        self.lx,self.ly,self.modLMap,self.thetaMap = fmaps.getFTAttributesFromLiteMap(templateMap)
+        self.lx,self.ly,self.modLMap,self.thetaMap,dlx,dly = fmaps.getFTAttributesFromLiteMap(templateMap)
+        self.lxHat = np.nan_to_num(self.lx / self.modLmap)
+        self.lyHat = np.nan_to_num(self.ly / self.modLmap)
 
         self.uClNow2d = {}
         self.uClFid2d = {}
@@ -143,12 +145,12 @@ class QuadNorm(object):
                     
 
             else:
-                preG = 1./cltotTTArr
+                preG = 1./cltotTTArrY
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr/cltotTTArr/2.            
-                    preFX = ell1*clunlenTTArrNow/cltotTTArr
-                    preGX = ell2*clunlenTTArr/cltotTTArr
+                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr/cltotTTArrX/2.            
+                    preFX = ell1*clunlenTTArrNow/cltotTTArrX
+                    preGX = ell2*clunlenTTArr/cltotTTArrY
 
                     allTerms += [2.*ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG)+np.fft.ifft2(preFX)*np.fft.ifft2(preGX)/2.)]
           

@@ -48,7 +48,7 @@ class Estimator(object):
         self.AL = {}
         if doCurl: self.OmAL = {}
 
-        self.N = quadNorm(templateLiteMap,gradCut=gradCut)
+        self.N = QuadNorm(templateLiteMap,gradCut=gradCut)
 
         if TOnly: 
             nList = ['TT']
@@ -61,15 +61,14 @@ class Estimator(object):
             estList = ['TT','TE','ET','EB','EE','TB']
 
         
-
-
+        if self.verbose: print "Initializing filters and normalization for quadratic estimators..."
         for cmb in cmbList:
-            uClFilt = self.theorySpectraForFilters.uCl(cmb,self.N.modLMap)
+            uClFilt = theorySpectraForFilters.uCl(cmb,self.N.modLMap)
             if theorySpectraForNorm is not None:
-                uClNorm = self.theorySpectraForNorm.uCl(cmb,self.N.modLMap)
+                uClNorm = theorySpectraForNorm.uCl(cmb,self.N.modLMap)
             else:
                 uClNorm = uClFilt
-            lClFilt = self.theorySpectraForFilters.lCl(cmb,self.N.modLMap)
+            lClFilt = theorySpectraForFilters.lCl(cmb,self.N.modLMap)
             self.N.addUnlensedFilter2DPower(cmb,uClFilt)
             self.N.addLensedFilter2DPower(cmb,lClFilt)
             self.N.addUnlensedNorm2DPower(cmb,uClNorm)

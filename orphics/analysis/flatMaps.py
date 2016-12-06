@@ -1,5 +1,6 @@
 import numpy as np
-import scipy
+
+
 
 def getFTAttributesFromLiteMap(templateLM):
     '''
@@ -7,6 +8,7 @@ def getFTAttributesFromLiteMap(templateLM):
     magnitudes and phases.
     '''
 
+    from scipy.fftpack import fftfreq
         
     Nx = templateLM.Nx
     Ny = templateLM.Ny
@@ -27,7 +29,10 @@ def getFTAttributesFromLiteMap(templateLM):
     thetaMap[iy[:],ix[:]] = np.arctan2(ly[iy[:]],lx[ix[:]])
     #thetaMap *=180./np.pi
 
-    return lx,ly,modLMap,thetaMap
+
+    lxMap, lyMap = np.meshgrid(lx, ly)  # is this the right order?
+
+    return lxMap,lyMap,modLMap,thetaMap,lx,ly
 
 
 
@@ -37,14 +42,15 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
     Given 1d function Fl of l, creates the 2d version                                                                                   
     of Fl on 2d k-space defined by ftMap                                                                                                   
     """
+    from scipy.interpolate import splrep, splev
 
     Fl[Fl>1.e90] = 1.e90
 
     Ny,Nx = modLMap.shape
-    tck = scipy.interpolate.splrep(l,Fl,k=k)
+    tck = splrep(l,Fl,k=k)
     lmap = modLMap
     lmapunravel = lmap.ravel()
-    template1d = scipy.interpolate.splev(lmapunravel,tck)
+    template1d = splev(lmapunravel,tck)
     template = np.reshape(template1d,[Ny,Nx])
 
     if debug:

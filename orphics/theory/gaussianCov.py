@@ -1,6 +1,5 @@
-from scipy.interpolate import interp1d
-import numpy as np
 from orphics.tools.cmb import validateMapType
+import numpy as np
 
 class TheorySpectra:
     '''
@@ -33,6 +32,8 @@ class TheorySpectra:
             return self._gCl[keyName[::-1]](ell)
         
     def loadCls(self,ell,Cl,XYType="TT",lensed=False,interporder="linear",lpad=9000):
+        from scipy.interpolate import interp1d
+
         # Implement ellnorm
 
         mapXYType = XYType.upper()
