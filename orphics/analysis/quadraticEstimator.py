@@ -64,6 +64,7 @@ class Estimator(object):
         if self.verbose: print "Initializing filters and normalization for quadratic estimators..."
         for cmb in cmbList:
             uClFilt = theorySpectraForFilters.uCl(cmb,self.N.modLMap)
+
             if theorySpectraForNorm is not None:
                 uClNorm = theorySpectraForNorm.uCl(cmb,self.N.modLMap)
             else:

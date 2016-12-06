@@ -1,5 +1,9 @@
 import numpy as np
 import orphics.analysis.flatMaps as fmaps 
+import fftTools
+
+from scipy.fftpack import fft2,ifft2,fftshift,ifftshift,fftfreq
+#from numpy.fft import fft2,ifft2,fftshift,ifftshift,fftfreq
 
 class QuadNorm(object):
 
@@ -140,21 +144,30 @@ class QuadNorm(object):
                     preGX = ell2*clunlenTTArr/cltotTTArrY
                     
 
-                    calc = ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG)+np.fft.ifft2(preFX)*np.fft.ifft2(preGX))
+                    calc = ell1*ell2*fft2(ifft2(preF)*ifft2(preG)+ifft2(preFX)*ifft2(preGX))
                     allTerms += [calc]
                     
 
             else:
-                preG = 1./cltotTTArrY
+                preG = np.nan_to_num(1./cltotTTArrY)
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr/cltotTTArrX/2.            
-                    preFX = ell1*clunlenTTArrNow/cltotTTArrX
-                    preGX = ell2*clunlenTTArr/cltotTTArrY
+                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr*np.nan_to_num(1./cltotTTArrX)/2.            
+                    preFX = ell1*clunlenTTArrNow*np.nan_to_num(1./cltotTTArrX)
+                    preGX = ell2*clunlenTTArr*np.nan_to_num(1./cltotTTArrY)
 
-                    allTerms += [2.*ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG)+np.fft.ifft2(preFX)*np.fft.ifft2(preGX)/2.)]
+
+                    
+                    calc = 2.*ell1*ell2*fft2(ifft2(preF)*ifft2(preG)+ifft2(preFX)*ifft2(preGX)/2.)
+                    from orphics.tools.output import Plotter
+                    import sys
+                    X = calc.real
+                    pl = Plotter()
+                    pl.plot2d((fftshift(X)))
+                    pl.done("p2d.png")
+                    sys.exit()
+                    allTerms += [calc]
           
-
 
         elif XY == 'EE':
 
@@ -193,12 +206,12 @@ class QuadNorm(object):
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
                         preF = trigfact*ell1*ell2*clunlenEEArrNow*clunlenEEArr/cltotEEArr
                         preG = trigfact/cltotEEArr
-                        allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG))]
+                        allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                         
                         preFX = trigfact*ell1*clunlenEEArrNow/cltotEEArr
                         preGX = trigfact*ell2*clunlenEEArr/cltotEEArr
 
-                        allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preFX)*np.fft.ifft2(preGX))]
+                        allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
                 
             else:
@@ -212,7 +225,7 @@ class QuadNorm(object):
                         preFX = trigfact*ell1*clunlenEEArrNow/cltotEEArr
                         preGX = trigfact*ell2*clunlenEEArr/cltotEEArr
 
-                        allTerms += [2.*ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG)+np.fft.ifft2(preFX)*np.fft.ifft2(preGX)/2.)]
+                        allTerms += [2.*ell1*ell2*fft2(ifft2(preF)*ifft2(preG)+ifft2(preFX)*ifft2(preGX)/2.)]
 
 
             
@@ -263,7 +276,7 @@ class QuadNorm(object):
                     preG = 1./cltotBBArr
 
                     for termF,termG in zip(termsF,termsG):
-                        allTerms += [ellsq*np.fft.fft2(np.fft.ifft2(termF(preF,lxhat,lyhat))*np.fft.ifft2(termG(preG,lxhat,lyhat)))]
+                        allTerms += [ellsq*fft2(ifft2(termF(preF,lxhat,lyhat))*ifft2(termG(preG,lxhat,lyhat)))]
                     
 
         elif XY=='ET':
@@ -303,13 +316,13 @@ class QuadNorm(object):
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     preF = ell1*ell2*clunlenTEArrNow*clunlenTEArr/cltotEEArr
                     preG = 1./cltotTTArr
-                    allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG))]
+                    allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
 
                         preFX = trigfact*ell1*clunlenTEArrNow/cltotEEArr
                         preGX = trigfact*ell2*clunlenTEArr/cltotTTArr
 
-                        allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preFX)*np.fft.ifft2(preGX))]
+                        allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
 
             else:
@@ -336,17 +349,17 @@ class QuadNorm(object):
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     preF = ell1*ell2*clunlenTEArrNow*clunlenTEArr/cltotEEArr
                     preG = 1./cltotTTArr
-                    allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG))]
+                    allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
                         preF = 1./cltotEEArr
                         preG = trigfact*ell1*ell2*clunlenTEArrNow*clunlenTEArr/cltotTTArr
-                        allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG))]
+                        allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
                         
                         preFX = trigfact*ell1*clunlenTEArrNow/cltotEEArr
                         preGX = trigfact*ell2*clunlenTEArr/cltotTTArr
 
-                        allTerms += [2.*ell1*ell2*np.fft.fft2(np.fft.ifft2(preFX)*np.fft.ifft2(preGX))]
+                        allTerms += [2.*ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
                     
 
@@ -389,13 +402,13 @@ class QuadNorm(object):
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
                         preF = trigfact*ell1*ell2*clunlenTEArrNow*clunlenTEArr/cltotTTArr
                         preG = trigfact/cltotEEArr
-                        allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG))]
+                        allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
                         
                         preFX = trigfact*ell1*clunlenTEArrNow/cltotTTArr
                         preGX = trigfact*ell2*clunlenTEArr/cltotEEArr
 
-                        allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preFX)*np.fft.ifft2(preGX))]
+                        allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
                 
             else:
@@ -423,16 +436,16 @@ class QuadNorm(object):
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
                         preF = trigfact*ell1*ell2*clunlenTEArrNow*clunlenTEArr/cltotTTArr
                         preG = trigfact/cltotEEArr
-                        allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG))]
+                        allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     preF = 1./cltotTTArr
                     preG = ell1*ell2*clunlenTEArrNow*clunlenTEArr/cltotEEArr
-                    allTerms += [ell1*ell2*np.fft.fft2(np.fft.ifft2(preF)*np.fft.ifft2(preG))]
+                    allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
                         
                         preFX = trigfact*ell1*clunlenTEArrNow/cltotTTArr
                         preGX = trigfact*ell2*clunlenTEArr/cltotEEArr
 
-                        allTerms += [2.*ell1*ell2*np.fft.fft2(np.fft.ifft2(preFX)*np.fft.ifft2(preGX))]
+                        allTerms += [2.*ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
 
                 
@@ -487,7 +500,7 @@ class QuadNorm(object):
                 preG = 1./cltotBBArr
 
                 for termF,termG in zip(termsF,termsG):
-                    allTerms += [ellsq*np.fft.fft2(np.fft.ifft2(termF(preF,lxhat,lyhat))*np.fft.ifft2(termG(preG,lxhat,lyhat)))]
+                    allTerms += [ellsq*fft2(ifft2(termF(preF,lxhat,lyhat))*ifft2(termG(preG,lxhat,lyhat)))]
                     
 
             
@@ -500,17 +513,26 @@ class QuadNorm(object):
                         
         ALinv = np.real(np.sum( allTerms, axis = 0)) 
         NL = lmap**2. * (lmap + 1.)**2 / 4. / ALinv
+
+
+        
         NL[np.where(np.logical_or(lmap >= self.bigell, lmap == 0.))] = 0.
         NL *= ftMap.Nx * ftMap.Ny
         ftHolder = ftMap.copy()
         ftHolder.kMap = np.sqrt(NL)
-        kappaNoise2D = fftTools.powerFromFFT(ftHolder, ftHolder)
-        #self.NlPPnowArr = kappaNoise2D.powerMap[:] *4./lmap**2./(lmap+1.)**2.
 
+        
+        #kappaNoise2D = fftTools.powerFromFFT(ftHolder, ftHolder)
+
+        mapFFT = ftHolder.kMap
+        area =ftHolder.Nx*ftHolder.Ny*ftHolder.pixScaleX*ftHolder.pixScaleY
+        p2d = np.real(np.conjugate(mapFFT)*mapFFT)*area/(ftHolder.Nx*ftHolder.Ny*1.0)**2
+
+        
 
 
         
-        return kappaNoise2D.powerMap
+        return p2d
         
         
                   
@@ -561,7 +583,7 @@ class QuadNorm(object):
                 preF2 = trigfactIn*ellsq*clunlenEEArr**2./clunlentotEEArr
                 preG2 = ellsq*clPPArr**2./cltotPPArr
 
-                allTerms += [trigfactOut*(np.fft.fft2(np.fft.ifft2(preF1)*np.fft.ifft2(preG1) - np.fft.ifft2(preF2)*np.fft.ifft2(preG2)))]
+                allTerms += [trigfactOut*(fft2(ifft2(preF1)*ifft2(preG1) - ifft2(preF2)*ifft2(preG2)))]
 
 
         

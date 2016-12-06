@@ -10,19 +10,22 @@ beamArcmin = 7.0
 noiseT = 27.0
 noiseP = 56.6
 
-hereRoot = "/astro/u/msyriac/repos/orphics/tests/"
 
 print "Loading map..."
-templateMap = lm.liteMapFromFits("/astro/astronfs01/workarea/msyriac/act/FinalScinetPaper/preparedMap_T_6.fits")
+templateMap = lm.liteMapFromFits("/home/mathew/data/preparedMap_T_6.fits")
 
 theory = TheorySpectra()
 
 print "Interpolating Cls..."
-for cmb in ['tt','te','ee','bb']:
-    Cl = np.loadtxt(hereRoot+"data/fid"+cmb+".dat")
-    ell = np.arange(2,len(Cl)+2)
-    theory.loadCls(ell,Cl,cmb.upper(),lensed=False,interporder="linear",lpad=9000)
-    theory.loadCls(ell,Cl,cmb.upper(),lensed=True,interporder="linear",lpad=9000)
+ell = {}
+Cl = {}
+for cmb in ['TT','TE','EE','BB']:
+    Cl[cmb] = np.loadtxt("/home/mathew/data/fid"+cmb.lower()+".dat")
+    ell[cmb] = np.arange(2,len(Cl[cmb])+2)
+    theory.loadCls(ell[cmb],Cl[cmb],cmb,lensed=False,interporder="linear",lpad=9000)
+    theory.loadCls(ell[cmb],Cl[cmb],cmb,lensed=True,interporder="linear",lpad=9000)
+Clkk = np.loadtxt("/home/mathew/data/fidkk.dat")
+ellkk = np.arange(2,len(Clkk)+2)
 
 
 modLMap = fmaps.getFTAttributesFromLiteMap(templateMap)[2]
@@ -43,3 +46,26 @@ qest = Estimator(templateMap,
                  halo=False,
                  gradCut=None,verbose=True)
 
+from orphics.tools.output import Plotter
+from orphics.tools.stats import binInAnnuli
+
+
+# data2d = qest.N.lClFid2d['TT']
+# modLMap = qest.N.modLMap
+# bin_edges = np.arange(2,2000,20)
+# centers, Clbinned = binInAnnuli(data2d, modLMap, bin_edges)
+
+# pl = Plotter(scaleY='log')
+# pl.add(ell['TT'],Cl['TT'])
+# pl.add(centers,Clbinned,ls="none",marker="o")
+# pl.done("testbin.png")
+
+data2d = qest.AL['TT']
+modLMap = qest.N.modLMap
+bin_edges = np.arange(2,2000,20)
+centers, Nlbinned = binInAnnuli(data2d, modLMap, bin_edges)
+
+pl = Plotter(scaleY='log')
+pl.add(ellkk,Clkk)
+pl.add(centers,Nlbinned,ls="none",marker="o")
+pl.done("testbin.png")

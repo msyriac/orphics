@@ -44,7 +44,7 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
     """
     from scipy.interpolate import splrep, splev
 
-    Fl[Fl>1.e90] = 1.e90
+    #Fl[Fl>1.e90] = 1.e90
 
     Ny,Nx = modLMap.shape
     tck = splrep(l,Fl,k=k)

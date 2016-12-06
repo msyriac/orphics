@@ -42,7 +42,7 @@ class TheorySpectra:
 
             
         #print bcolors.OKBLUE+"Interpolating", XYType, "spectrum to", interporder, "order..."+bcolors.ENDC
-        f=interp1d(ell,Cl,kind=interporder,bounds_error=False)
+        f=interp1d(ell,Cl,kind=interporder,bounds_error=False,fill_value=0.)
         if lensed:
             self._lCl[XYType]=f
             self._ellMaxes['l'+XYType]=lpad
