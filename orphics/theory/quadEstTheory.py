@@ -113,7 +113,10 @@ class QuadNorm(object):
     def WXY(self,XY):
         X,Y = XY
         if Y=='B': Y='E'
-        return self.uClFid2d[X+Y]/(self.lClFid2d[X+X]+self.noiseXX)        
+        W = self.uClFid2d[X+Y]/(self.lClFid2d[X+X]+self.noiseXX)        
+        W[self.modLMap>self.gradCut]=0.
+        return W
+        
 
     def WY(self,YY):
         return 1./(self.lClFid2d[YY]+self.noiseYY)        
@@ -163,6 +166,9 @@ class QuadNorm(object):
                     
 
             else:
+
+                # IMPLEMENT GRADCUT IN NORM FOR LSS
+
                 preG = np.nan_to_num(1./cltotTTArrY)
 
                 # from orphics.tools.output import Plotter

@@ -125,8 +125,10 @@ class Estimator(object):
         self.kGradx = {}
         self.kGrady = {}
 
-        lx = self.N.lxMap
-        ly = self.N.lyMap
+        # lx = self.N.lxMap
+        # ly = self.N.lyMap
+        lx = self.N.lx
+        ly = self.N.ly.reshape((self.N.template.Ny,1))
         
         self.kT = fft2(T2DData)
         self.kGradx['T'] = 1.j*lx*self.kT
@@ -178,22 +180,51 @@ class Estimator(object):
         WXY = self.N.WXY(XY)
         WY = self.N.WY(Y+Y)
 
-        lx = self.N.lxMap
-        ly = self.N.lyMap
+        #lx = self.N.lxMap
+        #ly = self.N.lyMap
+
+        lx = self.N.lx
+        ly = self.N.ly.reshape((self.N.template.Ny,1))
 
         if Y in ['E','B']:
             phaseY = self.phaseY
         else:
             phaseY = 1.
 
-        HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY).conjugate()
+
+        fMask = self.fmaskK
+
+
+
+
+        HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY*fMask).conjugate()
+
+
+
         kPx = fft2(ifft2(self.kGradx[X]*WXY*phaseY)*HighMapStar)
         kPy = fft2(ifft2(self.kGrady[X]*WXY*phaseY)*HighMapStar)
         
-        rawKappa = ifft2(1.j*lx*kPx + 1.j*ly*kPy).real
+        rawKappa = ifft2(1.j*lx*kPx*fMask + 1.j*ly*kPy*fMask).real
 
 
-        fMask = self.fmaskK
+
+        import sys
+        from orphics.tools.output import Plotter
+        X = WY
+        pl = Plotter()
+        #pl.plot2d(X)
+        pl.plot2d(np.log10(fftshift(X)))
+        pl.done("debug2d.png")
+        from orphics.tools.stats import binInAnnuli
+        bin_edges = np.arange(2,8000,10)
+        centers, Nlbinned = binInAnnuli(X, self.N.modLMap, bin_edges)
+        pl = Plotter()
+        pl.add(centers,Nlbinned)
+        pl.done("debug.png")
+        #sys.exit()
+
+
+
         AL = self.AL[XY]*fMask
         
         self.kappa = -ifft2(AL*fft2(rawKappa))

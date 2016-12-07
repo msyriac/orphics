@@ -116,4 +116,42 @@ def fourierMask(lx,ly,modLMap, lxcut = None, lycut = None, lmin = None, lmax = N
         wh = np.where(np.abs(ly) < lycut)
         output[wh,:] = 0
     return output
-            
+
+
+
+
+def initializeCosineWindow(templateLiteMap,lenApod=30,pad=0):
+	
+    Nx=templateLiteMap.Nx
+    Ny=templateLiteMap.Ny
+    win=templateLiteMap.copy()
+    win.data[:]=1
+
+    winX=win.copy()
+    winY=win.copy()
+
+    for j in range(pad,Ny-pad):
+            for i in range(pad,Nx-pad):
+                    if i<=(lenApod+pad):
+                            r=float(i)-pad
+                            winX.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+                    if i>=(Nx-1)-lenApod-pad:
+                            r=float((Nx-1)-i-pad)
+                            winX.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+
+    for i in range(pad,Nx-pad):
+            for j in range(pad,Ny-pad):
+                    if j<=(lenApod+pad):
+                            r=float(j)-pad
+                            winY.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+                    if j>=(Ny-1)-lenApod-pad:
+                            r=float((Ny-1)-j-pad)
+                            winY.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+
+    win.data[:]*=winX.data[:,:]*winY.data[:,:]
+    win.data[0:pad,:]=0
+    win.data[:,0:pad]=0
+    win.data[Nx-pad:Nx,:]=0
+    win.data[:,Nx-pad:Nx]=0
+
+    return(win.data)
