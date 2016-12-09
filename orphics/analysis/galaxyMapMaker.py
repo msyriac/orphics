@@ -255,7 +255,8 @@ def main(argv):
     else:
         # Set up fast C library for ra/dec to healpix index conversion
         deg2pix = ctypes.CDLL(rootPath + 'lib/deg2healpix.so')
-        deg2pix.getPixIndex.argtypes = (ctypes.c_long, ctypes.c_double, ctypes.c_double)
+        deg2pix.getPixIndexGalactic.argtypes = (ctypes.c_long, ctypes.c_double, ctypes.c_double)
+        deg2pix.getPixIndexEquatorial.argtypes = (ctypes.c_long, ctypes.c_double, ctypes.c_double)
         nside = Config.getint('healpix','nside')
 
 

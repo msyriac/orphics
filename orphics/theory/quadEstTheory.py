@@ -26,6 +26,8 @@ class QuadNorm(object):
         self.lClFid2d = {}
         self.noiseXX2d = {}
         self.noiseYY2d = {}
+        self.fMaskXX = {}
+        self.fMaskYY = {}
 
         self.lmax_T=9000.
         self.lmax_P=9000.
@@ -76,6 +78,7 @@ class QuadNorm(object):
         self.noiseXX = power2dData.copy()
         if fourierMask is not None:
             self.noiseXX[fourierMask==0] = np.inf
+            self.fMaskXX[XX] = fourierMask
         else:
             if XX=='TT':
                 self.noiseXX[self.defaultMaskT==0] = np.inf
@@ -95,6 +98,7 @@ class QuadNorm(object):
         self.noiseYY = power2dData.copy()
         if fourierMask is not None:
             self.noiseYY[fourierMask==0] = np.inf
+            self.fMaskYY[YY] = fourierMask
         else:
             if YY=='TT':
                 self.noiseYY[self.defaultMaskT==0] = np.inf
@@ -113,13 +117,25 @@ class QuadNorm(object):
     def WXY(self,XY):
         X,Y = XY
         if Y=='B': Y='E'
-        W = self.uClFid2d[X+Y]/(self.lClFid2d[X+X]+self.noiseXX)        
+        W = np.nan_to_num(self.uClFid2d[X+Y].copy()/(self.lClFid2d[X+X].copy()+self.noiseXX.copy()))*self.fMaskXX[X+X]
         W[self.modLMap>self.gradCut]=0.
+        if X=='T':
+            W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        else:
+            W[np.where(self.modLMap >= self.lmax_P)] = 0.
+
+
         return W
         
 
     def WY(self,YY):
-        return 1./(self.lClFid2d[YY]+self.noiseYY)        
+        W = np.nan_to_num(1./(self.lClFid2d[YY].copy()+self.noiseYY.copy()))*self.fMaskYY[YY]
+        W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        if YY[0]=='T':
+            W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        else:
+            W[np.where(self.modLMap >= self.lmax_P)] = 0.
+        return W
 
     def getCurlNlkk2d(self,XY,halo=False):
         pass
@@ -127,8 +143,6 @@ class QuadNorm(object):
     def getNlkk2d(self,XY,halo=False):
         lx,ly = self.lxMap,self.lyMap
         lmap = self.modLMap
-
-
 
             
         h=0.
@@ -138,27 +152,19 @@ class QuadNorm(object):
         if XY == 'TT':
             
             clunlenTTArrNow = self.uClNow2d['TT'].copy()
-            clunlenTTArr = self.uClFid2d['TT'].copy()
-
-            cltotTTArrX =self.lClFid2d['TT'].copy() + self.noiseXX
-            cltotTTArrX[np.where(lmap >= self.lmax_T)] = np.inf
-
-            cltotTTArrY =self.lClFid2d['TT'].copy() + self.noiseYY
-            cltotTTArrY[np.where(lmap >= self.lmax_T)] = np.inf
+            clunlenTTArrNow[np.where(lmap >= self.lmax_T)] = 0.
 
                 
 
             if halo:
             
-                clunlenTTArrNow[np.where(lmap >= self.gradCut)] = 0.
-
                 
-                preG = np.nan_to_num(1./cltotTTArrY)
+                preG = self.WY('TT')
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr*np.nan_to_num(1./cltotTTArrX)
-                    preFX = ell1*clunlenTTArrNow*np.nan_to_num(1./cltotTTArrX)
-                    preGX = ell2*clunlenTTArr*np.nan_to_num(1./cltotTTArrY)
+                    preF = ell1*ell2*clunlenTTArrNow*self.WXY('TT')
+                    preFX = ell1*self.WXY('TT')
+                    preGX = ell2*clunlenTTArrNow*self.WY('TT')
                     
 
                     calc = ell1*ell2*fft2(ifft2(preF)*ifft2(preG)+ifft2(preFX)*ifft2(preGX))
@@ -169,7 +175,7 @@ class QuadNorm(object):
 
                 # IMPLEMENT GRADCUT IN NORM FOR LSS
 
-                preG = np.nan_to_num(1./cltotTTArrY)
+                preG = self.WY('TT') #np.nan_to_num(1./cltotTTArrY)
 
                 # from orphics.tools.output import Plotter
                 # import sys

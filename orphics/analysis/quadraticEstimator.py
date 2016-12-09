@@ -73,7 +73,7 @@ class Estimator(object):
         if fmaskKappa is None:
             ellMinK = 80
             ellMaxK = 3000
-            print "WARNING: using default kappa mask of 30 < L < 3000"
+            print "WARNING: using default kappa mask of 80 < L < 3000"
             self.fmaskK = fmaps.fourierMask(self.N.lx,self.N.ly,self.N.modLMap,lmin=ellMinK,lmax=ellMaxK)
         else:
             self.fmaskK = fmaskKappa
@@ -120,28 +120,29 @@ class Estimator(object):
         Maps must have units corresponding to those of theory Cls and noise power
         '''
         self._hasX = True
-        assert B2DData is None, "It's"
 
         self.kGradx = {}
         self.kGrady = {}
 
-        # lx = self.N.lxMap
-        # ly = self.N.lyMap
-        lx = self.N.lx
-        ly = self.N.ly.reshape((self.N.template.Ny,1))
+        lx = self.N.lxMap
+        ly = self.N.lyMap
+        #ly = self.N.lxMap
+        #lx = self.N.lyMap
+        #lx = self.N.lx
+        #ly = self.N.ly.reshape((self.N.template.Ny,1))
         
         self.kT = fft2(T2DData)
-        self.kGradx['T'] = 1.j*lx*self.kT
-        self.kGrady['T'] = 1.j*ly*self.kT
+        self.kGradx['T'] = lx*self.kT.copy()*1j
+        self.kGrady['T'] = ly*self.kT.copy()*1j
 
         if E2DData is not None:
             self.kE = fft2(E2DData)
-            self.kGradx['E'] = 1.j*lx*self.kE
-            self.kGrady['E'] = 1.j*ly*self.kE
+            self.kGradx['E'] = 1.j*lx*self.kE.copy()
+            self.kGrady['E'] = 1.j*ly*self.kE.copy()
         if B2DData is not None:
             self.kB = fft2(B2DData)
-            self.kGradx['B'] = 1.j*lx*self.kB
-            self.kGrady['B'] = 1.j*ly*self.kB
+            self.kGradx['B'] = 1.j*lx*self.kB.copy()
+            self.kGrady['B'] = 1.j*ly*self.kB.copy()
         
         
 
@@ -152,11 +153,11 @@ class Estimator(object):
         self.kHigh = {}
 
         if T2DData is not None:
-            self.kHigh['T']=fft2(TLiteMap)
+            self.kHigh['T']=fft2(T2DData)
         else:
             self.kHigh['T']=self.kT.copy()
         if E2DData is not None:
-            self.kHigh['E']=fft2(ELiteMap)
+            self.kHigh['E']=fft2(E2DData)
         else:
             try:
                 self.kHigh['E']=self.kE.copy()
@@ -164,7 +165,7 @@ class Estimator(object):
                 pass
 
         if B2DData is not None:
-            self.kHigh['B']=fft2(BLiteMap)
+            self.kHigh['B']=fft2(B2DData)
         else:
             try:
                 self.kHigh['B']=self.kB.copy()
@@ -180,11 +181,37 @@ class Estimator(object):
         WXY = self.N.WXY(XY)
         WY = self.N.WY(Y+Y)
 
-        #lx = self.N.lxMap
-        #ly = self.N.lyMap
+        lx = self.N.lxMap
+        ly = self.N.lyMap
+        #ly = self.N.lxMap
+        #lx = self.N.lyMap
 
-        lx = self.N.lx
-        ly = self.N.ly.reshape((self.N.template.Ny,1))
+
+        # import sys
+        # from orphics.tools.output import Plotter
+        # X = lx
+        # pl = Plotter()
+        # pl.plot2d(fftshift(X))
+        # #pl.plot2d(np.log10(fftshift(X)))
+        # pl.done("lx.png")
+        # X = ly
+        # pl = Plotter()
+        # pl.plot2d(fftshift(X))
+        # #pl.plot2d(np.log10(fftshift(X)))
+        # pl.done("ly.png")
+        # from orphics.tools.stats import binInAnnuli
+        # bin_edges = np.arange(2,8000,10)
+        # centers, Nlbinned = binInAnnuli(X, self.N.modLMap, bin_edges)
+        # pl = Plotter()
+        # pl.add(centers,Nlbinned)
+        # pl.done("debug.png")
+        #sys.exit()
+
+
+
+
+        #lx = self.N.lx
+        #ly = self.N.ly.reshape((self.N.template.Ny,1))
 
         if Y in ['E','B']:
             phaseY = self.phaseY
@@ -195,45 +222,45 @@ class Estimator(object):
         fMask = self.fmaskK
 
 
-
-
-        HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY*fMask).conjugate()
-
-
-
-        kPx = fft2(ifft2(self.kGradx[X]*WXY*phaseY)*HighMapStar)
-        kPy = fft2(ifft2(self.kGrady[X]*WXY*phaseY)*HighMapStar)
-        
-        rawKappa = ifft2(1.j*lx*kPx*fMask + 1.j*ly*kPy*fMask).real
-
-
-
-        import sys
-        from orphics.tools.output import Plotter
-        X = WY
-        pl = Plotter()
-        #pl.plot2d(X)
-        pl.plot2d(np.log10(fftshift(X)))
-        pl.done("debug2d.png")
-        from orphics.tools.stats import binInAnnuli
-        bin_edges = np.arange(2,8000,10)
-        centers, Nlbinned = binInAnnuli(X, self.N.modLMap, bin_edges)
-        pl = Plotter()
-        pl.add(centers,Nlbinned)
-        pl.done("debug.png")
-        #sys.exit()
-
-
-
+        HighMapStar = ifft2(self.kHigh[Y]*WY*fMask).real
+        kPx = fft2(ifft2(self.kGradx[X]*WXY).real*HighMapStar)
+        kPy = fft2(ifft2(self.kGrady[X]*WXY).real*HighMapStar)
+        rawKappa = ifft2(lx*kPx*fMask*1j + ly*kPy*fMask*1j).real
+        #rawKappa = ifft2(ly*kPx*fMask*1j + lx*kPy*fMask*1j).real
         AL = self.AL[XY]*fMask
-        
         self.kappa = -ifft2(AL*fft2(rawKappa))
+
+
+        # HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY*fMask).conjugate()
+        # kPx = fft2(ifft2(self.kGradx[X]*WXY*phaseY)*HighMapStar)
+        # kPy = fft2(ifft2(self.kGrady[X]*WXY*phaseY)*HighMapStar)
+        # rawKappa = ifft2(1.j*lx*kPx*fMask + 1.j*ly*kPy*fMask).real
+        # AL = self.AL[XY]*fMask
+        # self.kappa = -ifft2(AL*fft2(rawKappa))
 
         if self.doCurl:
             OmAL = self.OmAL[XY]*fMask
             rawCurl = ifft2(1.j*lx*kPy - 1.j*ly*kPx).real
             self.curl = -ifft2(OmAL*fft2(rawCurl))
             return self.kappa, self.curl
+
+
+        # import sys
+        # from orphics.tools.output import Plotter
+        # X = WY
+        # pl = Plotter()
+        # #pl.plot2d(X)
+        # pl.plot2d(np.log10(fftshift(X)))
+        # pl.done("debug2d.png")
+        # from orphics.tools.stats import binInAnnuli
+        # bin_edges = np.arange(2,8000,10)
+        # centers, Nlbinned = binInAnnuli(X, self.N.modLMap, bin_edges)
+        # pl = Plotter()
+        # pl.add(centers,Nlbinned)
+        # pl.done("debug.png")
+        # #sys.exit()
+
+
             
         return self.kappa
 

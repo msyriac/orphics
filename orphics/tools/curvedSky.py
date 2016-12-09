@@ -42,15 +42,12 @@ def slowRotatorGtoC(hpMap,nside,verbose=True):
     return hp.ud_grade(retMap,nside)
     
 
-def quickMapView(hpMap,saveLoc=None,min=None,max=None,transform=True,**kwargs):
+def quickMapView(hpMap,saveLoc=None,min=None,max=None,transform='C',**kwargs):
     '''
     Input map in galactic is shown in equatorial
     '''
 
-    if transform:
-        hp.mollview(hpMap,coord=['G','C'],min=min,max=max,**kwargs)
-    else:    
-        hp.mollview(hpMap,min=min,max=max,coord='C',**kwargs)
+    hp.mollview(hpMap,min=min,max=max,coord=transform,**kwargs)
     if saveLoc==None: saveLoc="output/debug.png"
     matplotlib.pyplot.savefig(saveLoc)
 

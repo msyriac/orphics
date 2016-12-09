@@ -20,11 +20,11 @@ def generateRandomCatalogFromLiteMap(templateLiteMap,N=10000):
 
 
 
-def getCountMapFromCatalog(templateLiteMap,ras,decs):
+def getCountMapFromCatalog(templateLiteMap,ras,decs,curved=False):
 
-    from ..analysis.galaxyMapMaker import fitsMapFromCat
+    from ..analysis.galaxyMapMaker import fitsMapFromCat as galMapper
 
-    fmapper = fitsMapFromCat(["ct"],[templateLiteMap],["temp"])
+    fmapper = galMapper(["ct"],[templateLiteMap],["temp"])
     fmapper.addCut('')
 
     for ra,dec in zip(ras,decs):
@@ -33,3 +33,4 @@ def getCountMapFromCatalog(templateLiteMap,ras,decs):
         fmapper.increment("ct",'',1)
 
     return fmapper.getMap("ct","temp",'')
+

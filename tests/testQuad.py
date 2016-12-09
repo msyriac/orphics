@@ -12,15 +12,19 @@ from orphics.tools.stats import binInAnnuli
 import sys
 
 # hu reproduce
-beamArcmin = 7.0
-noiseT = 27.0
-noiseP = 56.6
-cmbellmax = 3000
-kellmax = 2000
+# beamArcmin = 7.0
+# noiseT = 27.0
+# noiseP = 56.6
+# cmbellmax = 3000
+# kellmax = 2000
 
-#beamArcmin = 1.4
-#noiseT = 10.0
-#noiseP = 14.4
+beamArcmin = 1.4
+noiseT = 10.0
+noiseP = 14.4
+cmbellmin = 1000
+cmbellmax = 3000
+kellmin = 80
+kellmax = 2100
 
 # beamArcmin = 0.
 # noiseT = 0.
@@ -54,8 +58,8 @@ lxMap,lyMap,modLMap,thetaMap,lx,ly  = fmaps.getFTAttributesFromLiteMap(templateM
 
 print "Making white noise..."
 nT,nP = fmaps.whiteNoise2D([noiseT,noiseP],beamArcmin,modLMap,TCMB=TCMB)
-fMask = fmaps.fourierMask(lx,ly,modLMap,lmin=2,lmax=cmbellmax)
-fMaskK = fmaps.fourierMask(lx,ly,modLMap,lmin=2,lmax=kellmax)
+fMask = fmaps.fourierMask(lx,ly,modLMap,lmin=cmbellmin,lmax=cmbellmax)
+fMaskK = fmaps.fourierMask(lx,ly,modLMap,lmin=kellmin,lmax=kellmax)
 
 qest = Estimator(templateMap,
                  theory,
@@ -67,8 +71,8 @@ qest = Estimator(templateMap,
                  fmaskKappa=fMaskK,
                  doCurl=False,
                  TOnly=True,
-                 halo=True,
-                 gradCut=2000,verbose=True)
+                 halo=False,
+                 gradCut=None,verbose=True)
 
 
 

@@ -1,9 +1,37 @@
-import matplotlib
-matplotlib.rcParams['mathtext.fontset'] = 'custom'
-matplotlib.rcParams['mathtext.rm'] = 'Bitstream Vera Sans'
-matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
-matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
+# import matplotlib
+# matplotlib.rcParams['mathtext.fontset'] = 'custom'
+# matplotlib.rcParams['mathtext.rm'] = 'Bitstream Vera Sans'
+# matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
+# matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
 import matplotlib.pyplot as plt
+
+
+def printC(string,color=None,bold=False,uline=False):
+    if not(isinstance(string,str)):
+        string = str(string)
+    x=""
+    if bold:
+        x+=bcolors.BOLD
+    if uline:
+        x+=bcolors.UNDERLINE
+
+    color = color.lower()    
+    if color in ['b','blue']:
+        x+=bcolors.OKBLUE
+    elif color in ['r','red','f','fail']:
+        x+=bcolors.FAIL
+    elif color in ['g','green','ok']:
+        x+=bcolors.OKGREEN
+    elif color in ['y','yellow','w','warning']:
+        x+=bcolors.WARNING
+    elif color in ['p','purple','h','header']:
+        x+=bcolors.HEADER
+              
+
+    
+
+    print x+string+bcolors.ENDC
+
 
 class bcolors:
     '''
