@@ -113,7 +113,7 @@ class Estimator(object):
 
         
 
-    def updateTEB_X(self,T2DData,E2DData=None,B2DData=None):
+    def updateTEB_X(self,T2DData,E2DData=None,B2DData=None,alreadyFTed=False):
         '''
         Masking and windowing and apodizing and beam deconvolution has to be done beforehand!
 
@@ -131,33 +131,48 @@ class Estimator(object):
         #lx = self.N.lx
         #ly = self.N.ly.reshape((self.N.template.Ny,1))
         
-        self.kT = fft2(T2DData)
+        if alreadyFTed:
+            self.kT = T2DData
+        else:
+            self.kT = fft2(T2DData)
         self.kGradx['T'] = lx*self.kT.copy()*1j
         self.kGrady['T'] = ly*self.kT.copy()*1j
 
         if E2DData is not None:
-            self.kE = fft2(E2DData)
+            if alreadyFTed:
+                self.kE = E2DData
+            else:
+                self.kE = fft2(E2DData)
             self.kGradx['E'] = 1.j*lx*self.kE.copy()
             self.kGrady['E'] = 1.j*ly*self.kE.copy()
         if B2DData is not None:
-            self.kB = fft2(B2DData)
+            if alreadyFTed:
+                self.kB = B2DData
+            else:
+                self.kB = fft2(B2DData)
             self.kGradx['B'] = 1.j*lx*self.kB.copy()
             self.kGrady['B'] = 1.j*ly*self.kB.copy()
         
         
 
-    def updateTEB_Y(self,T2DData=None,E2DData=None,B2DData=None):
+    def updateTEB_Y(self,T2DData=None,E2DData=None,B2DData=None,alreadyFTed=False):
         assert self._hasX, "Need to initialize gradient first."
         self._hasY = True
         
         self.kHigh = {}
 
         if T2DData is not None:
-            self.kHigh['T']=fft2(T2DData)
+            if alreadyFTed:
+                self.kHigh['T']=T2DData
+            else:
+                self.kHigh['T']=fft2(T2DData)
         else:
             self.kHigh['T']=self.kT.copy()
         if E2DData is not None:
-            self.kHigh['E']=fft2(E2DData)
+            if alreadyFTed:
+                self.kHigh['E']=E2DData
+            else:
+                self.kHigh['E']=fft2(E2DData)
         else:
             try:
                 self.kHigh['E']=self.kE.copy()
@@ -165,7 +180,10 @@ class Estimator(object):
                 pass
 
         if B2DData is not None:
-            self.kHigh['B']=fft2(B2DData)
+            if alreadyFTed:
+                self.kHigh['B']=B2DData
+            else:
+                self.kHigh['B']=fft2(B2DData)
         else:
             try:
                 self.kHigh['B']=self.kB.copy()
@@ -222,21 +240,21 @@ class Estimator(object):
         fMask = self.fmaskK
 
 
-        HighMapStar = ifft2(self.kHigh[Y]*WY*fMask).real
-        kPx = fft2(ifft2(self.kGradx[X]*WXY).real*HighMapStar)
-        kPy = fft2(ifft2(self.kGrady[X]*WXY).real*HighMapStar)
-        rawKappa = ifft2(lx*kPx*fMask*1j + ly*kPy*fMask*1j).real
-        #rawKappa = ifft2(ly*kPx*fMask*1j + lx*kPy*fMask*1j).real
-        AL = self.AL[XY]*fMask
-        self.kappa = -ifft2(AL*fft2(rawKappa))
-
-
-        # HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY*fMask).conjugate()
-        # kPx = fft2(ifft2(self.kGradx[X]*WXY*phaseY)*HighMapStar)
-        # kPy = fft2(ifft2(self.kGrady[X]*WXY*phaseY)*HighMapStar)
-        # rawKappa = ifft2(1.j*lx*kPx*fMask + 1.j*ly*kPy*fMask).real
+        # HighMapStar = ifft2(self.kHigh[Y]*WY*fMask).real
+        # kPx = fft2(ifft2(self.kGradx[X]*WXY).real*HighMapStar)
+        # kPy = fft2(ifft2(self.kGrady[X]*WXY).real*HighMapStar)
+        # rawKappa = ifft2(lx*kPx*fMask*1j + ly*kPy*fMask*1j).real
+        # #rawKappa = ifft2(ly*kPx*fMask*1j + lx*kPy*fMask*1j).real
         # AL = self.AL[XY]*fMask
         # self.kappa = -ifft2(AL*fft2(rawKappa))
+
+
+        HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY*fMask).conjugate()
+        kPx = fft2(ifft2(self.kGradx[X]*WXY*phaseY)*HighMapStar)
+        kPy = fft2(ifft2(self.kGrady[X]*WXY*phaseY)*HighMapStar)
+        rawKappa = ifft2(1.j*lx*kPx*fMask + 1.j*ly*kPy*fMask).real
+        AL = self.AL[XY]*fMask
+        self.kappa = -ifft2(AL*fft2(rawKappa))
 
         if self.doCurl:
             OmAL = self.OmAL[XY]*fMask

@@ -15,22 +15,26 @@ import sys
 # beamArcmin = 7.0
 # noiseT = 27.0
 # noiseP = 56.6
+# cmbellmin = 50
 # cmbellmax = 3000
+# kellmin = 50
 # kellmax = 2000
 
-beamArcmin = 1.4
-noiseT = 10.0
-noiseP = 14.4
-cmbellmin = 1000
-cmbellmax = 3000
-kellmin = 80
-kellmax = 2100
+# beamArcmin = 1.4
+# noiseT = 10.0
+# noiseP = 14.4
+# cmbellmin = 1000
+# cmbellmax = 3000
+# kellmin = 80
+# kellmax = 2100
 
-# beamArcmin = 0.
-# noiseT = 0.
-# noiseP = 0.
-# cmbellmax = 8000
-# kellmax = 8000
+beamArcmin = 0.
+noiseT = 0.
+noiseP = 0.
+cmbellmin = 100
+kellmin = 100
+cmbellmax = 6000
+kellmax = 3000
 
 TCMB = 2.7255e6
 
@@ -71,13 +75,13 @@ qest = Estimator(templateMap,
                  fmaskKappa=fMaskK,
                  doCurl=False,
                  TOnly=True,
-                 halo=False,
-                 gradCut=None,verbose=True)
+                 halo=True,
+                 gradCut=10000,verbose=True)
 
 
 
 # CHECK THAT NORM MATCHES HU/OK
-data2d = qest.AL['TT']
+data2d = qest.N.Nlkk #AL['TT']
 modLMap = qest.N.modLMap
 bin_edges = np.arange(2,kellmax,10)
 centers, Nlbinned = binInAnnuli(data2d, modLMap, bin_edges)

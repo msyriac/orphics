@@ -112,6 +112,10 @@ class healpixFromCat(object):
     def _name(self,suffix,cutName):
         return "hp_"+suffix+"_"+cutName
 
+    def getMap(self,suffix,cutName):
+        return self.hp[self._name(suffix,cutName)]
+
+
     def addCut(self,cutName):
         
         self._cutName = cutName

@@ -353,7 +353,7 @@ long getPixIndexEquatorial(const long nside, double ra_degree, double dec_degree
   long pix1, pix;
 
   pix1 = getPixIndexGalactic(nside, ra_degree, dec_degree);
-  pix = RotateIndexGtoC(nside,pix1);
+  pix = RotateIndexCtoG(nside,pix1);
 
   /* long pix; */
   /* double *ra, *dec; */
@@ -460,4 +460,64 @@ void getRaDec(const long nside, const long pixInd, double *raDeg, double *decDeg
 
 
   return;
+}
+
+
+
+int RotateIndexCtoG(const long nside, const long pixInd)
+{
+
+
+  double l , b  ;
+
+
+
+
+  double colat_rad;
+  double *theta = &colat_rad;
+
+  double long_rad;
+  double *phi = &long_rad;
+
+
+  long pix;
+  long *ipring = &pix;
+
+  pix2ang_ring(nside, pixInd, theta, phi);
+
+
+
+  // convert to degrees
+  l = raddeg(long_rad);
+  //b =  raddeg(colat_rad);
+  b =  raddeg(M_PI/2.0 - colat_rad);
+
+
+  double *raOut, *decOut ;
+  raOut = &l;
+  decOut = &b;
+
+  // convert to l,b
+  gal2fk5(raOut,decOut) ;
+
+
+  double thetaPass, phiPass;
+
+  thetaPass = M_PI/2.0 - degrad(*decOut);
+  phiPass = degrad(*raOut);
+
+
+  // convert to healpix ring index
+  ang2pix_ring(nside, thetaPass, phiPass, ipring);
+
+  /* printf("%d,", pixInd); */
+  /* printf("%d,", pix); */
+  /* printf("%.2f,", b); */
+  /* printf("%.2f\n", l); */
+
+
+
+
+
+  return pix;
 }

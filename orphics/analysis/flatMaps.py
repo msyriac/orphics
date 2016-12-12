@@ -155,3 +155,18 @@ def initializeCosineWindow(templateLiteMap,lenApod=30,pad=0):
     win.data[:,Nx-pad:Nx]=0
 
     return(win.data)
+
+
+def deconvolveBeam(data,modLMap,ell,beam,returnFTOnly = False):
+
+
+    beamTemplate =  makeTemplate(ell,beam,modLMap)
+
+    kMap = fft2(data)
+
+    kMap[:,:] = (kMap[:,:] / beamTemplate[:,:])
+    if returnFTOnly:
+        return kMap
+    else:
+        return ifft2(kMap).real
+

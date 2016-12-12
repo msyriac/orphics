@@ -544,10 +544,12 @@ class QuadNorm(object):
         NL = np.nan_to_num(lmap**2. * (lmap + 1.)**2. / 4. / ALinv)
         NL[np.where(np.logical_or(lmap >= self.bigell, lmap == 0.))] = 0.
 
-        retval = NL.real * self.template.pixScaleX*self.template.pixScaleY
+        retval = np.nan_to_num(NL.real * self.template.pixScaleX*self.template.pixScaleY  )
+
+        self.Nlkk = retval
 
         
-        return retval
+        return np.nan_to_num(retval * 2. / lmap/(lmap+1.))
         
         
                   
