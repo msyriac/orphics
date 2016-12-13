@@ -12,7 +12,13 @@ from orphics.tools.stats import binInAnnuli
 import sys
 
 from scipy.interpolate import interp1d
-from scipy.fftpack import fft2,ifft2,fftshift,ifftshift,fftfreq
+#from scipy.fftpack import fft2,ifft2,fftshift,ifftshift,fftfreq
+from scipy.fftpack import fftshift,ifftshift,fftfreq
+from pyfftw.interfaces.scipy_fftpack import fft2
+from pyfftw.interfaces.scipy_fftpack import ifft2
+
+import pyfftw
+pyfftw.interfaces.cache.enable()
 
 import fftTools as ft
 import orphics.tools.stats as stats
@@ -20,7 +26,9 @@ import orphics.tools.stats as stats
 
 simRoot = "/astro/astronfs01/workarea/msyriac/cmbSims/"
 
-lensedPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_T_beam_0.fits"
+lensedTPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_T_beam_0.fits"
+lensedQPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_Q_beam_0.fits"
+lensedUPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_U_beam_0.fits"
 kappaPath = lambda x: simRoot + "phiMaps_" + str(x).zfill(5) + "/kappaMap_0.fits"
 beamPath = simRoot + "beam_0.txt"
 
@@ -57,31 +65,33 @@ avg3 = 0.
 for i in range(N):
     print i
 
-    lensedLm = lm.liteMapFromFits(lensedPath(i))
+    lensedTLm = lm.liteMapFromFits(lensedTPath(i))
+    lensedQLm = lm.liteMapFromFits(lensedQPath(i))
+    lensedULm = lm.liteMapFromFits(lensedUPath(i))
     kappaLm = lm.liteMapFromFits(kappaPath(i))
 
     if i==0:
-        lxMap,lyMap,modLMap,thetaMap,lx,ly = fmaps.getFTAttributesFromLiteMap(lensedLm)
+        lxMap,lyMap,modLMap,thetaMap,lx,ly = fmaps.getFTAttributesFromLiteMap(lensedTLm)
         beamTemplate = fmaps.makeTemplate(l,beamells,modLMap)
         fMaskCMB = fmaps.fourierMask(lx,ly,modLMap,lmin=cmbellmin,lmax=cmbellmax)
         fMask = fmaps.fourierMask(lx,ly,modLMap,lmin=kellmin,lmax=kellmax)
 
         
 
-    TData = fft2(lensedLm.data.copy().astype(float)/TCMB)    
+    TData = fft2(lensedTLm.data.copy().astype(float)/TCMB)    
     TData[:,:] = (TData[:,:] / beamTemplate[:,:])
     noise = TData.copy()*0.
 
     if i==0:
         pl = Plotter()
-        pl.plot2d(lensedLm.data)
+        pl.plot2d(lensedTLm.data)
         pl.done("tests/output/withBeam.png")
         pl = Plotter()
         pl.plot2d(ifft2(TData*fMaskCMB).real)
         pl.done("tests/output/withoutBeam.png")
 
 
-        qest = Estimator(lensedLm,
+        qest = Estimator(lensedTLm,
                          theory,
                          theorySpectraForNorm=None,
                          noiseX2dTEB=[noise,noise,noise],
@@ -107,7 +117,7 @@ for i in range(N):
         pl.done("tests/output/kappa.png")
 
 
-    reconLm = lensedLm.copy()
+    reconLm = lensedTLm.copy()
     reconLm.data[:,:] = kappa[:,:]
 
     print "crossing with input"

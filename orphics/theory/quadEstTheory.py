@@ -2,8 +2,13 @@ import numpy as np
 import orphics.analysis.flatMaps as fmaps 
 import fftTools
 
-from scipy.fftpack import fft2,ifft2,fftshift,ifftshift,fftfreq
+#from scipy.fftpack import fft2,ifft2,fftshift,ifftshift,fftfreq
 #from numpy.fft import fft2,ifft2,fftshift,ifftshift,fftfreq
+
+from scipy.fftpack import fftshift,ifftshift,fftfreq
+from pyfftw.interfaces.scipy_fftpack import fft2
+from pyfftw.interfaces.scipy_fftpack import ifft2
+
 
 class QuadNorm(object):
 

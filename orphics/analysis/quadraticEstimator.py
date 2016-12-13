@@ -6,10 +6,13 @@ import orphics.analysis.flatMaps as fmaps
 This module relies heavily on FFTs, so the keywords
 fft2 and ifft2 are reserved for the chosen implementation.
 '''
-from scipy.fftpack import fft2,ifft2,fftshift,ifftshift,fftfreq
+#from scipy.fftpack import fft2,ifft2,fftshift,ifftshift,fftfreq
 #from numpy.fft import fft2,ifft2,fftshift,ifftshift,fftfreq
+from scipy.fftpack import fftshift,ifftshift,fftfreq
+from pyfftw.interfaces.scipy_fftpack import fft2
+from pyfftw.interfaces.scipy_fftpack import ifft2
 
-
+import time
 
 
 
@@ -126,11 +129,7 @@ class Estimator(object):
 
         lx = self.N.lxMap
         ly = self.N.lyMap
-        #ly = self.N.lxMap
-        #lx = self.N.lyMap
-        #lx = self.N.lx
-        #ly = self.N.ly.reshape((self.N.template.Ny,1))
-        
+
         if alreadyFTed:
             self.kT = T2DData
         else:
@@ -201,35 +200,6 @@ class Estimator(object):
 
         lx = self.N.lxMap
         ly = self.N.lyMap
-        #ly = self.N.lxMap
-        #lx = self.N.lyMap
-
-
-        # import sys
-        # from orphics.tools.output import Plotter
-        # X = lx
-        # pl = Plotter()
-        # pl.plot2d(fftshift(X))
-        # #pl.plot2d(np.log10(fftshift(X)))
-        # pl.done("lx.png")
-        # X = ly
-        # pl = Plotter()
-        # pl.plot2d(fftshift(X))
-        # #pl.plot2d(np.log10(fftshift(X)))
-        # pl.done("ly.png")
-        # from orphics.tools.stats import binInAnnuli
-        # bin_edges = np.arange(2,8000,10)
-        # centers, Nlbinned = binInAnnuli(X, self.N.modLMap, bin_edges)
-        # pl = Plotter()
-        # pl.add(centers,Nlbinned)
-        # pl.done("debug.png")
-        #sys.exit()
-
-
-
-
-        #lx = self.N.lx
-        #ly = self.N.ly.reshape((self.N.template.Ny,1))
 
         if Y in ['E','B']:
             phaseY = self.phaseY
@@ -239,15 +209,7 @@ class Estimator(object):
 
         fMask = self.fmaskK
 
-
-        # HighMapStar = ifft2(self.kHigh[Y]*WY*fMask).real
-        # kPx = fft2(ifft2(self.kGradx[X]*WXY).real*HighMapStar)
-        # kPy = fft2(ifft2(self.kGrady[X]*WXY).real*HighMapStar)
-        # rawKappa = ifft2(lx*kPx*fMask*1j + ly*kPy*fMask*1j).real
-        # #rawKappa = ifft2(ly*kPx*fMask*1j + lx*kPy*fMask*1j).real
-        # AL = self.AL[XY]*fMask
-        # self.kappa = -ifft2(AL*fft2(rawKappa))
-
+        startTime = time.time()
 
         HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY*fMask).conjugate()
         kPx = fft2(ifft2(self.kGradx[X]*WXY*phaseY)*HighMapStar)
@@ -256,27 +218,16 @@ class Estimator(object):
         AL = self.AL[XY]*fMask
         self.kappa = -ifft2(AL*fft2(rawKappa))
 
+
+        elapTime = time.time() - startTime
+        if self.verbose: print "Time for core kappa was ", elapTime ," seconds."
+
         if self.doCurl:
             OmAL = self.OmAL[XY]*fMask
             rawCurl = ifft2(1.j*lx*kPy - 1.j*ly*kPx).real
             self.curl = -ifft2(OmAL*fft2(rawCurl))
             return self.kappa, self.curl
 
-
-        # import sys
-        # from orphics.tools.output import Plotter
-        # X = WY
-        # pl = Plotter()
-        # #pl.plot2d(X)
-        # pl.plot2d(np.log10(fftshift(X)))
-        # pl.done("debug2d.png")
-        # from orphics.tools.stats import binInAnnuli
-        # bin_edges = np.arange(2,8000,10)
-        # centers, Nlbinned = binInAnnuli(X, self.N.modLMap, bin_edges)
-        # pl = Plotter()
-        # pl.add(centers,Nlbinned)
-        # pl.done("debug.png")
-        # #sys.exit()
 
 
             
