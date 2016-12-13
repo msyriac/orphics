@@ -72,7 +72,7 @@ class Estimator(object):
         self.AL = {}
         if doCurl: self.OmAL = {}
 
-        self.N = QuadNorm(templateLiteMap,gradCut=gradCut)
+        self.N = QuadNorm(templateLiteMap,gradCut=gradCut,verbose=verbose)
         if fmaskKappa is None:
             ellMinK = 80
             ellMaxK = 3000
@@ -206,12 +206,14 @@ class Estimator(object):
         else:
             phaseY = 1.
 
+        phaseB = (int(Y=='B')*1.j)+(int(Y!='B'))
+        print XY, phaseB
 
         fMask = self.fmaskK
 
-        startTime = time.time()
+        if self.verbose: startTime = time.time()
 
-        HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY*fMask).conjugate()
+        HighMapStar = ifft2(self.kHigh[Y]*WY*phaseY*fMask*phaseB).conjugate()
         kPx = fft2(ifft2(self.kGradx[X]*WXY*phaseY)*HighMapStar)
         kPy = fft2(ifft2(self.kGrady[X]*WXY*phaseY)*HighMapStar)
         rawKappa = ifft2(1.j*lx*kPx*fMask + 1.j*ly*kPy*fMask).real
@@ -219,8 +221,9 @@ class Estimator(object):
         self.kappa = -ifft2(AL*fft2(rawKappa))
 
 
-        elapTime = time.time() - startTime
-        if self.verbose: print "Time for core kappa was ", elapTime ," seconds."
+        if self.verbose:
+            elapTime = time.time() - startTime
+            print "Time for core kappa was ", elapTime ," seconds."
 
         if self.doCurl:
             OmAL = self.OmAL[XY]*fMask

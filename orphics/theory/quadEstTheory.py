@@ -9,11 +9,12 @@ from scipy.fftpack import fftshift,ifftshift,fftfreq
 from pyfftw.interfaces.scipy_fftpack import fft2
 from pyfftw.interfaces.scipy_fftpack import ifft2
 
+import time
 
 class QuadNorm(object):
 
     
-    def __init__(self,templateMap,gradCut=None):
+    def __init__(self,templateMap,gradCut=None,verbose=False):
         '''
 
         templateFT is a template liteMap FFT object
@@ -21,6 +22,7 @@ class QuadNorm(object):
 
     
         '''
+        self.verbose = verbose
 
         self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly = fmaps.getFTAttributesFromLiteMap(templateMap)
         self.lxHatMap = np.nan_to_num(self.lxMap / self.modLMap)
@@ -42,6 +44,8 @@ class QuadNorm(object):
         self.gradCut = self.bigell
         if gradCut is not None: self.gradCut = gradCut
 
+
+        self.Nlkk = {}
 
         self.template = templateMap.copy()
         
@@ -80,15 +84,15 @@ class QuadNorm(object):
         fftshift state as power2d.powerMap
         '''
         # check if fourier mask is int!
-        self.noiseXX = power2dData.copy()
+        self.noiseXX2d[XX] = power2dData.copy()
         if fourierMask is not None:
-            self.noiseXX[fourierMask==0] = np.inf
+            self.noiseXX2d[XX][fourierMask==0] = np.inf
             self.fMaskXX[XX] = fourierMask
         else:
             if XX=='TT':
-                self.noiseXX[self.defaultMaskT==0] = np.inf
+                self.noiseXX2d[XX][self.defaultMaskT==0] = np.inf
             else:
-                self.noiseXX[self.defaultMaskP==0] = np.inf
+                self.noiseXX2d[XX][self.defaultMaskP==0] = np.inf
 
     def addNoise2DPowerYY(self,YY,power2dData,fourierMask=None):
         '''
@@ -100,15 +104,15 @@ class QuadNorm(object):
         fftshift state as power2d.powerMap
         '''
         # check if fourier mask is int!
-        self.noiseYY = power2dData.copy()
+        self.noiseYY2d[YY] = power2dData.copy()
         if fourierMask is not None:
-            self.noiseYY[fourierMask==0] = np.inf
+            self.noiseYY2d[YY][fourierMask==0] = np.inf
             self.fMaskYY[YY] = fourierMask
         else:
             if YY=='TT':
-                self.noiseYY[self.defaultMaskT==0] = np.inf
+                self.noiseYY2d[YY][self.defaultMaskT==0] = np.inf
             else:
-                self.noiseYY[self.defaultMaskP==0] = np.inf
+                self.noiseYY2d[YY][self.defaultMaskP==0] = np.inf
         
     def addClkk2DPower(self,power2dData):
         '''
@@ -122,7 +126,9 @@ class QuadNorm(object):
     def WXY(self,XY):
         X,Y = XY
         if Y=='B': Y='E'
-        W = np.nan_to_num(self.uClFid2d[X+Y].copy()/(self.lClFid2d[X+X].copy()+self.noiseXX.copy()))*self.fMaskXX[X+X]
+        gradClXY = X+Y
+        if XY=='ET': gradClXY = 'TE'
+        W = np.nan_to_num(self.uClFid2d[gradClXY].copy()/(self.lClFid2d[X+X].copy()+self.noiseXX2d[X+X].copy()))*self.fMaskXX[X+X]
         W[self.modLMap>self.gradCut]=0.
         if X=='T':
             W[np.where(self.modLMap >= self.lmax_T)] = 0.
@@ -134,7 +140,8 @@ class QuadNorm(object):
         
 
     def WY(self,YY):
-        W = np.nan_to_num(1./(self.lClFid2d[YY].copy()+self.noiseYY.copy()))*self.fMaskYY[YY]
+        assert YY[0]==YY[1]
+        W = np.nan_to_num(1./(self.lClFid2d[YY].copy()+self.noiseYY2d[YY].copy()))*self.fMaskYY[YY]
         W[np.where(self.modLMap >= self.lmax_T)] = 0.
         if YY[0]=='T':
             W[np.where(self.modLMap >= self.lmax_T)] = 0.
@@ -148,6 +155,10 @@ class QuadNorm(object):
     def getNlkk2d(self,XY,halo=False):
         lx,ly = self.lxMap,self.lyMap
         lmap = self.modLMap
+
+        if self.verbose: 
+            print "Calculating norm for ", XY
+            startTime = time.time()
 
             
         h=0.
@@ -178,18 +189,9 @@ class QuadNorm(object):
 
             else:
 
-                # IMPLEMENT GRADCUT IN NORM FOR LSS
 
                 preG = self.WY('TT') #np.nan_to_num(1./cltotTTArrY)
 
-                # from orphics.tools.output import Plotter
-                # import sys
-                # X = preG
-                # pl = Plotter()
-                # pl.plot2d(np.log10(fftshift(X)))
-                # pl.done("debug.png")
-                # sys.exit()
-                
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr*np.nan_to_num(1./cltotTTArrX)/2.            
@@ -204,15 +206,7 @@ class QuadNorm(object):
 
         elif XY == 'EE':
 
-            #check noise array!!!
-
             clunlenEEArrNow = self.uClNow2d['EE'].copy()
-            clunlenEEArr = self.uClFid2d['EE'].copy()
-            
-            cltotEEArr =self.lClFid2d['EE'].copy() + self.noiseArray[1]
-            cltotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
-
-            
 
 
             sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
@@ -232,18 +226,17 @@ class QuadNorm(object):
                                 
             if halo:
             
-                
-                clunlenEEArrNow[np.where(lmap >= self.gradCut)] = 0.
+
                 
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
-                        preF = trigfact*ell1*ell2*clunlenEEArrNow*clunlenEEArr*np.nan_to_num(1./cltotEEArr)
-                        preG = trigfact*np.nan_to_num(1./cltotEEArr)
+                        preF = trigfact*ell1*ell2*clunlenEEArrNow*self.WXY('EE')
+                        preG = trigfact*self.WY('EE')
                         allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                         
-                        preFX = trigfact*ell1*clunlenEEArrNow*np.nan_to_num(1./cltotEEArr)
-                        preGX = trigfact*ell2*clunlenEEArr*np.nan_to_num(1./cltotEEArr)
+                        preFX = trigfact*ell1*clunlenEEArrNow*self.WY('EE')
+                        preGX = trigfact*ell2*self.WXY('EE')
 
                         allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
@@ -267,65 +260,41 @@ class QuadNorm(object):
 
         elif XY == 'EB':
 
-            ########
-            ## EB ##
-            ########
-            #check noise array!!!
 
             clunlenEEArrNow = self.uClNow2d['EE'].copy()
-            clunlenEEArr = self.uClFid2d['EE'].copy()
-            cltotEEArr =self.lClFid2d['EE'].copy() + self.noiseArray[1]
-            cltotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
-
             clunlenBBArrNow = self.uClNow2d['BB'].copy()
-            clunlenBBArr = self.uClFid2d['BB'].copy()
-            cltotBBArr =self.lClFid2d['BB'].copy() + self.noiseArray[2]
-            cltotBBArr[np.where(lmap >= self.lmax_P)] = np.inf
 
 
-            if True:
-                if halo: clunlenEEArrNow[np.where(lmap >= self.gradCut)] = 0.
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
 
-                sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
-                cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
 
-                lx = self.lxMap
-                ly = self.lyMap
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
 
-                termsF = []
-                termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
-                termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
-                termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
 
-                termsG = []
-                termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
-                termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
-                termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
-            
-                lxhat = self.lxHatMap
-                lyhat = self.lyHatMap
-            
-                for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
-                    preF = ellsq*clunlenEEArrNow*clunlenEEArr*np.nan_to_num(1./cltotEEArr)
-                    preG = np.nan_to_num(1./cltotBBArr)
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
 
-                    for termF,termG in zip(termsF,termsG):
-                        allTerms += [ellsq*fft2(ifft2(termF(preF,lxhat,lyhat))*ifft2(termG(preG,lxhat,lyhat)))]
-                    
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = ellsq*clunlenEEArrNow*self.WXY('EB')
+                preG = self.WY('BB')
+
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft2(ifft2(termF(preF,lxhat,lyhat))*ifft2(termG(preG,lxhat,lyhat)))]
+
 
         elif XY=='ET':
 
             clunlenTEArrNow = self.uClNow2d['TE'].copy()
-            clunlenTEArr = self.uClFid2d['TE'].copy()
-
-            cltotTTArr =self.lClFid2d['TT'].copy() + self.noiseArray[0]
-            cltotTTArr[np.where(lmap >= self.lmax_T)] = np.inf
-            cltotEEArr =self.lClFid2d['EE'].copy() + self.noiseArray[1]
-            cltotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
-
-
-
-
 
             if halo:
                 sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
@@ -334,7 +303,6 @@ class QuadNorm(object):
                 lx = self.lxMap
                 ly = self.lyMap
 
-                clunlenTEArrNow[np.where(lmap >= self.gradCut)] = 0.
 
                 lxhat = self.lxHatMap
                 lyhat = self.lyHatMap
@@ -344,17 +312,18 @@ class QuadNorm(object):
                 cosf = cos2phi(lxhat,lyhat)
                 cossqf = cosf**2.
 
-                clunlenTEArrNow[np.where(lmap >= self.gradCut)] = 0.
+
+
 
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-                    preF = ell1*ell2*clunlenTEArrNow*clunlenTEArr*np.nan_to_num(1./cltotEEArr)
-                    preG = np.nan_to_num(1./cltotTTArr)
+                    preF = ell1*ell2*clunlenTEArrNow*self.WXY('ET')
+                    preG = self.WY('TT')
                     allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
 
-                        preFX = trigfact*ell1*clunlenTEArrNow*np.nan_to_num(1./cltotEEArr)
-                        preGX = trigfact*ell2*clunlenTEArr*np.nan_to_num(1./cltotTTArr)
+                        preFX = trigfact*ell1*clunlenTEArrNow*self.WY('TT')
+                        preGX = trigfact*ell2*self.WXY('ET')
 
                         allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
@@ -400,17 +369,6 @@ class QuadNorm(object):
         elif XY=='TE':
 
             clunlenTEArrNow = self.uClNow2d['TE'].copy()
-            clunlenTEArr = self.uClFid2d['TE'].copy()
-
-            cltotTTArr =self.lClFid2d['TT'].copy() + self.noiseArray[0] #
-            cltotTTArr[np.where(lmap >= self.lmax_T)] = np.inf
-            cltotEEArr =self.lClFid2d['EE'].copy() + self.noiseArray[1] #
-            cltotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
-
-
-
-
-
 
             if halo:
             
@@ -429,18 +387,17 @@ class QuadNorm(object):
                 cosf = cos2phi(lxhat,lyhat)
                 cossqf = cosf**2.
                 
-                clunlenTEArrNow[np.where(lmap >= self.gradCut)] = 0.
                 
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
-                        preF = trigfact*ell1*ell2*clunlenTEArrNow*clunlenTEArr*np.nan_to_num(1./cltotTTArr)
-                        preG = trigfact*np.nan_to_num(1./cltotEEArr)
+                        preF = trigfact*ell1*ell2*clunlenTEArrNow*self.WXY('TE')
+                        preG = trigfact*self.WY('EE')
                         allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
                         
-                        preFX = trigfact*ell1*clunlenTEArrNow*np.nan_to_num(1./cltotTTArr)
-                        preGX = trigfact*ell2*clunlenTEArr*np.nan_to_num(1./cltotEEArr)
+                        preFX = trigfact*ell1*clunlenTEArrNow*self.WY('EE')
+                        preGX = trigfact*ell2*self.WXY('TE')
 
                         allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
@@ -468,16 +425,16 @@ class QuadNorm(object):
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
-                        preF = trigfact*ell1*ell2*clunlenTEArrNow*clunlenTEArr*np.nan_to_num(1./cltotTTArr)
-                        preG = trigfact*np.nan_to_num(1./cltotEEArr)
+                        preF = trigfact*ell1*ell2*clunlenTEArrNow* self.WXY('TE')#clunlenTEArr*np.nan_to_num(1./cltotTTArr)
+                        preG = trigfact*self.WY('EE')#np.nan_to_num(1./cltotEEArr)
                         allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
-                    preF = np.nan_to_num(1./cltotTTArr)
-                    preG = ell1*ell2*clunlenTEArrNow*clunlenTEArr*np.nan_to_num(1./cltotEEArr)
+                    preF = self.WY('TT')#np.nan_to_num(1./cltotTTArr)
+                    preG = ell1*ell2*clunlenTEArrNow* self.WXY('ET') #*clunlenTEArr*np.nan_to_num(1./cltotEEArr)
                     allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
                         
-                        preFX = trigfact*ell1*clunlenTEArrNow*np.nan_to_num(1./cltotTTArr)
-                        preGX = trigfact*ell2*clunlenTEArr*np.nan_to_num(1./cltotEEArr)
+                        preFX = trigfact*ell1*clunlenTEArrNow*self.WY('TT')#np.nan_to_num(1./cltotTTArr)
+                        preGX = trigfact*ell2* self.WXY('ET')#*clunlenTEArr*np.nan_to_num(1./cltotEEArr)
 
                         allTerms += [2.*ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
@@ -486,29 +443,9 @@ class QuadNorm(object):
 
         elif XY == 'TB':
 
-            ########
-            ## TB ##
-            ########
-            #check noise array!!!
-        
             clunlenTEArrNow = self.uClNow2d['TE'].copy()
-            clunlenTEArr = self.uClFid2d['TE'].copy()
 
 
-            clunlenTTArrNow = self.uClNow2d['TT'].copy()
-            clunlenTTArr = self.uClFid2d['TT'].copy()
-            cltotTTArr =self.lClFid2d['TT'].copy() + self.noiseArray[0]
-            cltotTTArr[np.where(lmap >= self.lmax_T)] = np.inf
-
-            clunlenBBArrNow = self.uClNow2d['BB'].copy()
-            clunlenBBArr = self.uClFid2d['BB'].copy()
-            cltotBBArr =self.lClFid2d['BB'].copy() + self.noiseArray[2]
-            cltotBBArr[np.where(lmap >= self.lmax_P)] = np.inf
-
-
-
-            if halo: clunlenTEArrNow[np.where(lmap >= self.gradCut)] = 0.
-            
                 
             sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
             cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
@@ -530,8 +467,8 @@ class QuadNorm(object):
             lyhat = self.lyHatMap
             
             for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
-                preF = ellsq*clunlenTEArrNow*clunlenTEArr*np.nan_to_num(1./cltotTTArr)
-                preG = np.nan_to_num(1./cltotBBArr)
+                preF = ellsq*clunlenTEArrNow*self.WXY('TB')
+                preG = self.WY('BB')
 
                 for termF,termG in zip(termsF,termsG):
                     allTerms += [ellsq*fft2(ifft2(termF(preF,lxhat,lyhat))*ifft2(termG(preG,lxhat,lyhat)))]
@@ -551,7 +488,12 @@ class QuadNorm(object):
 
         retval = np.nan_to_num(NL.real * self.template.pixScaleX*self.template.pixScaleY  )
 
-        self.Nlkk = retval
+        self.Nlkk[XY] = retval.copy()
+
+
+        if self.verbose:
+            elapTime = time.time() - startTime
+            print "Time for norm was ", elapTime ," seconds."
 
         
         return np.nan_to_num(retval * 2. / lmap/(lmap+1.))

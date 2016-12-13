@@ -36,11 +36,17 @@ kellmin = 100
 cmbellmax = 6000
 kellmax = 3000
 
+#polCombList = ['TT']
+#polCombList = ['TT','TE']
+#polCombList = ['TT','EE','ET','EB','TB']
+#colorList = ['red','blue','green','orange','purple']
+polCombList = ['TT','EE','ET','TE','EB','TB']
+colorList = ['red','blue','green','cyan','orange','purple']
+
 TCMB = 2.7255e6
 
 cambRoot = "/astro/u/msyriac/repos/cmb-lensing-projections/data/TheorySpectra/ell28k_highacc"
 dataFile = "/astro/astronfs01/workarea/msyriac/act/FinalScinetPaper/preparedMap_T_6.fits"
-huFile = '/astro/u/msyriac/repos/cmb-lensing-projections/data/NoiseCurvesKK/hu_tt.csv'
 
 print "Loading map..."
 templateMap = lm.liteMapFromFits(dataFile)
@@ -74,34 +80,44 @@ qest = Estimator(templateMap,
                  fmaskY2dTEB=[fMask]*3,
                  fmaskKappa=fMaskK,
                  doCurl=False,
-                 TOnly=True,
+                 TOnly=len(polCombList)==1,
                  halo=True,
                  gradCut=10000,verbose=True)
 
 
-
-# CHECK THAT NORM MATCHES HU/OK
-data2d = qest.N.Nlkk #AL['TT']
 modLMap = qest.N.modLMap
 bin_edges = np.arange(2,kellmax,10)
-centers, Nlbinned = binInAnnuli(data2d, modLMap, bin_edges)
-
-huell,hunl = np.loadtxt(huFile,unpack=True,delimiter=',')
-
 pl = Plotter(scaleY='log',scaleX='log')
 pl.add(ellkk,4.*Clkk/2./np.pi)
-pl.add(centers,4.*Nlbinned/2./np.pi)#,ls="none",marker="o")
-pl.add(huell,hunl,ls='--')#,ls="none",marker="o")
-pl.done("testbin.png")
+
+# CHECK THAT NORM MATCHES HU/OK
+for polComb,col in zip(polCombList,colorList):
+    data2d = qest.N.Nlkk[polComb]
+    centers, Nlbinned = binInAnnuli(data2d, modLMap, bin_edges)
+    print Nlbinned[50]
+
+    try:
+        huFile = '/astro/u/msyriac/repos/cmb-lensing-projections/data/NoiseCurvesKK/hu_'+polComb.lower()+'.csv'
+        huell,hunl = np.loadtxt(huFile,unpack=True,delimiter=',')
+    except:
+        huFile = '/astro/u/msyriac/repos/cmb-lensing-projections/data/NoiseCurvesKK/hu_'+polComb[::-1].lower()+'.csv'
+        huell,hunl = np.loadtxt(huFile,unpack=True,delimiter=',')
+
+
+    pl.add(centers,4.*Nlbinned/2./np.pi,color=col)
+    pl.add(huell,hunl,ls='--',color=col)
+
+
+pl.done("tests/output/testbin.png")
 #sys.exit()
 
-print "Reconstructing..."
-qest.updateTEB_X(templateMap.data.astype(float)/2.7255e6)
-qest.updateTEB_Y()
+# print "Reconstructing..."
+# qest.updateTEB_X(templateMap.data.astype(float)/2.7255e6)
+# qest.updateTEB_Y()
 
-kappa = qest.getKappa('TT')
+# kappa = qest.getKappa(polComb)
 
-pl = Plotter()
-pl.plot2d(kappa.real)
-pl.done("kappa.png")
+# pl = Plotter()
+# pl.plot2d(kappa.real)
+# pl.done("kappa.png")
 
