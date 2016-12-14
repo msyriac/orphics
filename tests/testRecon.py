@@ -36,8 +36,8 @@ rank = comm.Get_rank()
 numcores = comm.Get_size()    
 
 
-loadFile = "/astro/astronfs01/workarea/msyriac/act/normDec14_0.fits" #None
-saveFile = None #"/astro/astronfs01/workarea/msyriac/act/normDec14_0.fits"
+loadFile = None #"/astro/astronfs01/workarea/msyriac/act/normDec14_0_trimmed.pkl" #None
+saveFile = None #"/astro/astronfs01/workarea/msyriac/act/normDec14_0_trimmed_ellmin500.pkl"
 
 
 polCombList = ['TT','EE','EB','TB','TE','ET']
@@ -45,18 +45,18 @@ colorList = ['red','blue','green','orange','purple','brown']
 
 simRoot = "/astro/astronfs01/workarea/msyriac/cmbSims/"
 
-lensedTPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_T_beam_0.fits"
-lensedQPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_Q_beam_0.fits"
-lensedUPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_U_beam_0.fits"
-kappaPath = lambda x: simRoot + "phiMaps_" + str(x).zfill(5) + "/kappaMap_0.fits"
+lensedTPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_T_beam_0_down.fits"
+lensedQPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_Q_beam_0_down.fits"
+lensedUPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_U_beam_0_down.fits"
+kappaPath = lambda x: simRoot + "phiMaps_" + str(x).zfill(5) + "/kappaMap_0_down.fits"
 beamPath = simRoot + "beam_0.txt"
 
 l,beamells = np.loadtxt(beamPath,unpack=True,usecols=[0,1])
 
-cmbellmin = 100
-cmbellmax = 3000
-kellmin = 100
-kellmax = 3000
+cmbellmin = 500
+cmbellmax = 2000
+kellmin = 500
+kellmax = 2000
 
 #cambRoot = "/astro/u/msyriac/repos/cmb-lensing-projections/data/TheorySpectra/ell28k_highacc"
 cambRoot = "/astro/u/msyriac/repos/actpLens/data/non-linear"
@@ -138,6 +138,7 @@ for k,i in enumerate(myIs):
                          gradCut=10000,verbose=True,
                          loadPickledNormAndFilters=loadFile,
                          savePickledNormAndFilters=saveFile)
+
 
 
 
@@ -239,6 +240,7 @@ else:
     pl.done("tests/output/power.png")
 
 
+    # cross compare to power of input (percent)
     pl = Plotter()
 
     for polComb,col in zip(polCombList,colorList):
@@ -250,23 +252,57 @@ else:
 
     pl.legendOn(labsize=10,loc='upper right')
     pl._ax.set_xlim(kellmin,kellmax)
+    pl._ax.axhline(y=0.,ls="--",color='black',alpha=0.5)
+    pl._ax.set_ylim(-30.,30.)
     pl.done("tests/output/percent.png")
 
-
+    # cross compare to power of input (bias)
     pl = Plotter()
 
     for polComb,col in zip(polCombList,colorList):
         cross = statsCross[polComb]['mean']
         crossErr = statsCross[polComb]['errmean']
-        recon = statsRecon[polComb]['mean']
         
         pl.add(centers,(cross-avgInputPower)/crossErr,label=polComb,color=col)
 
 
     pl.legendOn(labsize=10,loc='upper right')
     pl._ax.set_xlim(kellmin,kellmax)
+    pl._ax.axhline(y=0.,ls="--",color='black',alpha=0.5)
     pl.done("tests/output/bias.png")
 
+
+    # cross compared to theory (percent)
+    pl = Plotter()
+
+    for polComb,col in zip(polCombList,colorList):
+        cross = statsCross[polComb]['mean']
+        fp = interp1d(centers,cross,fill_value='extrapolate')
+        
+        pl.add(ellkk,(fp(ellkk)-Clkk)*100./Clkk,lw=2,label=polComb,color=col)
+
+
+    pl.legendOn(labsize=10,loc='upper right')
+    pl._ax.set_xlim(kellmin,kellmax)
+    pl._ax.axhline(y=0.,ls="--",color='black',alpha=0.5)
+    pl._ax.set_ylim(-30.,30.)
+    pl.done("tests/output/percentTheory.png")
+
+
+
+    # input power compared to theory (percent)
+    pl = Plotter()
+
+    fp = interp1d(centers,avgInputPower,fill_value='extrapolate')
+        
+    pl.add(ellkk,(fp(ellkk)-Clkk)*100./Clkk,lw=2)
+
+
+    pl.legendOn(labsize=10,loc='upper right')
+    pl._ax.set_xlim(kellmin,kellmax)
+    pl._ax.axhline(y=0.,ls="--",color='black',alpha=0.5)
+    pl._ax.set_ylim(-30.,30.)
+    pl.done("tests/output/percentTheoryInput.png")
 
 
 
