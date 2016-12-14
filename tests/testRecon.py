@@ -27,21 +27,17 @@ import fftPol as fpol
 
 from orphics.tools.stats import getStats
 
+from mpi4py import MPI
 
-def TQUtoFourierTEB(T_map,Q_map,U_map,modLMap,angLMap):
+print "Done with imports..."
 
-    fT=fft2(T_map)    
-    fQ=fft2(Q_map)        
-    fU=fft2(U_map)
-    
-    fE=fT.copy()
-    fB=fT.copy()
-    fE[:]=fQ[:]*np.cos(2.*angLMap)+fU*np.sin(2.*angLMap)
-    fB[:]=-fQ[:]*np.sin(2.*angLMap)+fU*np.cos(2.*angLMap)
-    
-    return(fT, fE, fB)
-    
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+numcores = comm.Get_size()    
 
+
+loadFile = "/astro/astronfs01/workarea/msyriac/act/normDec14_0.fits" #None
+saveFile = None #"/astro/astronfs01/workarea/msyriac/act/normDec14_0.fits"
 
 
 polCombList = ['TT','EE','EB','TB','TE','ET']
@@ -56,10 +52,6 @@ kappaPath = lambda x: simRoot + "phiMaps_" + str(x).zfill(5) + "/kappaMap_0.fits
 beamPath = simRoot + "beam_0.txt"
 
 l,beamells = np.loadtxt(beamPath,unpack=True,usecols=[0,1])
-pl = Plotter()
-pl.add(l,beamells)
-pl._ax.set_xlim(0.,max(l))
-pl.done("tests/output/beam.png")
 
 cmbellmin = 100
 cmbellmax = 3000
@@ -75,25 +67,32 @@ theory = loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=
 ellkk = np.arange(2,9000,1)
 Clkk = theory.gCl("kk",ellkk)    
 
-N = 10
+N = int(sys.argv[1])
 
-avg = {}
-avg2 = {}
+assert N%numcores==0
+
+num_each = (N / numcores)
+startIndex = rank*num_each
+endIndex = startIndex + num_each
+myIs = range(N)[startIndex:endIndex]
+
+    
+
+listCrossPower = {}
+listReconPower = {}
 
 
 
 for polComb in polCombList:
-    avg[polComb] = []
-    avg2[polComb] = 0.
+    listCrossPower[polComb] = []
+    listReconPower[polComb] = []
 
 
 
-avg3 = 0.
 
 bin_edges = np.arange(kellmin,kellmax,150)
 
-
-for i in range(N):
+for k,i in enumerate(myIs):
     print i
 
     lensedTLm = lm.liteMapFromFits(lensedTPath(i))
@@ -103,9 +102,7 @@ for i in range(N):
 
     
 
-    if i==0:
-        lensedTLm.info()
-        print lensedTLm.data.shape
+    if k==0:
         lxMap,lyMap,modLMap,thetaMap,lx,ly = fmaps.getFTAttributesFromLiteMap(lensedTLm)
         beamTemplate = fmaps.makeTemplate(l,beamells,modLMap)
         fMaskCMB = fmaps.fourierMask(lx,ly,modLMap,lmin=cmbellmin,lmax=cmbellmax)
@@ -114,7 +111,7 @@ for i in range(N):
 
 
 
-    fot,foe,fob = TQUtoFourierTEB(lensedTLm.data.copy().astype(float)/TCMB,lensedQLm.data.copy().astype(float)/TCMB,lensedULm.data.copy().astype(float)/TCMB,modLMap,thetaMap)
+    fot,foe,fob = fmaps.TQUtoFourierTEB(lensedTLm.data.copy().astype(float)/TCMB,lensedQLm.data.copy().astype(float)/TCMB,lensedULm.data.copy().astype(float)/TCMB,modLMap,thetaMap)
 
         
 
@@ -124,13 +121,7 @@ for i in range(N):
     noise = fot.copy()*0.
     
 
-    if i==0:
-        # pl = Plotter()
-        # pl.plot2d(lensedTLm.data)
-        # pl.done("tests/output/withBeam.png")
-        # pl = Plotter()
-        # pl.plot2d(ifft2(TData*fMaskCMB).real)
-        # pl.done("tests/output/withoutBeam.png")
+    if k==0:
 
 
         qest = Estimator(lensedTLm,
@@ -144,78 +135,138 @@ for i in range(N):
                          doCurl=False,
                          TOnly=False,
                          halo=True,
-                         gradCut=10000,verbose=True)
+                         gradCut=10000,verbose=True,
+                         loadPickledNormAndFilters=loadFile,
+                         savePickledNormAndFilters=saveFile)
+
 
 
     print "Reconstructing" , i , " ..."
-    #qest.updateTEB_X(TData,alreadyFTed=True)
-    #qest.updateTEB_Y(alreadyFTed=True)
     qest.updateTEB_X(fot,foe,fob,alreadyFTed=True)
     qest.updateTEB_Y(alreadyFTed=True)
 
-    pl = Plotter(scaleY='log')
-    pl.add(ellkk,Clkk,color='black',lw=2)
-    for polComb,col in zip(polCombList,colorList):
+    for j, polComb in enumerate(polCombList):
 
         kappa = qest.getKappa(polComb)
 
-        # if i==0:
-        #     pl = Plotter()
-        #     pl.plot2d(kappa.real)
-        #     pl.done("tests/output/kappa.png")
-
 
         reconLm = lensedTLm.copy()
-        reconLm.data[:,:] = kappa[:,:]
+        reconLm.data[:,:] = kappa[:,:].real
 
         print "crossing with input"
 
 
         p2d = ft.powerFromLiteMap(kappaLm,reconLm,applySlepianTaper=False)
         centers, means = stats.binInAnnuli(p2d.powerMap, p2d.modLMap, bin_edges)
-        avg[polComb].append( means )
-        statsNow = getStats(avg[polComb])
-        plotAvg = statsNow['mean'].copy()
-        plotAvg[plotAvg<=0.] = np.nan
+        listCrossPower[polComb].append( means )
 
-
-        try:
-            pl.addErr(centers,plotAvg,yerr=statsNow['errmean'],ls="none",marker="o",markersize=8,label="recon x input "+polComb,color=col,mew=2,elinewidth=2)
-        except:
-            pass
-
-
-        # print np.nanmean(avg[polComb]/(i+1))
 
 
         p2d = ft.powerFromLiteMap(reconLm,applySlepianTaper=False)
         centers, means = stats.binInAnnuli(p2d.powerMap, p2d.modLMap, bin_edges)
-        avg2[polComb] = avg2[polComb] + means
-        plotAvg = avg2[polComb].copy()
-        plotAvg[plotAvg<=0.] = np.nan
-        fp = interp1d(centers,plotAvg,fill_value='extrapolate')
-        pl.add(ellkk,(fp(ellkk)/(i+1))-Clkk,color=col,lw=2) # ,label="recon x recon - clkk "+polComb
-
-
-        # centers, Nlbinned = binInAnnuli(qest.N.Nlkk, modLMap, bin_edges)
-        # pl.add(centers,Nlbinned,ls="--",lw=2,color="orange")
-
+        listReconPower[polComb].append( means )
 
     p2d = ft.powerFromLiteMap(kappaLm,applySlepianTaper=False)
     centers, means = stats.binInAnnuli(p2d.powerMap, p2d.modLMap, bin_edges)
-    avg3 = avg3 + means
-    plotAvg = avg3.copy()
-    plotAvg[plotAvg<=0.] = np.nan
-    pl.add(centers,plotAvg/(i+1),color='cyan',lw=3) # ,label = "input x input"
 
-    # print np.nanmean(avg3/(i+1.))
+    if k==0: totInputPower = (means.copy()*0.).astype(dtype=np.float64)
+
+    totInputPower = totInputPower + means
 
 
+
+
+if rank!=0:
+    for i,polComb in enumerate(polCombList):
+        data = np.array(listCrossPower[polComb],dtype=np.float64)
+        comm.Send(data.copy(), dest=0, tag=i)
+        data = np.array(listReconPower[polComb],dtype=np.float64)
+        comm.Send(data.copy(), dest=0, tag=i+80)
+        
+    comm.Send(totInputPower.copy(), dest=0, tag=800)
+        
+else:
+
+    totAllInputPower = totInputPower
+    rcvTotInputPower = totAllInputPower.copy()*0.
+
+
+    listAllCrossPower = {}
+    listAllReconPower = {}
+
+    for polComb in polCombList:
+        listAllCrossPower[polComb] = np.array(listCrossPower[polComb],dtype=np.float64)
+        listAllReconPower[polComb] = np.array(listReconPower[polComb],dtype=np.float64)
+    
+
+    rcvInputPowerMat = listAllReconPower['TT'].copy()*0.
+
+
+
+    for job in range(1,numcores):
+        comm.Recv(rcvTotInputPower, source=job, tag=800)
+        totAllInputPower = totAllInputPower + rcvTotInputPower
+
+        for i,polComb in enumerate(polCombList):
+            comm.Recv(rcvInputPowerMat, source=job, tag=i)
+            listAllCrossPower[polComb] = np.vstack((listAllCrossPower[polComb],rcvInputPowerMat))
+            comm.Recv(rcvInputPowerMat, source=job, tag=i+80)
+            listAllReconPower[polComb] = np.vstack((listAllReconPower[polComb],rcvInputPowerMat))
+        
+
+    statsCross = {}
+    statsRecon = {}
+
+    pl = Plotter(scaleY='log')
+    pl.add(ellkk,Clkk,color='black',lw=2)
+    
+
+    for polComb,col in zip(polCombList,colorList):
+        statsCross[polComb] = getStats(listAllCrossPower[polComb])
+        pl.addErr(centers,statsCross[polComb]['mean'],yerr=statsCross[polComb]['errmean'],ls="none",marker="o",markersize=8,label="recon x input "+polComb,color=col,mew=2,elinewidth=2)
+
+        statsRecon[polComb] = getStats(listAllReconPower[polComb])
+        fp = interp1d(centers,statsRecon[polComb]['mean'],fill_value='extrapolate')
+        pl.add(ellkk,(fp(ellkk))-Clkk,color=col,lw=2)
+
+
+    avgInputPower  = totAllInputPower/N
+    pl.add(centers,avgInputPower,color='cyan',lw=3) # ,label = "input x input"
 
 
     pl.legendOn(labsize=10,loc='lower left')
     pl._ax.set_xlim(kellmin,kellmax)
     pl.done("tests/output/power.png")
+
+
+    pl = Plotter()
+
+    for polComb,col in zip(polCombList,colorList):
+        cross = statsCross[polComb]['mean']
+        
+        
+        pl.add(centers,(cross-avgInputPower)*100./avgInputPower,label=polComb,color=col,lw=2)
+
+
+    pl.legendOn(labsize=10,loc='upper right')
+    pl._ax.set_xlim(kellmin,kellmax)
+    pl.done("tests/output/percent.png")
+
+
+    pl = Plotter()
+
+    for polComb,col in zip(polCombList,colorList):
+        cross = statsCross[polComb]['mean']
+        crossErr = statsCross[polComb]['errmean']
+        recon = statsRecon[polComb]['mean']
+        
+        pl.add(centers,(cross-avgInputPower)/crossErr,label=polComb,color=col)
+
+
+    pl.legendOn(labsize=10,loc='upper right')
+    pl._ax.set_xlim(kellmin,kellmax)
+    pl.done("tests/output/bias.png")
+
 
 
 

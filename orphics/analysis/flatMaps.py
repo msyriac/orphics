@@ -1,5 +1,20 @@
 import numpy as np
+from pyfftw.interfaces.scipy_fftpack import fft2
+from pyfftw.interfaces.scipy_fftpack import ifft2
 
+
+def TQUtoFourierTEB(T_map,Q_map,U_map,modLMap,angLMap):
+
+    fT=fft2(T_map)    
+    fQ=fft2(Q_map)        
+    fU=fft2(U_map)
+    
+    fE=fT.copy()
+    fB=fT.copy()
+    fE[:]=fQ[:]*np.cos(2.*angLMap)+fU*np.sin(2.*angLMap)
+    fB[:]=-fQ[:]*np.sin(2.*angLMap)+fU*np.cos(2.*angLMap)
+    
+    return(fT, fE, fB)
 
 
 def getFTAttributesFromLiteMap(templateLM):

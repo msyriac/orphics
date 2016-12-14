@@ -46,9 +46,19 @@ class QuadNorm(object):
 
 
         self.Nlkk = {}
-
-        self.template = templateMap.copy()
+        self.pixScaleX = templateMap.pixScaleX
+        self.pixScaleY = templateMap.pixScaleY
         
+
+    def __getstate__(self):
+        # Clkk2d is not pickled yet!!!
+        return self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY
+
+
+
+    def __setstate__(self, state):
+        self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY = state
+
 
     def addUnlensedFilter2DPower(self,XY,power2dData):
         '''
@@ -174,13 +184,15 @@ class QuadNorm(object):
 
             if halo:
             
-                
-                preG = self.WY('TT')
+                WXY = self.WXY('TT')
+                WY = self.WY('TT')
+
+                preG = WY
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-                    preF = ell1*ell2*clunlenTTArrNow*self.WXY('TT')
-                    preFX = ell1*self.WXY('TT')
-                    preGX = ell2*clunlenTTArrNow*self.WY('TT')
+                    preF = ell1*ell2*clunlenTTArrNow*WXY
+                    preFX = ell1*WXY
+                    preGX = ell2*clunlenTTArrNow*WY
                     
 
                     calc = ell1*ell2*fft2(ifft2(preF)*ifft2(preG)+ifft2(preFX)*ifft2(preGX))
@@ -227,16 +239,17 @@ class QuadNorm(object):
             if halo:
             
 
-                
+                WXY = self.WXY('EE')
+                WY = self.WY('EE')
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
-                        preF = trigfact*ell1*ell2*clunlenEEArrNow*self.WXY('EE')
-                        preG = trigfact*self.WY('EE')
+                        preF = trigfact*ell1*ell2*clunlenEEArrNow*WXY
+                        preG = trigfact*WY
                         allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                         
-                        preFX = trigfact*ell1*clunlenEEArrNow*self.WY('EE')
-                        preGX = trigfact*ell2*self.WXY('EE')
+                        preFX = trigfact*ell1*clunlenEEArrNow*WY
+                        preGX = trigfact*ell2*WXY
 
                         allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
@@ -313,17 +326,18 @@ class QuadNorm(object):
                 cossqf = cosf**2.
 
 
-
+                WXY = self.WXY('ET')
+                WY = self.WY('TT')
 
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-                    preF = ell1*ell2*clunlenTEArrNow*self.WXY('ET')
-                    preG = self.WY('TT')
+                    preF = ell1*ell2*clunlenTEArrNow*WXY
+                    preG = WY
                     allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
 
-                        preFX = trigfact*ell1*clunlenTEArrNow*self.WY('TT')
-                        preGX = trigfact*ell2*self.WXY('ET')
+                        preFX = trigfact*ell1*clunlenTEArrNow*WY
+                        preGX = trigfact*ell2*WXY
 
                         allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
@@ -387,17 +401,19 @@ class QuadNorm(object):
                 cosf = cos2phi(lxhat,lyhat)
                 cossqf = cosf**2.
                 
-                
+                WXY = self.WXY('TE')
+                WY = self.WY('EE')
+
                 rfact = 2.**0.25
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
-                        preF = trigfact*ell1*ell2*clunlenTEArrNow*self.WXY('TE')
-                        preG = trigfact*self.WY('EE')
+                        preF = trigfact*ell1*ell2*clunlenTEArrNow*WXY
+                        preG = trigfact*WY
                         allTerms += [ell1*ell2*fft2(ifft2(preF)*ifft2(preG))]
                     for trigfact in [cosf,sinf]:
                         
-                        preFX = trigfact*ell1*clunlenTEArrNow*self.WY('EE')
-                        preGX = trigfact*ell2*self.WXY('TE')
+                        preFX = trigfact*ell1*clunlenTEArrNow*WY
+                        preGX = trigfact*ell2*WXY
 
                         allTerms += [ell1*ell2*fft2(ifft2(preFX)*ifft2(preGX))]
 
@@ -486,7 +502,7 @@ class QuadNorm(object):
         NL = np.nan_to_num(lmap**2. * (lmap + 1.)**2. / 4. / ALinv)
         NL[np.where(np.logical_or(lmap >= self.bigell, lmap == 0.))] = 0.
 
-        retval = np.nan_to_num(NL.real * self.template.pixScaleX*self.template.pixScaleY  )
+        retval = np.nan_to_num(NL.real * self.pixScaleX*self.pixScaleY  )
 
         self.Nlkk[XY] = retval.copy()
 

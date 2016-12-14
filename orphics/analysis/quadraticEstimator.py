@@ -13,7 +13,7 @@ from pyfftw.interfaces.scipy_fftpack import fft2
 from pyfftw.interfaces.scipy_fftpack import ifft2
 
 import time
-
+import cPickle as pickle
 
 
 
@@ -42,7 +42,9 @@ class Estimator(object):
                  TOnly=False,
                  halo=False,
                  gradCut=None,
-                 verbose=False):
+                 verbose=False,
+                 loadPickledNormAndFilters=None,
+                 savePickledNormAndFilters=None):
 
         '''
         All the 2d fourier objects below are pre-fftshifting. They must be of the same dimension.
@@ -63,14 +65,27 @@ class Estimator(object):
 
         '''
 
-        self.doCurl = doCurl
-        self.halo = halo
         self.verbose = verbose
 
         # initialize norm and filters
 
+        self.doCurl = doCurl
+
+
+
+        if loadPickledNormAndFilters is not None:
+            if verbose: print "Unpickling..."
+            with open(loadPickledNormAndFilters,'rb') as fin:
+                self.N,self.AL,self.OmAL,self.fmaskK,self.phaseY = pickle.load(fin)
+            return
+
+
+
+        self.halo = halo
         self.AL = {}
         if doCurl: self.OmAL = {}
+
+
 
         self.N = QuadNorm(templateLiteMap,gradCut=gradCut,verbose=verbose)
         if fmaskKappa is None:
@@ -109,10 +124,18 @@ class Estimator(object):
             self.N.addNoise2DPowerYY(noise,noiseY2dTEB[i],fmaskY2dTEB[i])
 
 
-
+        self.OmAL = None
         for est in estList:
             self.AL[est] = self.N.getNlkk2d(est,halo=halo)
             if doCurl: self.OmAL[est] = self.N.getCurlNlkk2d(est,halo=halo)
+
+
+        if savePickledNormAndFilters is not None:
+
+            if verbose: print "Pickling..."
+            with open(savePickledNormAndFilters,'wb') as fout:
+                pickle.dump((self.N,self.AL,self.OmAL,self.fmaskK,self.phaseY),fout)
+
 
         
 

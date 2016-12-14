@@ -11,6 +11,10 @@ from orphics.tools.output import Plotter
 from orphics.tools.stats import binInAnnuli
 import sys
 
+
+loadFile = None
+saveFile = None
+
 # hu reproduce
 # beamArcmin = 7.0
 # noiseT = 27.0
@@ -20,21 +24,21 @@ import sys
 # kellmin = 50
 # kellmax = 2000
 
-# beamArcmin = 1.4
-# noiseT = 10.0
-# noiseP = 14.4
-# cmbellmin = 1000
-# cmbellmax = 3000
-# kellmin = 80
-# kellmax = 2100
+beamArcmin = 1.4
+noiseT = 16.0
+noiseP = np.sqrt(2)*16.
+cmbellmin = 1000
+cmbellmax = 3000
+kellmin = 80
+kellmax = 2100
 
-beamArcmin = 0.
-noiseT = 0.
-noiseP = 0.
-cmbellmin = 100
-kellmin = 100
-cmbellmax = 6000
-kellmax = 3000
+# beamArcmin = 0.
+# noiseT = 0.
+# noiseP = 0.
+# cmbellmin = 100
+# kellmin = 100
+# cmbellmax = 6000
+# kellmax = 3000
 
 #polCombList = ['TT']
 #polCombList = ['TT','TE']
@@ -87,7 +91,10 @@ qest = Estimator(templateMap,
                  doCurl=False,
                  TOnly=len(polCombList)==1,
                  halo=True,
-                 gradCut=10000,verbose=True)
+                 gradCut=10000,
+                 verbose=True,                 
+                 loadPickledNormAndFilters=loadFile,
+                 savePickledNormAndFilters=saveFile)
 
 
 modLMap = qest.N.modLMap
