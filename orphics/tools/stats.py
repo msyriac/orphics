@@ -24,11 +24,11 @@ def getStats(listOfBinned):
     
     
     arr = np.asarray(listOfBinned)
-    N = arr.shape[0] # CHECK!!!
+    N = arr.shape[0]  
     ret = {}
     ret['mean'] = np.nanmean(arr,axis=0)
     ret['cov'] = np.cov(arr.transpose())
-    ret['covmean'] = ret['covmat'] / N
+    ret['covmean'] = ret['cov'] / N
     ret['err'] = np.sqrt(np.diagonal(ret['cov']))
     ret['errmean'] = ret['err'] / np.sqrt(N)
 

@@ -50,6 +50,11 @@ dataFile = "/astro/astronfs01/workarea/msyriac/act/FinalScinetPaper/preparedMap_
 
 print "Loading map..."
 templateMap = lm.liteMapFromFits(dataFile)
+
+
+templateMap.info()
+print templateMap.data.shape
+
 pl = Plotter()
 pl.plot2d(templateMap.data)
 pl.done("map.png")

@@ -25,6 +25,8 @@ import orphics.tools.stats as stats
 
 import fftPol as fpol
 
+from orphics.tools.stats import getStats
+
 
 def TQUtoFourierTEB(T_map,Q_map,U_map,modLMap,angLMap):
 
@@ -79,8 +81,9 @@ avg = {}
 avg2 = {}
 
 
+
 for polComb in polCombList:
-    avg[polComb] = 0.
+    avg[polComb] = []
     avg2[polComb] = 0.
 
 
@@ -98,7 +101,11 @@ for i in range(N):
     lensedULm = lm.liteMapFromFits(lensedUPath(i))
     kappaLm = lm.liteMapFromFits(kappaPath(i))
 
+    
+
     if i==0:
+        lensedTLm.info()
+        print lensedTLm.data.shape
         lxMap,lyMap,modLMap,thetaMap,lx,ly = fmaps.getFTAttributesFromLiteMap(lensedTLm)
         beamTemplate = fmaps.makeTemplate(l,beamells,modLMap)
         fMaskCMB = fmaps.fourierMask(lx,ly,modLMap,lmin=cmbellmin,lmax=cmbellmax)
@@ -166,13 +173,14 @@ for i in range(N):
 
         p2d = ft.powerFromLiteMap(kappaLm,reconLm,applySlepianTaper=False)
         centers, means = stats.binInAnnuli(p2d.powerMap, p2d.modLMap, bin_edges)
-        avg[polComb] = avg[polComb] + means
-        plotAvg = avg[polComb].copy()
+        avg[polComb].append( means )
+        statsNow = getStats(avg[polComb])
+        plotAvg = statsNow['mean'].copy()
         plotAvg[plotAvg<=0.] = np.nan
 
 
         try:
-            pl.add(centers,plotAvg/(i+1),ls="none",marker="o",markersize=8,label="recon x input "+polComb,color=col)
+            pl.addErr(centers,plotAvg,yerr=statsNow['errmean'],ls="none",marker="o",markersize=8,label="recon x input "+polComb,color=col,mew=2,elinewidth=2)
         except:
             pass
 

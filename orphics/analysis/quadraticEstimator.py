@@ -207,8 +207,7 @@ class Estimator(object):
             phaseY = 1.
 
         phaseB = (int(Y=='B')*1.j)+(int(Y!='B'))
-        print XY, phaseB
-
+        
         fMask = self.fmaskK
 
         if self.verbose: startTime = time.time()
