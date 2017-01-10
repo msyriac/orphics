@@ -178,8 +178,6 @@ class QuadNorm(object):
         if XY == 'TT':
             
             clunlenTTArrNow = self.uClNow2d['TT'].copy()
-            clunlenTTArrNow[np.where(lmap >= self.lmax_T)] = 0.
-
                 
 
             if halo:
@@ -297,9 +295,11 @@ class QuadNorm(object):
             lxhat = self.lxHatMap
             lyhat = self.lyHatMap
 
+            WXY = self.WXY('EB')
+            WY = self.WY('BB')
             for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
-                preF = ellsq*clunlenEEArrNow*self.WXY('EB')
-                preG = self.WY('BB')
+                preF = ellsq*clunlenEEArrNow*WXY
+                preG = WY
 
                 for termF,termG in zip(termsF,termsG):
                     allTerms += [ellsq*fft2(ifft2(termF(preF,lxhat,lyhat))*ifft2(termG(preG,lxhat,lyhat)))]
@@ -482,9 +482,11 @@ class QuadNorm(object):
             lxhat = self.lxHatMap
             lyhat = self.lyHatMap
             
+            WXY = self.WXY('TB')
+            WY = self.WY('BB')
             for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
-                preF = ellsq*clunlenTEArrNow*self.WXY('TB')
-                preG = self.WY('BB')
+                preF = ellsq*clunlenTEArrNow*WXY
+                preG = WY
 
                 for termF,termG in zip(termsF,termsG):
                     allTerms += [ellsq*fft2(ifft2(termF(preF,lxhat,lyhat))*ifft2(termG(preG,lxhat,lyhat)))]

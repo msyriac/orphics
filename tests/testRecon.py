@@ -38,31 +38,47 @@ numcores = comm.Get_size()
 
 loadFile = None #"/astro/astronfs01/workarea/msyriac/act/normDec14_0_trimmed.pkl" #None
 saveFile = None #"/astro/astronfs01/workarea/msyriac/act/normDec14_0_trimmed_ellmin500.pkl"
+trimmed = False
+cutout = False
 
 
-polCombList = ['TT','EE','EB','TB','TE','ET']
+
+
+suffix = ""
+if trimmed: suffix = "_down"
+
+periodic = "periodic_"
+cutoutStr = ""
+if cutout: 
+    periodic = ""
+    cutoutStr = "_cutout"
+
+#polCombList = ['TT','EE','EB','TB','TE','ET']
+polCombList = ['TT']
 colorList = ['red','blue','green','orange','purple','brown']
 
 simRoot = "/astro/astronfs01/workarea/msyriac/cmbSims/"
 
-lensedTPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_T_beam_0_down.fits"
-lensedQPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_Q_beam_0_down.fits"
-lensedUPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_periodic_lensedCMB_U_beam_0_down.fits"
-kappaPath = lambda x: simRoot + "phiMaps_" + str(x).zfill(5) + "/kappaMap_0_down.fits"
+lensedTPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_"+periodic+"lensedCMB_T_beam"+cutoutStr+"_0"+suffix+".fits"
+lensedQPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_"+periodic+"lensedCMB_Q_beam"+cutoutStr+"_0"+suffix+".fits"
+lensedUPath = lambda x: simRoot + "lensedCMBMaps_" + str(x).zfill(5) + "/order5_"+periodic+"lensedCMB_U_beam"+cutoutStr+"_0"+suffix+".fits"
+kappaPath = lambda x: simRoot + "phiMaps_" + str(x).zfill(5) + "/kappaMap"+cutoutStr+"_0"+suffix+".fits"
 beamPath = simRoot + "beam_0.txt"
 
 l,beamells = np.loadtxt(beamPath,unpack=True,usecols=[0,1])
 
-cmbellmin = 500
-cmbellmax = 2000
-kellmin = 500
-kellmax = 2000
+cmbellmin = 100
+cmbellmax = 3000
+kellmin = 100
+kellmax = 3000
 
 #cambRoot = "/astro/u/msyriac/repos/cmb-lensing-projections/data/TheorySpectra/ell28k_highacc"
 cambRoot = "/astro/u/msyriac/repos/actpLens/data/non-linear"
 
 TCMB = 2.7255e6
-theory = loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = TCMB,lpad=4000)
+#theory = loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = TCMB,lpad=4000)
+# !!!!!!!!!!!!!
+theory = loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=True,useTotal=False,TCMB = TCMB,lpad=(cmbellmax + 500))
 
 ellkk = np.arange(2,9000,1)
 Clkk = theory.gCl("kk",ellkk)    
@@ -90,7 +106,7 @@ for polComb in polCombList:
 
 
 
-bin_edges = np.arange(kellmin,kellmax,150)
+bin_edges = np.arange(kellmin,kellmax,80)
 
 for k,i in enumerate(myIs):
     print i
@@ -133,9 +149,9 @@ for k,i in enumerate(myIs):
                          fmaskY2dTEB=[fMaskCMB]*3,
                          fmaskKappa=fMask,
                          doCurl=False,
-                         TOnly=False,
+                         TOnly=(len(polCombList)==1),
                          halo=True,
-                         gradCut=10000,verbose=True,
+                         gradCut=cmbellmax,verbose=True,
                          loadPickledNormAndFilters=loadFile,
                          savePickledNormAndFilters=saveFile)
 
@@ -209,8 +225,10 @@ else:
         totAllInputPower = totAllInputPower + rcvTotInputPower
 
         for i,polComb in enumerate(polCombList):
+            print "Waiting for ", job ," ", polComb," cross"
             comm.Recv(rcvInputPowerMat, source=job, tag=i)
             listAllCrossPower[polComb] = np.vstack((listAllCrossPower[polComb],rcvInputPowerMat))
+            print "Waiting for ", job ," ", polComb," auto"
             comm.Recv(rcvInputPowerMat, source=job, tag=i+80)
             listAllReconPower[polComb] = np.vstack((listAllReconPower[polComb],rcvInputPowerMat))
         
@@ -253,7 +271,7 @@ else:
     pl.legendOn(labsize=10,loc='upper right')
     pl._ax.set_xlim(kellmin,kellmax)
     pl._ax.axhline(y=0.,ls="--",color='black',alpha=0.5)
-    pl._ax.set_ylim(-30.,30.)
+    pl._ax.set_ylim(-10.,5.)
     pl.done("tests/output/percent.png")
 
     # cross compare to power of input (bias)
@@ -285,7 +303,7 @@ else:
     pl.legendOn(labsize=10,loc='upper right')
     pl._ax.set_xlim(kellmin,kellmax)
     pl._ax.axhline(y=0.,ls="--",color='black',alpha=0.5)
-    pl._ax.set_ylim(-30.,30.)
+    pl._ax.set_ylim(-10.,5.)
     pl.done("tests/output/percentTheory.png")
 
 

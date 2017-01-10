@@ -201,7 +201,8 @@ class XCorrIntegrator(object):
                 retvals = self._lensWindow(self.kernels[tag],numzIntegral)
                 magcorrection = retvals*1.5*(self.omch2+self.ombh2+self.omnuh2)*100.*100.*(1.+self.zs)*self.chis*(5.*magbias-2.)/self.Hzs**2./self._cSpeedKmPerSec # this needs to be checked again
                 self.kernels[tag]['W'] += magcorrection
-                print "Lensing bias max percent correction in counts ", np.max(np.abs(np.nan_to_num(magcorrection *100./ self.kernels[tag]['W'])))
+                print "Lensing bias max percent correction in counts ", np.max((np.nan_to_num(magcorrection *100./ self.kernels[tag]['W'])))
+                print "Lensing bias min percent correction in counts ", np.min((np.nan_to_num(magcorrection *100./ self.kernels[tag]['W'])))
 
 
             
