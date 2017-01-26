@@ -9,7 +9,8 @@ from scipy.fftpack import fftshift,ifftshift,fftfreq
 from pyfftw.interfaces.scipy_fftpack import fft2
 from pyfftw.interfaces.scipy_fftpack import ifft2
 
-import time
+from orphics.tools.stats import timeit, bin2D
+#import time
 
 class QuadNorm(object):
 
@@ -168,7 +169,7 @@ class QuadNorm(object):
 
         if self.verbose: 
             print "Calculating norm for ", XY
-            startTime = time.time()
+            #startTime = time.time()
 
             
         h=0.
@@ -509,9 +510,9 @@ class QuadNorm(object):
         self.Nlkk[XY] = retval.copy()
 
 
-        if self.verbose:
-            elapTime = time.time() - startTime
-            print "Time for norm was ", elapTime ," seconds."
+        # if self.verbose:
+        #     elapTime = time.time() - startTime
+        #     print "Time for norm was ", elapTime ," seconds."
 
         
         return np.nan_to_num(retval * 2. / lmap/(lmap+1.))
@@ -588,3 +589,61 @@ class QuadNorm(object):
 
                 
     
+
+
+class NlGenerator(object):
+    def __init__(self,templateMap,theorySpectra,bin_edges,gradCut=None,TCMB=2.725e6):
+
+        self.N = QuadNorm(templateMap,gradCut=gradCut)
+        self.TCMB = TCMB
+
+        cmbList = ['TT','TE','EE','BB']
+        
+        
+        for cmb in cmbList:
+            uClFilt = theorySpectra.uCl(cmb,self.N.modLMap)
+            uClNorm = uClFilt
+            lClFilt = theorySpectra.lCl(cmb,self.N.modLMap)
+            self.N.addUnlensedFilter2DPower(cmb,uClFilt)
+            self.N.addLensedFilter2DPower(cmb,lClFilt)
+            self.N.addUnlensedNorm2DPower(cmb,uClNorm)
+
+        self.bin_edges = bin_edges
+
+        self.binner = bin2D(self.N.modLMap, bin_edges)
+
+
+    @timeit
+    def getNl(self,beamX,noiseTX,tellminX,tellmaxX,pellminX,pellmaxX,noisePX=None,beamY=None,noiseTY=None,noisePY=None,tellminY=None,tellmaxY=None,pellminY=None,pellmaxY=None,polComb='TT',delensTolerance=None,halo=True):
+
+        def setDefault(A,B):
+            if A is None: return B
+
+        beamY = setDefault(beamY,beamX)
+        noisePX = setDefault(noisePX,np.sqrt(2.)*noiseTX)
+        noiseTY = setDefault(noiseTY,noiseTX)
+        noisePY = setDefault(noisePY,np.sqrt(2.)*noiseTY)
+        tellminY = setDefault(tellminY,tellminX)
+        pellminY = setDefault(pellminY,pellminX)
+        tellmaxY = setDefault(tellmaxY,tellmaxX)
+        pellmaxY = setDefault(pellmaxY,pellmaxX)
+
+        nTX,nPX = fmaps.whiteNoise2D([noiseTX,noisePX],beamX,self.N.modLMap,TCMB=self.TCMB)
+        nTY,nPY = fmaps.whiteNoise2D([noiseTY,noisePY],beamY,self.N.modLMap,TCMB=self.TCMB)
+        fMaskTX = fmaps.fourierMask(self.N.lx,self.N.ly,self.N.modLMap,lmin=tellminX,lmax=tellmaxX)
+        fMaskTY = fmaps.fourierMask(self.N.lx,self.N.ly,self.N.modLMap,lmin=tellminY,lmax=tellmaxY)
+        fMaskPX = fmaps.fourierMask(self.N.lx,self.N.ly,self.N.modLMap,lmin=pellminX,lmax=pellmaxX)
+        fMaskPY = fmaps.fourierMask(self.N.lx,self.N.ly,self.N.modLMap,lmin=pellminY,lmax=pellmaxY)
+
+        nList = ['TT','EE','BB']
+
+        for i,noise in enumerate(nList):
+            self.N.addNoise2DPowerXX(noise,[nTX,nPX,nPX],[fMaskTX,fMaskPX,fMaskPX])
+            self.N.addNoise2DPowerYY(noise,[nTY,nPY,nPY],[fMaskTY,fMaskPY,fMaskPY])
+    
+
+        AL = self.N.getNlkk2d(polComb,halo=halo)
+        data2d = qest.N.Nlkk[polComb]
+
+        centers, Nlbinned = self.binner.bin(data2d)
+        return centers, Nlbinned

@@ -2,6 +2,14 @@ import numpy as np
 from pyfftw.interfaces.scipy_fftpack import fft2
 from pyfftw.interfaces.scipy_fftpack import ifft2
 
+def stepFunctionFilterLiteMap(map2d,modLMap,ell):
+
+    kmap = fft2(map2d.copy())
+    kmap[modLMap>ell]=0.
+    retMap = ifft2(kmap).real
+
+    return retMap
+
 
 def TQUtoFourierTEB(T_map,Q_map,U_map,modLMap,angLMap):
 
@@ -15,6 +23,36 @@ def TQUtoFourierTEB(T_map,Q_map,U_map,modLMap,angLMap):
     fB[:]=-fQ[:]*np.sin(2.*angLMap)+fU*np.cos(2.*angLMap)
     
     return(fT, fE, fB)
+
+
+def getRealAttributes(templateLM):
+    '''
+    Given a liteMap, return a coord
+    system centered on it and a map
+    of distances from center in
+    radians
+    '''
+
+        
+    Nx = templateLM.Nx
+    Ny = templateLM.Ny
+    pixScaleX = templateLM.pixScaleX 
+    pixScaleY = templateLM.pixScaleY
+    
+    
+    xx =  (np.arange(Nx)-Nx/2.+0.5)*pixScaleX
+    yy =  (np.arange(Ny)-Ny/2.+0.5)*pixScaleY
+    
+    ix = np.mod(np.arange(Nx*Ny),Nx)
+    iy = np.arange(Nx*Ny)/Nx
+    
+    modRMap = np.zeros([Ny,Nx])
+    modRMap[iy,ix] = np.sqrt(xx[ix]**2 + yy[iy]**2)
+    
+
+    xMap, yMap = np.meshgrid(xx, yy)  # is this the right order?
+
+    return xMap,yMap,modRMap,xx,yy
 
 
 def getFTAttributesFromLiteMap(templateLM):

@@ -2,6 +2,21 @@ from scipy.stats import norm,binned_statistic as binnedstat,chi2
 from scipy.optimize import curve_fit as cfit
 from orphics.tools.output import Plotter,printC
 import numpy as np
+import time
+
+
+def timeit(method):
+
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+
+        print '%r %2.2f sec' % \
+              (method.__name__,te-ts)
+        return result
+
+    return timed
 
 
 def getStats(listOfBinned):
@@ -118,11 +133,20 @@ def loadBinFile(binfile,delimiter='\t',returnBinner=True):
         return left,right,center
 
 
+class bin2D(object):
+    def __init__(self, modRMap, bin_edges):
+        self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
+        digitized = np.digitize(np.ndarray.flatten(modRMap), bin_edges,right=True)
+        self.bin_edges = bin_edges
+    def bin(self,data2d):
+        data = np.ndarray.flatten(data2d)
+        return self.centers,np.array([np.nanmean(data[digitized == i]) for i in range(1, len(self.bin_edges))])
+    
+
+
 def binInAnnuli(data2d, modRMap, bin_edges):
-    centers = (bin_edges[1:]+bin_edges[:-1])/2.
-    digitized = np.digitize(np.ndarray.flatten(modRMap), bin_edges,right=True)
-    data = np.ndarray.flatten(data2d)
-    return centers,np.array([np.nanmean(data[digitized == i]) for i in range(1, len(bin_edges))])
+    binner = bin2D(modRMap, bin_edges)
+    return binner.bin(data2d)
 
 
 
