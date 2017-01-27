@@ -133,3 +133,123 @@ pl.done("tests/output/testbin.png")
 # pl.plot2d(kappa.real)
 # pl.done("kappa.png")
 
+
+
+
+
+
+
+
+cambRoot = "data/ell28k_highacc"
+gradCut = None
+halo = True
+beam = 7.0
+noiseT = 27.0
+noiseP = 56.6
+tellmin = 2
+tellmax = 3000
+gradCut = 10000
+
+pellmin = 2
+pellmax = 3000
+
+deg = 10.
+px = 0.5
+arc = deg*60.
+
+bin_edges = np.arange(10,3000,10)
+
+theory = loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,lpad=9000)
+lmap = lm.makeEmptyCEATemplate(raSizeDeg=arc/60., decSizeDeg=arc/60.,pixScaleXarcmin=px,pixScaleYarcmin=px)
+print lmap.data.shape
+myNls = NlGenerator(lmap,theory,bin_edges,gradCut=gradCut)
+
+myNls.updateNoise(beam,noiseT,noiseP,tellmin,tellmax,pellmin,pellmax)
+
+#polCombList = ['TT','EE','ET','TE','EB','TB']
+#colorList = ['red','blue','green','cyan','orange','purple']
+polCombList = ['TT','EE','ET','EB','TB']
+colorList = ['red','blue','green','orange','purple']
+ellkk = np.arange(2,9000,1)
+Clkk = theory.gCl("kk",ellkk)    
+
+
+pl = Plotter(scaleY='log',scaleX='log')
+pl.add(ellkk,4.*Clkk/2./np.pi)
+
+# CHECK THAT NORM MATCHES HU/OK
+for polComb,col in zip(polCombList,colorList):
+    ls,Nls = myNls.getNl(polComb=polComb,halo=halo)
+    try:
+        huFile = 'data/hu_'+polComb.lower()+'.csv'
+        huell,hunl = np.loadtxt(huFile,unpack=True,delimiter=',')
+    except:
+        huFile = 'data/hu_'+polComb[::-1].lower()+'.csv'
+        huell,hunl = np.loadtxt(huFile,unpack=True,delimiter=',')
+
+
+    pl.add(ls,4.*Nls/2./np.pi,color=col)
+    pl.add(huell,hunl,ls='--',color=col)
+
+
+pl.done("output/hucomp.png")
+
+
+
+
+
+sys.exit()
+
+
+
+cambRoot = "data/ell28k_highacc"
+gradCut = None
+halo = True
+beamY = 1.5
+noiseT = 1.0
+noiseP = 1.4
+tellmin = 1000
+tellmax = 3000
+gradCut = 10000
+
+pellmin = 1000
+pellmax = 5000
+
+deg = 10.
+px = 0.5
+arc = deg*60.
+
+bin_edges = np.arange(10,3000,10)
+
+theory = loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,lpad=9000)
+lmap = lm.makeEmptyCEATemplate(raSizeDeg=arc/60., decSizeDeg=arc/60.,pixScaleXarcmin=px,pixScaleYarcmin=px)
+print lmap.data.shape
+myNls = NlGenerator(lmap,theory,bin_edges,gradCut=gradCut)
+
+
+#polCombList = ['TT','EE','ET','TE','EB','TB']
+colorList = ['red','blue','green','cyan','orange','purple']
+polCombList = ['EB']
+#colorList = ['red']
+ellkk = np.arange(2,9000,1)
+Clkk = theory.gCl("kk",ellkk)    
+
+
+pl = Plotter(scaleY='log',scaleX='log')
+pl.add(ellkk,4.*Clkk/2./np.pi)
+
+for beamX in np.arange(1.5,10.,1.0):
+    myNls.updateNoise(beamX,noiseT,noiseP,tellmin,tellmax,pellmin,pellmax,beamY=beamY)
+    for polComb,col in zip(polCombList,colorList):
+        ls,Nls = myNls.getNl(polComb=polComb,halo=halo)
+
+        pl.add(ls,4.*Nls/2./np.pi,label=str(beamX))#polComb)#,color=col
+
+pl.legendOn(loc='lower left',labsize=10)
+pl.done("output/hucomp.png")
+
+
+
+
+
+sys.exit()

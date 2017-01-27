@@ -137,7 +137,7 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6):
 
     Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
     ell = np.arange(0.,modLMap.max()+1.,1.)
-    filt = np.exp(ell*ell*Sigma*Sigma)
+    filt = np.exp(-ell*ell*Sigma*Sigma)
 
 
     retList = []
@@ -145,7 +145,7 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6):
 
     for noiseLevel in noiseLevels:
         noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  # add instrument noise to noise power map
-        retList.append(filt2d.copy()*noiseForFilter)
+        retList.append(noiseForFilter/filt2d.copy())
 
     return retList
 
