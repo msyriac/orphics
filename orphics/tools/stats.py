@@ -50,15 +50,21 @@ def getStats(listOfBinned):
     ret['mean'] = np.nanmean(arr,axis=0)
     ret['cov'] = np.cov(arr.transpose())
     ret['covmean'] = ret['cov'] / N
-    ret['err'] = np.sqrt(np.diagonal(ret['cov']))
+    if arr.shape[1]==1:
+        ret['err'] = np.sqrt(ret['cov'])
+    else:
+        ret['err'] = np.sqrt(np.diagonal(ret['cov']))
     ret['errmean'] = ret['err'] / np.sqrt(N)
 
     # correlation matrix
-    d = np.diag(ret['cov'])
-    stddev = np.sqrt(d)
-    ret['corr'] = ret['cov'] / stddev[:, None]
-    ret['corr'] = ret['cov'] / stddev[None, :]
-    np.clip(ret['corr'], -1, 1, out=ret['corr'])
+    if arr.shape[1]==1:
+        ret['corr'] = 1.
+    else:
+        d = np.diag(ret['cov'])
+        stddev = np.sqrt(d)
+        ret['corr'] = ret['cov'] / stddev[:, None]
+        ret['corr'] = ret['cov'] / stddev[None, :]
+        np.clip(ret['corr'], -1, 1, out=ret['corr'])
     
 
         

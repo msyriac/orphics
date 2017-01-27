@@ -8,8 +8,8 @@ from orphics.tools.output import Plotter
 cambRoot = "data/ell28k_highacc"
 halo = True
 beamY = 1.5
-noiseT = 1.0
-noiseP = 1.414
+noiseT = 6.0
+noiseP = np.sqrt(2.)*noiseT
 tellmin = 200
 tellmax = 3000
 gradCut = 10000
@@ -37,11 +37,11 @@ Clkk = theory.gCl("kk",ellkk)
 pl = Plotter(scaleY='log',scaleX='log')
 pl.add(ellkk,4.*Clkk/2./np.pi)
 
-for beamY in np.arange(1.5,10.,1.0):
+for beamX in np.arange(1.5,10.,1.0):
     myNls.updateNoise(beamX,noiseT,noiseP,tellmin,tellmax,pellmin,pellmax,beamY=beamY)
     ls,Nls = myNls.getNl(polComb=polComb,halo=halo)
 
     
-    pl.add(ls,4.*Nls/2./np.pi,label=str(beamY))
+    pl.add(ls,4.*Nls/2./np.pi,label=str(beamX))
 pl.legendOn(loc='lower left',labsize=10)
-pl.done("output/nl.png")
+pl.done("output/nlSO6.png")

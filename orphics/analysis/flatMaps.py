@@ -2,6 +2,77 @@ import numpy as np
 from pyfftw.interfaces.scipy_fftpack import fft2
 from pyfftw.interfaces.scipy_fftpack import ifft2
 
+from scipy.interpolate import splrep,splev
+
+class GRFGen(object):
+
+    def __init__(self,templateLiteMap,ell,Cell,bufferFactor=1):
+        # Cell is dimensionless
+
+        self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly = getFTAttributesFromLiteMap(templateLiteMap)
+
+
+        self.Ny = templateLiteMap.data.shape[1]*bufferFactor
+        self.Nx = templateLiteMap.data.shape[0]*bufferFactor
+
+        Ny = self.Ny
+        Nx = self.Nx
+
+        bufferFactor = int(bufferFactor)
+        self.b = bufferFactor
+
+        realPart = np.zeros([Ny,Nx])
+        imgPart  = np.zeros([Ny,Nx])
+
+
+        s = splrep(ell,Cell,k=3) # maps will be uK fluctuations about zero
+
+        Cell[Cell<0.]=0.
+
+        ll = np.ravel(self.modLMap)
+        kk = splev(ll,s)
+
+
+        kk[ll<2.]=0.
+        
+        id = np.where(ll>ell.max())
+        kk[id] = 0.
+
+        area = Nx*Ny*templateLiteMap.pixScaleX*templateLiteMap.pixScaleY
+        p = np.reshape(kk,[Ny,Nx]) /area * (Nx*Ny)**2
+        self.sqp = np.sqrt(p)
+
+    #@timeit
+    def getMap(self,stepFilterEll=None):
+        """
+        Modified from sudeepdas/flipper
+        Generates a GRF from an input power spectrum specified as ell, Cell 
+        BufferFactor =1 means the map will be periodic boundary function
+        BufferFactor > 1 means the map will be genrated on  a patch bufferFactor times 
+        larger in each dimension and then cut out so as to have non-periodic bcs.
+
+        Fills the data field of the map with the GRF realization
+        """
+
+
+        realPart = self.sqp*np.random.randn(self.Ny,self.Nx)
+        imgPart = self.sqp*np.random.randn(self.Ny,self.Nx)
+
+
+        kMap = realPart+1.j*imgPart
+        
+        if stepFilterEll is not None:
+            kMap[self.modLMap>stepFilterEll]=0.
+
+
+
+        data = np.real(ifft2(kMap)) 
+
+        data = data[(self.b-1)/2*self.Ny:(self.b+1)/2*self.Ny,(self.b-1)/2*self.Nx:(self.b+1)/2*self.Nx]
+
+        return data - data.mean()
+
+
 def stepFunctionFilterLiteMap(map2d,modLMap,ell):
 
     kmap = fft2(map2d.copy())
