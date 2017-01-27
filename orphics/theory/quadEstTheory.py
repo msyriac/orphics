@@ -1,6 +1,5 @@
 import numpy as np
 import orphics.analysis.flatMaps as fmaps 
-import fftTools
 
 #from scipy.fftpack import fft2,ifft2,fftshift,ifftshift,fftfreq
 #from numpy.fft import fft2,ifft2,fftshift,ifftshift,fftfreq
@@ -525,66 +524,66 @@ class QuadNorm(object):
 
 
 
-    def delensClBB(self,binfile,halo=False):
-        lmap = self.lmap
+    # def delensClBB(self,binfile,halo=False):
+    #     lmap = self.lmap
 
-        clPPArr = self.clPPArr
-        cltotPPArr = clPPArr + self.NlPPnowArr
-        cltotPPArr[np.isnan(cltotPPArr)] = np.inf
+    #     clPPArr = self.clPPArr
+    #     cltotPPArr = clPPArr + self.NlPPnowArr
+    #     cltotPPArr[np.isnan(cltotPPArr)] = np.inf
         
-        clunlenEEArr = self.uClFid2d['EE'].copy()
-        clunlentotEEArr =self.uClFid2d['EE'].copy() + self.noiseArray[1]
-        clunlentotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
-        clunlenEEArr[np.where(lmap >= self.lmax_P)] = 0.
-        clPPArr[np.where(lmap >= self.lmax_P)] = 0.
-        cltotPPArr[np.where(lmap >= self.lmax_P)] = np.inf
+    #     clunlenEEArr = self.uClFid2d['EE'].copy()
+    #     clunlentotEEArr =self.uClFid2d['EE'].copy() + self.noiseArray[1]
+    #     clunlentotEEArr[np.where(lmap >= self.lmax_P)] = np.inf
+    #     clunlenEEArr[np.where(lmap >= self.lmax_P)] = 0.
+    #     clPPArr[np.where(lmap >= self.lmax_P)] = 0.
+    #     cltotPPArr[np.where(lmap >= self.lmax_P)] = np.inf
 
-        if halo: clunlenEEArr[np.where(lmap >= self.gradCut)] = 0.
+    #     if halo: clunlenEEArr[np.where(lmap >= self.gradCut)] = 0.
                 
-        sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
-        cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+    #     sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+    #     cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
 
-        lx = self.lxMap
-        ly = self.lyMap
+    #     lx = self.lxMap
+    #     ly = self.lyMap
 
             
-        lxhat = self.lxHatMap
-        lyhat = self.lyHatMap
+    #     lxhat = self.lxHatMap
+    #     lyhat = self.lyHatMap
 
-        sinf = sin2phi(lxhat,lyhat)
-        sinsqf = sinf**2.
-        cosf = cos2phi(lxhat,lyhat)
-        cossqf = cosf**2.
-
-        
-        allTerms = []
-        for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
-            for trigfactOut,trigfactIn in zip([sinsqf,cossqf,1.j*np.sqrt(2.)*sinf*cosf],[cossqf,sinsqf,1.j*np.sqrt(2.)*sinf*cosf]):
-                preF1 = trigfactIn*ellsq*clunlenEEArr
-                preG1 = ellsq*clPPArr
-
-                preF2 = trigfactIn*ellsq*clunlenEEArr**2.*np.nan_to_num(1./clunlentotEEArr)
-                preG2 = ellsq*clPPArr**2.*np.nan_to_num(1./cltotPPArr)
-
-                allTerms += [trigfactOut*(fft2(ifft2(preF1)*ifft2(preG1) - ifft2(preF2)*ifft2(preG2)))]
-
+    #     sinf = sin2phi(lxhat,lyhat)
+    #     sinsqf = sinf**2.
+    #     cosf = cos2phi(lxhat,lyhat)
+    #     cossqf = cosf**2.
 
         
-        ClBBres = np.real(np.sum( allTerms, axis = 0))
+    #     allTerms = []
+    #     for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+    #         for trigfactOut,trigfactIn in zip([sinsqf,cossqf,1.j*np.sqrt(2.)*sinf*cosf],[cossqf,sinsqf,1.j*np.sqrt(2.)*sinf*cosf]):
+    #             preF1 = trigfactIn*ellsq*clunlenEEArr
+    #             preG1 = ellsq*clPPArr
+
+    #             preF2 = trigfactIn*ellsq*clunlenEEArr**2.*np.nan_to_num(1./clunlentotEEArr)
+    #             preG2 = ellsq*clPPArr**2.*np.nan_to_num(1./cltotPPArr)
+
+    #             allTerms += [trigfactOut*(fft2(ifft2(preF1)*ifft2(preG1) - ifft2(preF2)*ifft2(preG2)))]
+
 
         
-        ClBBres[np.where(np.logical_or(self.lmap >= self.bigell, lmap == 0.))] = 0.
-        ClBBres *= self.ftMap.Nx * self.ftMap.Ny #* (2.*np.pi)**2.
-        ft = self.ftMap
-        ClBBres[lmap>self.lmax_P]=0.
-        
-        ftHolder = self.ftMap.copy()
-        ftHolder.kMap = np.sqrt(ClBBres)/self.ftMap.pixScaleX/self.ftMap.pixScaleY
-        bbNoise2D = fftTools.powerFromFFT(ftHolder, ftHolder)
-        self.lClFid2d['BB'] = bbNoise2D.powerMap
-        lLower,lUpper,lBin,NlBinBB,clBinSd,binWeight = aveBinInAnnuli(bbNoise2D,binfile = binfile)
+    #     ClBBres = np.real(np.sum( allTerms, axis = 0))
 
-        return lBin,NlBinBB
+        
+    #     ClBBres[np.where(np.logical_or(self.lmap >= self.bigell, lmap == 0.))] = 0.
+    #     ClBBres *= self.ftMap.Nx * self.ftMap.Ny #* (2.*np.pi)**2.
+    #     ft = self.ftMap
+    #     ClBBres[lmap>self.lmax_P]=0.
+        
+    #     ftHolder = self.ftMap.copy()
+    #     ftHolder.kMap = np.sqrt(ClBBres)/self.ftMap.pixScaleX/self.ftMap.pixScaleY
+    #     bbNoise2D = fftTools.powerFromFFT(ftHolder, ftHolder)
+    #     self.lClFid2d['BB'] = bbNoise2D.powerMap
+    #     lLower,lUpper,lBin,NlBinBB,clBinSd,binWeight = aveBinInAnnuli(bbNoise2D,binfile = binfile)
+
+    #     return lBin,NlBinBB
 
 
                 
