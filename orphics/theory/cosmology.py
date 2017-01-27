@@ -37,4 +37,5 @@ class Cosmology(object):
         
 
         self.rho_crit0 = 3. / (8. * pi) * (100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
+        self.cmbZ = 1100.
 
