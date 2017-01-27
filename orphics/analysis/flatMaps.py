@@ -3,6 +3,7 @@ from pyfftw.interfaces.scipy_fftpack import fft2
 from pyfftw.interfaces.scipy_fftpack import ifft2
 
 from scipy.interpolate import splrep,splev
+from scipy.fftpack import fftshift
 
 class GRFGen(object):
 
@@ -11,6 +12,8 @@ class GRFGen(object):
 
         self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly = getFTAttributesFromLiteMap(templateLiteMap)
 
+        bufferFactor = int(bufferFactor)
+        self.b = bufferFactor
 
         self.Ny = templateLiteMap.data.shape[1]*bufferFactor
         self.Nx = templateLiteMap.data.shape[0]*bufferFactor
@@ -18,28 +21,28 @@ class GRFGen(object):
         Ny = self.Ny
         Nx = self.Nx
 
-        bufferFactor = int(bufferFactor)
-        self.b = bufferFactor
-
-        realPart = np.zeros([Ny,Nx])
-        imgPart  = np.zeros([Ny,Nx])
-
-
-        s = splrep(ell,Cell,k=3) # maps will be uK fluctuations about zero
-
         Cell[Cell<0.]=0.
 
-        ll = np.ravel(self.modLMap)
-        kk = splev(ll,s)
+        s = splrep(ell,Cell,k=3) # maps will be uK fluctuations about zero
+        #ll = np.ravel(self.modLMap)
+        #kk = splev(ll,s)
+        kk = splev(self.modLMap,s)
 
 
-        kk[ll<2.]=0.
         
-        id = np.where(ll>ell.max())
-        kk[id] = 0.
+
+        kk[self.modLMap<2.]=0.
+        #kk[ll<2.]=0.
+        
+        #id = np.where(ll>ell.max())
+        #kk[id] = 0.
+        kk[self.modLMap>ell.max()] = 0.
 
         area = Nx*Ny*templateLiteMap.pixScaleX*templateLiteMap.pixScaleY
-        p = np.reshape(kk,[Ny,Nx]) /area * (Nx*Ny)**2
+        #p = np.reshape(kk,[Ny,Nx]) /area * (Nx*Ny)**2
+        p = kk /area * (Nx*Ny)**2
+
+        
         self.sqp = np.sqrt(p)
 
     #@timeit
@@ -69,6 +72,7 @@ class GRFGen(object):
         data = np.real(ifft2(kMap)) 
 
         data = data[(self.b-1)/2*self.Ny:(self.b+1)/2*self.Ny,(self.b-1)/2*self.Nx:(self.b+1)/2*self.Nx]
+
 
         return data - data.mean()
 

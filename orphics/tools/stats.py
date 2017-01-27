@@ -11,6 +11,29 @@ def fchisq(dataVector,siginv,theoryVector=0.,amp=1.):
     chisq = np.dot(diff,b)
     return chisq
 
+
+def getAmplitudeLikelihood(mean,covmat,amplitudeRange,theory):
+    '''
+    Returns the likelihood of mean w.r.t. theory over the 
+    range amplitudeRange given covmat, i.e., compares
+    mean to amp*theory for amp in amplitudeTheory.
+
+    '''
+    
+    if covmat.size==1:
+        siginv = 1./covmat
+    else:
+        siginv = np.linalg.pinv(covmat)
+
+    #width = amplitudeRange[1]-amplitudeRange[0]
+    
+
+    Likelihood = lambda x: np.exp(-0.5*fchisq(mean,siginv,theory,amp=x))
+    Likes = np.array([Likelihood(x) for x in amplitudeRange])
+    Likes = Likes / np.trapz(Likes,amplitudeRange,np.diff(amplitudeRange)) #(Likes.sum()*width) #normalize
+    return Likes
+
+
 def timeit(method):
 
     def timed(*args, **kw):
