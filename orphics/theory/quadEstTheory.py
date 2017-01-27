@@ -199,6 +199,7 @@ class QuadNorm(object):
 
             else:
 
+                clunlenTTArr = self.uClFid2d['TT'].copy()
 
                 preG = self.WY('TT') #np.nan_to_num(1./cltotTTArrY)
 
@@ -259,7 +260,7 @@ class QuadNorm(object):
                 for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
                     for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
                         preF = trigfact*ell1*ell2*clunlenEEArrNow*clunlenEEArr*np.nan_to_num(1./cltotEEArr)/2.
-                        preG = trigfact*np.nan_to_num(1.//cltotEEArr)
+                        preG = trigfact*np.nan_to_num(1./cltotEEArr)
                         preFX = trigfact*ell1*clunlenEEArrNow*np.nan_to_num(1./cltotEEArr)
                         preGX = trigfact*ell2*clunlenEEArr*np.nan_to_num(1./cltotEEArr)
 
@@ -612,16 +613,17 @@ class NlGenerator(object):
         self.binner = bin2D(self.N.modLMap, bin_edges)
 
 
-    @timeit
-    def getNl(self,beamX,noiseTX,tellminX,tellmaxX,pellminX,pellmaxX,noisePX=None,beamY=None,noiseTY=None,noisePY=None,tellminY=None,tellmaxY=None,pellminY=None,pellmaxY=None,polComb='TT',delensTolerance=None,halo=True):
+    def updateNoise(self,beamX,noiseTX,noisePX,tellminX,tellmaxX,pellminX,pellmaxX,beamY=None,noiseTY=None,noisePY=None,tellminY=None,tellmaxY=None,pellminY=None,pellmaxY=None,delensTolerance=None):
 
         def setDefault(A,B):
-            if A is None: return B
+            if A is None:
+                return B
+            else:
+                return A
 
         beamY = setDefault(beamY,beamX)
-        noisePX = setDefault(noisePX,np.sqrt(2.)*noiseTX)
         noiseTY = setDefault(noiseTY,noiseTX)
-        noisePY = setDefault(noisePY,np.sqrt(2.)*noiseTY)
+        noisePY = setDefault(noisePY,noisePX)
         tellminY = setDefault(tellminY,tellminX)
         pellminY = setDefault(pellminY,pellminX)
         tellmaxY = setDefault(tellmaxY,tellmaxX)
@@ -636,13 +638,28 @@ class NlGenerator(object):
 
         nList = ['TT','EE','BB']
 
+        nListX = [nTX,nPX,nPX]
+        nListY = [nTY,nPY,nPY]
+        fListX = [fMaskTX,fMaskPX,fMaskPX]
+        fListY = [fMaskTY,fMaskPY,fMaskPY]
         for i,noise in enumerate(nList):
-            self.N.addNoise2DPowerXX(noise,[nTX,nPX,nPX],[fMaskTX,fMaskPX,fMaskPX])
-            self.N.addNoise2DPowerYY(noise,[nTY,nPY,nPY],[fMaskTY,fMaskPY,fMaskPY])
-    
+            self.N.addNoise2DPowerXX(noise,nListX[i],fListX[i])
+            self.N.addNoise2DPowerYY(noise,nListY[i],fListY[i])
+
+    @timeit
+    def getNl(self,polComb='TT',halo=True):            
 
         AL = self.N.getNlkk2d(polComb,halo=halo)
-        data2d = qest.N.Nlkk[polComb]
+        data2d = self.N.Nlkk[polComb]
 
         centers, Nlbinned = self.binner.bin(data2d)
+
+
+        # fill nans with interp
+        ok = -np.isnan(Nlbinned)
+        xp = ok.ravel().nonzero()[0]
+        fp = Nlbinned[-np.isnan(Nlbinned)]
+        x  = np.isnan(Nlbinned).ravel().nonzero()[0]
+        Nlbinned[np.isnan(Nlbinned)] = np.interp(x, xp, fp)
+        
         return centers, Nlbinned

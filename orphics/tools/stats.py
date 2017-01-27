@@ -4,6 +4,12 @@ from orphics.tools.output import Plotter,printC
 import numpy as np
 import time
 
+def fchisq(dataVector,siginv,theoryVector=0.,amp=1.):
+    
+    diff = dataVector - amp*theoryVector
+    b = np.dot(siginv,diff)
+    chisq = np.dot(diff,b)
+    return chisq
 
 def timeit(method):
 
@@ -136,11 +142,11 @@ def loadBinFile(binfile,delimiter='\t',returnBinner=True):
 class bin2D(object):
     def __init__(self, modRMap, bin_edges):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
-        digitized = np.digitize(np.ndarray.flatten(modRMap), bin_edges,right=True)
+        self.digitized = np.digitize(np.ndarray.flatten(modRMap), bin_edges,right=True)
         self.bin_edges = bin_edges
     def bin(self,data2d):
         data = np.ndarray.flatten(data2d)
-        return self.centers,np.array([np.nanmean(data[digitized == i]) for i in range(1, len(self.bin_edges))])
+        return self.centers,np.array([np.nanmean(data[self.digitized == i]) for i in range(1, len(self.bin_edges))])
     
 
 
