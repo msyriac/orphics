@@ -4,6 +4,28 @@ from pyfftw.interfaces.scipy_fftpack import ifft2
 
 from scipy.interpolate import splrep,splev
 from scipy.fftpack import fftshift
+from scipy.interpolate import RectBivariateSpline,interp2d
+from orphics.tools.stats import timeit
+
+@timeit
+def interpolateGrid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3,**kwargs):
+    '''
+    if inGrid is [j,i]
+    Assumes inY is along j axis
+    Assumes inX is along i axis
+    Similarly for outY/X
+    '''
+
+    if regular:
+        interp_spline = RectBivariateSpline(inY,inX,inGrid,kx=kx,ky=ky,**kwargs)
+        outGrid = interp_spline(outY,outX)
+    else:
+        interp_spline = interp2d(inX,inY,inGrid,kind=kind,**kwargs)
+        outGrid = interp_spline(outX,outY)
+    
+
+    return outGrid
+
 
 class GRFGen(object):
 

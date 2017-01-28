@@ -80,6 +80,11 @@ class Plotter:
         self._ax.errorbar(x,y,yerr=yerr,ls=ls,**kwargs)
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=18,extent=None,ticksize=12,**kwargs):
+        '''
+        For an array passed in as [j,i]
+        Displays j along y and i along x , so (y,x)
+        With the origin at upper left
+        '''
 
         Nx=data.shape[0]
         Ny=data.shape[1]
