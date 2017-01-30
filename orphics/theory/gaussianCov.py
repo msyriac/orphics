@@ -28,14 +28,14 @@ class LensForecast:
         self.Nls = {}
         
 
-    def loadKKDirect(self,ellsCls,Cls,ellsNls,Nls):
+    def loadKK(self,ellsCls,Cls,ellsNls,Nls):
         self.Nls['kk'] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
         self.theory.loadGenericCls(ellsCls,Cls,'kk')
     
         self._haveKK = True
         
 
-    def loadGGDirect(self,ellsCls,Cls,ngal):
+    def loadGG(self,ellsCls,Cls,ngal):
         self.ngalForeground = ngal
         self.Nls['gg'] = lambda x: 1./(self.ngalForeground*1.18e7)
         self.theory.loadGenericCls(ellsCls,Cls,'gg')
@@ -44,7 +44,7 @@ class LensForecast:
         
         
 
-    def loadSSDirect(self,ellsCls,Cls,ngal,shapeNoise=0.3):
+    def loadSS(self,ellsCls,Cls,ngal,shapeNoise=0.3):
         if shapeNoise==None or shapeNoise<1.e-9:
             print "No/negligible shape noise given. Using default = 0.3."
             self.shapeNoise=0.3
@@ -60,18 +60,18 @@ class LensForecast:
         self._haveSS = True
 
 
-    def loadSGDirect(self,ellsCls,Cls):
+    def loadSG(self,ellsCls,Cls):
         self.theory.loadGenericCls(ellsCls,Cls,'sg')
         
         self._haveSG = True
 
 
-    def loadKGDirect(self,ellsCls,Cls):
+    def loadKG(self,ellsCls,Cls):
         self.theory.loadGenericCls(ellsCls,Cls,'kg')
         self._haveKG = True
                 
 
-    def loadKSDirect(self,ellsCls,Cls):
+    def loadKS(self,ellsCls,Cls):
         self.theory.loadGenericCls(ellsCls,Cls,'ks')
 
         self._haveKS = True
@@ -101,8 +101,8 @@ class LensForecast:
             ClSum = ClTot(X+W,ellMid)*ClTot(Y+Z,ellMid)+ClTot(X+Z,ellMid)*ClTot(Y+W,ellMid)
             var = ClSum/(2.*ellMid+1.)/ellWidth/fsky
             covs.append(var)
-            sigs1.append(self.theory.gCl(specTypeXY,ellMid)**2./var)
-            sigs2.append(self.theory.gCl(specTypeWZ,ellMid)**2./var)
+            sigs1.append(self.theory.gCl(specTypeXY,ellMid)**2.*np.nan_to_num(1./var))
+            sigs2.append(self.theory.gCl(specTypeWZ,ellMid)**2.*np.nan_to_num(1./var))
 
         return np.array(covs), np.array(sigs1), np.array(sigs2)
 

@@ -70,6 +70,51 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
 
     return theory
 
+
+def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000):
+    '''
+
+    The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
+    be used with dimensionless noise spectra and dimensionless maps.
+
+    All ell and 2pi factors are also stripped off.
+
+ 
+    '''
+    
+    if useTotal:
+        uSuffix = "unlensed_total"
+        lSuffix = "total"
+    else:
+        uSuffix = "unlensed_scalar"
+        lSuffix = "lensed_scalar"
+
+
+    theory = TheorySpectra()
+    for i,pol in enumerate(['TT','EE','BB','TE']):
+        cls =results.get_cmb_power_spectra(pars)[lSuffix][2:,i]
+        ells = np.arange(2,len(cls)+2,1)
+        cls *= 2.*np.pi/ells/(ells+1.)
+        theory.loadCls(ells,cls,pol,lensed=True,interporder="linear",lpad=lpad)
+
+        if unlensedEqualsLensed:
+            theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad)            
+        else:
+            cls = results.get_cmb_power_spectra(pars)[uSuffix][2:,i]
+            ells = np.arange(2,len(cls)+2,1)
+            cls *= 2.*np.pi/ells/(ells+1.)
+            theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad)
+
+    lensArr = results.get_lens_potential_cls(lmax=kellmax)
+    clphi = lensArr[2:,0]
+    clkk = clphi* (2.*np.pi/4.)
+    ells = np.arange(2,len(clkk)+2,1)
+    theory.loadGenericCls(ells,clkk,"kk",lpad=lpad)
+
+
+    return theory
+
+
 def validateMapType(mapXYType):
     assert not(re.search('[^TEB]', mapXYType)) and (len(mapXYType)==2), \
       bcolors.FAIL+"\""+mapXYType+"\" is an invalid map type. XY must be a two" + \
