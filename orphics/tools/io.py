@@ -6,9 +6,14 @@
 import matplotlib.pyplot as plt
 
 
+def dictOfListsFromSection(config,sectionName):
+    del config._sections[sectionName]['__name__']
+    return dict([a, listFromConfig(config,sectionName,a)] for a, x in config._sections[sectionName].iteritems())
+
 def dictFromSection(config,sectionName):
     del config._sections[sectionName]['__name__']
-    return dict([a, float(x)] for a, x in config._sections[sectionName].iteritems())
+    return dict([a, listFromConfig(config,sectionName,a)[0]] for a, x in config._sections[sectionName].iteritems())
+
 
 def listFromConfig(Config,section,name):
     return [float(x) for x in Config.get(section,name).split(',')]
