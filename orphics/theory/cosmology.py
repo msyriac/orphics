@@ -29,7 +29,7 @@ class Cosmology(object):
             self.ombh2 = cosmo['ob']*self.H0*self.H0/100./100.
         
         self.pars = camb.CAMBparams()
-        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2)
+        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2) # add tau
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
         self.results= camb.get_background(self.pars)
