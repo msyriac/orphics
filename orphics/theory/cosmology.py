@@ -40,20 +40,6 @@ class Cosmology(object):
         self.rho_crit0 = 3. / (8. * pi) * (100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
         self.cmbZ = 1100.
 
-        # try:
-        #     self.ells,self.cltt = pickle.load(open("output/cl"+time.strftime('%Y%m%d') +".pkl",'rb'))
-        # except:
-        #     self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
-        #     self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=1, max_eta_k=2*(lmax+500))
-        #     self.cltt =self.results.get_cmb_power_spectra(self.pars)['lensed_scalar'][2:,0]
-        #     self.ells = np.arange(2,len(self.cltt)+2,1)
-        #     self.cltt *= 2.*np.pi/self.ells/(self.ells+1.)
-        #     self.ells = self.ells[self.ells<=lmax]
-        #     self.cltt = self.cltt[self.ells<=lmax] 
-
-        #     pickle.dump((self.ells,self.cltt) ,open("output/cl"+time.strftime('%Y%m%d') +".pkl",'wb'))
-        # self.clttfunc = interp1d(self.ells,self.cltt,fill_value=0.,bounds_error=False)
-        
         print "Generating theory Cls..."
         self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
         self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))

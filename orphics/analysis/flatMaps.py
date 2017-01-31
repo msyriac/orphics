@@ -235,9 +235,6 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=[0.,0.],a
     
 
     Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
-    #ell = np.arange(0.,modLMap.max()+1.,1.)
-    #filt = np.exp(-ell*ell*Sigma*Sigma)
-    #filt2d =   makeTemplate(ell,filt,modLMap)#,debug=True)  # make template noise map
     filt2d = np.exp(-(modLMap**2.)*Sigma*Sigma)
 
 

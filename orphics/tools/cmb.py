@@ -2,9 +2,8 @@ import re
 from orphics.tools.output import bcolors
 import numpy as np
 from scipy.interpolate import interp1d
-
-
-
+import time
+import cPickle as pickle
 
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000):
     '''
@@ -89,10 +88,18 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         uSuffix = "unlensed_scalar"
         lSuffix = "lensed_scalar"
 
+    try:
+        clfile = "output/clsAll_"+time.strftime('%Y%m%d') +".pkl"
+        cmbmat = pickle.load(open(clfile,'rb'))
+        print "Loaded cached Cls from ", clfile
+    except:
+        cmbmat = results.get_cmb_power_spectra(pars)
+        pickle.dump(cmbmat,open("output/clsAll_"+time.strftime('%Y%m%d') +".pkl",'wb'))
 
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
-        cls =results.get_cmb_power_spectra(pars)[lSuffix][2:,i]
+        cls =cmbmat[lSuffix][2:,i]
+
         ells = np.arange(2,len(cls)+2,1)
         cls *= 2.*np.pi/ells/(ells+1.)
         theory.loadCls(ells,cls,pol,lensed=True,interporder="linear",lpad=lpad)
@@ -100,13 +107,20 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         if unlensedEqualsLensed:
             theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad)            
         else:
-            cls = results.get_cmb_power_spectra(pars)[uSuffix][2:,i]
+            cls = cmbmat[uSuffix][2:,i]
             ells = np.arange(2,len(cls)+2,1)
             cls *= 2.*np.pi/ells/(ells+1.)
             theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad)
 
-    lensArr = results.get_lens_potential_cls(lmax=kellmax)
-    clphi = lensArr[2:,0]
+    try:
+        clfile = "output/clphi_"+time.strftime('%Y%m%d') +".txt"
+        clphi = np.loadtxt(clfile)
+        print "Loaded cached Cls from ", clfile
+    except:
+        lensArr = results.get_lens_potential_cls(lmax=kellmax)
+        clphi = lensArr[2:,0]
+        np.savetxt("output/clphi_"+time.strftime('%Y%m%d') +".txt",clphi)
+
     clkk = clphi* (2.*np.pi/4.)
     ells = np.arange(2,len(clkk)+2,1)
     theory.loadGenericCls(ells,clkk,"kk",lpad=lpad)
@@ -137,10 +151,6 @@ class TheorySpectra:
         self._lCl={}
         self._gCl = {}
 
-        self._lowWarn = False
-        self._highWarn = False
-        self._negWarn=False
-        self._ellMaxes = {}
 
     def loadGenericCls(self,ells,Cls,keyName,lpad=9000):
         self._gCl[keyName] = interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=0.)
@@ -189,3 +199,12 @@ class TheorySpectra:
     def lCl(self,XYType,ell):
         return self._Cl(XYType,ell,lensed=True)
     
+    def __getstate__(self):
+        # Clkk2d is not pickled yet!!!
+        return self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY
+
+
+
+    def __setstate__(self, state):
+        self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY = state
+
