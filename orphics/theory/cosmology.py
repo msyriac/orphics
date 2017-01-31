@@ -21,11 +21,13 @@ class Cosmology(object):
         self.h = self.H0/100.
         try:
             self.omch2 = cosmo['omch2']
+            self.om = (cosmo['omch2']+cosmo['obh2'])/self.h**2.
         except:
             self.omch2 = (cosmo['om']-cosmo['ob'])*self.H0*self.H0/100./100.
             
         try:
             self.ombh2 = cosmo['ombh2']
+            self.ob = cosmo['ombh2']/self.h**2.
         except:
             self.ombh2 = cosmo['ob']*self.H0*self.H0/100./100.
         
@@ -37,7 +39,7 @@ class Cosmology(object):
         self.omnuh2 = self.pars.omegan * ((self.H0 / 100.0) ** 2.)
         
 
-        self.rho_crit0 = 3. / (8. * pi) * (100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
+        self.rho_crit0H100 = 3. / (8. * pi) * (100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
         self.cmbZ = 1100.
 
         print "Generating theory Cls..."
