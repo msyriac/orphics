@@ -228,21 +228,33 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 
 
 
-def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6):
+def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=[0.,0.],alphas=[1.0,1.0],beamFile=None):
     # Returns 2d map noise in units of uK**0.
+    # Despite the name of the function, there are options to add
+    # a simplistic atmosphere noise model
 
-
-    Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
-    ell = np.arange(0.,modLMap.max()+1.,1.)
-    filt = np.exp(-ell*ell*Sigma*Sigma)
+    if beamFile is not None:
+        from scipy.interpolate import interp1d
+        ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
+        filt = 1./(np.array(f_ell)**2.)
+        bfunc = interp1d(ell,f_ell,bounds_error=False,fill_value=np.inf)
+        filt2d = bfunc(modLMap)
+    else:
+        Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
+        filt2d = np.exp(-(modLMap**2.)*Sigma*Sigma)
 
 
     retList = []
-    filt2d =   makeTemplate(ell,filt,modLMap)#,debug=True)  # make template noise map
 
-    for noiseLevel in noiseLevels:
-        noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  # add instrument noise to noise power map
-        retList.append(noiseForFilter/filt2d.copy())
+    for noiseLevel,lknee,alpha in zip(noiseLevels,lknees,alphas):
+        noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  
+
+        if lknee>0.:
+            atmFactor = (lknee*np.nan_to_num(1./modLMap))**(-alpha)
+        else:
+            atmFactor = 0.
+
+        retList.append(noiseForFilter*(atmFactor+1.)/filt2d.copy())
 
     return retList
 

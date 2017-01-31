@@ -6,6 +6,22 @@
 import matplotlib.pyplot as plt
 
 
+def dictFromSection(config,sectionName):
+    del config._sections[sectionName]['__name__']
+    return dict([a, float(x)] for a, x in config._sections[sectionName].iteritems())
+
+def listFromConfig(Config,section,name):
+    return [float(x) for x in Config.get(section,name).split(',')]
+
+
+def getFileNameString(listOfNames,listOfVals):
+    fullstr = ""
+    for name,val in zip(listOfNames,listOfVals):
+        fullstr += "_"+name+"_"+str(val)
+
+    return fullstr
+
+
 def printC(string,color=None,bold=False,uline=False):
     if not(isinstance(string,str)):
         string = str(string)
