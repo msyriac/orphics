@@ -21,7 +21,7 @@ class Cosmology(object):
         self.h = self.H0/100.
         try:
             self.omch2 = cosmo['omch2']
-            self.om = (cosmo['omch2']+cosmo['obh2'])/self.h**2.
+            self.om = (cosmo['omch2']+cosmo['ombh2'])/self.h**2.
         except:
             self.omch2 = (cosmo['om']-cosmo['ob'])*self.H0*self.H0/100./100.
             
