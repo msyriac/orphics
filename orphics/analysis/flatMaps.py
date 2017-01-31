@@ -228,14 +228,20 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 
 
 
-def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=[0.,0.],alphas=[1.0,1.0]):
+def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=[0.,0.],alphas=[1.0,1.0],beamFile=None):
     # Returns 2d map noise in units of uK**0.
     # Despite the name of the function, there are options to add
     # a simplistic atmosphere noise model
-    
 
-    Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
-    filt2d = np.exp(-(modLMap**2.)*Sigma*Sigma)
+    if beamFile is not None:
+        from scipy.interpolate import interp1d
+        ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
+        filt = 1./(np.array(f_ell)**2.)
+        bfunc = interp1d(ell,f_ell,bounds_error=False,fill_value=np.inf)
+        filt2d = bfunc(modLMap)
+    else:
+        Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
+        filt2d = np.exp(-(modLMap**2.)*Sigma*Sigma)
 
 
     retList = []
