@@ -11,7 +11,10 @@ def dictOfListsFromSection(config,sectionName):
     return dict([a, listFromConfig(config,sectionName,a)] for a, x in config._sections[sectionName].iteritems())
 
 def dictFromSection(config,sectionName):
-    del config._sections[sectionName]['__name__']
+    try:
+        del config._sections[sectionName]['__name__']
+    except:
+        pass
     return dict([a, listFromConfig(config,sectionName,a)[0]] for a, x in config._sections[sectionName].iteritems())
 
 
