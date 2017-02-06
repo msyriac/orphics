@@ -1,10 +1,57 @@
-# import matplotlib
-# matplotlib.rcParams['mathtext.fontset'] = 'custom'
-# matplotlib.rcParams['mathtext.rm'] = 'Bitstream Vera Sans'
-# matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
-# matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
+import matplotlib
+matplotlib.rcParams['mathtext.fontset'] = 'custom'
+matplotlib.rcParams['mathtext.rm'] = 'Bitstream Vera Sans'
+matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
+matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
 import matplotlib.pyplot as plt
 
+def getLensParams(Config,section):
+    import numpy as np
+    def setDefault(Config,section,name,default=0,min=0):
+        try:
+            val = Config.getfloat(section,name)
+            assert val>=min
+        except:
+            val = default
+        return val
+
+    try:
+        beamFile = Config.get(section,'beamFile')
+        assert beamFile.strip()!=''
+        beamArcmin = None
+    except:
+        beamFile = None
+        beamArcmin = Config.getfloat(section,'beamArcmin')
+        assert beamArcmin>0.
+
+    try:
+        fgFile = Config.get(section,'fgFile')
+        assert beamFile.strip()!=''
+    except:
+        fgFile = None
+
+    noiseT = Config.getfloat(section,'noiseT')
+    noiseP = setDefault(Config,section,'noiseP',np.sqrt(2.)*noiseT,0)
+
+    tellmin = Config.getint(section,'tellmin')    
+    tellmax = Config.getint(section,'tellmax')    
+    pellmin = Config.getint(section,'pellmin')    
+    pellmax = Config.getint(section,'pellmax')
+
+    
+    lxcutT = int(setDefault(Config,section,'lxcutT',0,0))
+    lycutT = int(setDefault(Config,section,'lycutT',0,0))
+    lxcutP = int(setDefault(Config,section,'lxcutP',0,0))
+    lycutP = int(setDefault(Config,section,'lycutP',0,0))
+
+    lkneeT = setDefault(Config,section,'lkneeT',0,0)
+    alphaT = setDefault(Config,section,'alphaT',0,-np.inf)
+    lkneeP = setDefault(Config,section,'lkneeP',0,0)
+    alphaP = setDefault(Config,section,'alphaP',0,-np.inf)
+
+    
+
+    return beamArcmin,beamFile,fgFile,noiseT,noiseP,tellmin,tellmax,pellmin,pellmax,lxcutT,lycutT,lxcutP,lycutP,lkneeT,alphaT,lkneeP,alphaP
 
 def dictOfListsFromSection(config,sectionName):
     del config._sections[sectionName]['__name__']
