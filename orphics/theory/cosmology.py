@@ -24,16 +24,17 @@ class Cosmology(object):
             self.om = (cosmo['omch2']+cosmo['ombh2'])/self.h**2.
         except:
             self.omch2 = (cosmo['om']-cosmo['ob'])*self.H0*self.H0/100./100.
+            self.om = cosmo['om']
             
         try:
             self.ombh2 = cosmo['ombh2']
             self.ob = cosmo['ombh2']/self.h**2.
         except:
             self.ombh2 = cosmo['ob']*self.H0*self.H0/100./100.
-        
+            self.ob = cosmo['ob']
+            
         self.mnu = cosmo['mnu']
         self.w0 = cosmo['w0']
-
         self.pars = camb.CAMBparams()
         self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu,) # add tau
         self.pars.set_dark_energy(w=self.w0)
