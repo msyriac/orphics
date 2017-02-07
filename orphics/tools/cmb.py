@@ -1,5 +1,5 @@
 import re
-from orphics.tools.output import bcolors
+from orphics.tools.io import bcolors
 import numpy as np
 from scipy.interpolate import interp1d
 import time
