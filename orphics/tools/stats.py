@@ -1,6 +1,6 @@
 from scipy.stats import norm,binned_statistic as binnedstat,chi2
 from scipy.optimize import curve_fit as cfit
-from orphics.tools.output import Plotter,printC
+from orphics.tools.io import Plotter,printC
 import numpy as np
 import time
 
