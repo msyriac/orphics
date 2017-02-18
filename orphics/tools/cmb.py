@@ -70,7 +70,7 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
     return theory
 
 
-def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000):
+def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False):
     '''
 
     The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
@@ -89,12 +89,13 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         lSuffix = "lensed_scalar"
 
     try:
+        assert pickling
         clfile = "output/clsAll_"+time.strftime('%Y%m%d') +".pkl"
         cmbmat = pickle.load(open(clfile,'rb'))
         print "Loaded cached Cls from ", clfile
     except:
         cmbmat = results.get_cmb_power_spectra(pars)
-        pickle.dump(cmbmat,open("output/clsAll_"+time.strftime('%Y%m%d') +".pkl",'wb'))
+        if pickling: pickle.dump(cmbmat,open("output/clsAll_"+time.strftime('%Y%m%d') +".pkl",'wb'))
 
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
@@ -113,13 +114,14 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
             theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad)
 
     try:
+        assert pickling
         clfile = "output/clphi_"+time.strftime('%Y%m%d') +".txt"
         clphi = np.loadtxt(clfile)
         print "Loaded cached Cls from ", clfile
     except:
         lensArr = results.get_lens_potential_cls(lmax=kellmax)
         clphi = lensArr[2:,0]
-        np.savetxt("output/clphi_"+time.strftime('%Y%m%d') +".txt",clphi)
+        if pickling: np.savetxt("output/clphi_"+time.strftime('%Y%m%d') +".txt",clphi)
 
     clkk = clphi* (2.*np.pi/4.)
     ells = np.arange(2,len(clkk)+2,1)
