@@ -7,6 +7,17 @@ from scipy.fftpack import fftshift
 from scipy.interpolate import RectBivariateSpline,interp2d
 from orphics.tools.stats import timeit
 
+
+#Take divergence using fourier space gradients
+def takeDiv(vecStampX,vecStampY,lxMap,lyMap):
+
+    fX = fft2(vecStampX)
+    fY = fft2(vecStampY)
+
+    return ifft2((lxMap*fX+lyMap*fY)*1j).real
+
+
+
 @timeit
 def interpolateGrid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3,**kwargs):
     '''
@@ -187,6 +198,8 @@ def getFTAttributesFromLiteMap(templateLM):
 
 
 
+
+
 def makeTemplate(l,Fl,modLMap,k=1,debug=False):
     """                                                                                                                                    
     Given 1d function Fl of l, creates the 2d version                                                                                   
@@ -228,10 +241,16 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 
 
 
-def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=[0.,0.],alphas=[1.0,1.0],beamFile=None):
+def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alphas=None,beamFile=None):
     # Returns 2d map noise in units of uK**0.
     # Despite the name of the function, there are options to add
     # a simplistic atmosphere noise model
+
+
+    if lknees is None:
+        lknees = (np.array(noiseLevels)*0.).tolist()
+    if alphas is None:
+        alphas = (np.array(noiseLevels)*0.+1.).tolist()
 
     if beamFile is not None:
         from scipy.interpolate import interp1d

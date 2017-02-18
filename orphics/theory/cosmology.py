@@ -8,7 +8,7 @@ class Cosmology(object):
     Intended to be inherited by other classes like LimberCosmology and 
     ClusterCosmology
     '''
-    def __init__(self,paramDict,constDict,lmax):
+    def __init__(self,paramDict,constDict,lmax=None,clTTFixFile=None):
 
         cosmo = paramDict
         self.paramDict = paramDict
@@ -47,10 +47,24 @@ class Cosmology(object):
         self.rho_crit0H100 = 3. / (8. * pi) * (100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
         self.cmbZ = 1100.
 
-        print "Generating theory Cls..."
-        self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
-        self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
-        theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000)
-        self.clttfunc = lambda ell: theory.lCl('TT',ell)
-        self.theory = theory
-    
+
+        if clTTFixFile is None:
+            print "Generating theory Cls..."
+            self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
+            self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
+            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000)
+            self.clttfunc = lambda ell: theory.lCl('TT',ell)
+            self.theory = theory
+
+            # import numpy as np
+            # ells = np.arange(2,lmax,1)
+            # cltts = self.clttfunc(ells)
+            # np.savetxt("data/cltt_lensed_Feb18.txt",np.vstack((ells,cltts)).transpose())
+
+
+        else:
+            import numpy as np
+            ells,cltts = np.loadtxt(clTTFixFile,unpack=True)
+            from scipy.interpolate import interp1d
+            self.clttfunc = interp1d(ells,cltts,bounds_error=False,fill_value=0.)
+            
