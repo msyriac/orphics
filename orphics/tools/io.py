@@ -206,7 +206,7 @@ class FisherPlots(object):
     def addFisher(self,setName,fisherMat):
         self.fishers[setName] = fisherMat
         
-    def plotPair(self,paramXYPair,setNames,cols,lss,saveFile,levels=[2.]):
+    def plotPair(self,paramXYPair,setNames,cols,lss,labels,saveFile,levels=[2.],**kwargs):
         paramX,paramY = paramXYPair
 
         xval = self.fidDict[paramX]
@@ -224,11 +224,15 @@ class FisherPlots(object):
         
         matplotlib.rc('axes', linewidth=thk)
         matplotlib.rc('axes', labelcolor='k')
-        plt.figure(figsize=(6,5.5))
-        plt.tick_params(size=14,width=thk,labelsize = 16)
+        #plt.figure(figsize=(6,5.5))
+
+        fig=plt.figure(**kwargs)
+        ax = fig.add_subplot(1,1,1)
+
+        #plt.tick_params(size=14,width=thk,labelsize = 16)
 
 
-        for setName,col,ls in zip(setNames,cols,lss):
+        for setName,col,ls,lab in zip(setNames,cols,lss,labels):
             fisher = self.fishers[setName]
             Finv = np.linalg.inv(fisher)
             chi211 = Finv[i,i]
@@ -239,14 +243,20 @@ class FisherPlots(object):
 
             Lmat = np.linalg.cholesky(chisq)
             ansout = np.dot(Lmat,circl)
-            plt.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls)
+            ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab)
         
 
 
 
 
-        plt.ylabel(paramlabely,fontsize=24,weight='bold')
-        plt.xlabel(paramlabelx,fontsize=24,weight='bold')
+        ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
+        ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
+
+        labsize = 12
+        loc = 'upper right'
+        handles, labels = ax.get_legend_handles_labels()
+        legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)
+
 
         plt.savefig(saveFile, bbox_inches='tight',format='png')
         print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
