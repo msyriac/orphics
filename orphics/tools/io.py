@@ -191,3 +191,60 @@ class Plotter:
 
         print bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC
         plt.close()
+
+
+
+class FisherPlots(object):
+    def __init__(self,paramList,paramLatexList,fidDict):
+        self.fishers = {}
+        self.fidDict = fidDict
+        self.paramList = paramList
+        self.paramLatexList = paramLatexList
+
+
+    def addFisher(self,setName,fisherMat):
+        self.fishers[setName] = fisherMat
+        
+    def plotPair(self,paramXYPair,setNames,levels=[2.]):
+        paramX,paramY = paramXYPair
+
+        xval = self.fidDict[paramX]
+        yval = self.fidDict[paramY]
+        i = self.paramList.index(paramX)
+        j = self.paramList.index(paramY)
+
+        thk = 3
+        xx = np.array(np.arange(360) / 180. * np.pi)
+        circl = np.array([np.cos(xx),np.sin(xx)])
+
+
+        paramlabely = '$'+self.paramLatexList[j]+'$' 
+        paramlabelx = '$'+self.paramLatexList[i]+'$'
+        
+        matplotlib.rc('axes', linewidth=thk)
+        matplotlib.rc('axes', labelcolor='k')
+        plt.figure(figsize=(6,5.5))
+        plt.tick_params(size=14,width=thk,labelsize = 16)
+
+
+        for setName in setNames:
+            fisher = self.fishers[setName]
+            Finv = np.linalg.inv(fisher)
+            chi211 = Finv[i,i]
+            chi222 = Finv[j,j]
+            chi212 = Finv[i,j]
+        
+            chisq = np.array([[chi211,chi212],[chi212,chi222]])
+
+            Lmat = np.linalg.cholesky(chisq)
+            ansout = np.dot(Lmat,circl)
+            plt.plot(ansout[0,:]+xval, ansout[1,:]+yval,color='#D34A1E',linewidth=thk)
+        
+
+
+
+
+        plt.ylabel(paramlabely,fontsize=24,weight='bold')
+        plt.xlabel(paramlabelx,fontsize=24,weight='bold')
+
+        plt.savefig('output/Mnu_forecast_AdvACT.png', bbox_inches='tight',format='png')
