@@ -4,6 +4,7 @@ import matplotlib
 #matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
 #matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
 import matplotlib.pyplot as plt
+import numpy as np
 
 def getLensParams(Config,section):
     import numpy as np
@@ -205,7 +206,7 @@ class FisherPlots(object):
     def addFisher(self,setName,fisherMat):
         self.fishers[setName] = fisherMat
         
-    def plotPair(self,paramXYPair,setNames,levels=[2.]):
+    def plotPair(self,paramXYPair,setNames,cols,lss,saveFile,levels=[2.]):
         paramX,paramY = paramXYPair
 
         xval = self.fidDict[paramX]
@@ -227,7 +228,7 @@ class FisherPlots(object):
         plt.tick_params(size=14,width=thk,labelsize = 16)
 
 
-        for setName in setNames:
+        for setName,col,ls in zip(setNames,cols,lss):
             fisher = self.fishers[setName]
             Finv = np.linalg.inv(fisher)
             chi211 = Finv[i,i]
@@ -238,7 +239,7 @@ class FisherPlots(object):
 
             Lmat = np.linalg.cholesky(chisq)
             ansout = np.dot(Lmat,circl)
-            plt.plot(ansout[0,:]+xval, ansout[1,:]+yval,color='#D34A1E',linewidth=thk)
+            plt.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls)
         
 
 
@@ -247,4 +248,5 @@ class FisherPlots(object):
         plt.ylabel(paramlabely,fontsize=24,weight='bold')
         plt.xlabel(paramlabelx,fontsize=24,weight='bold')
 
-        plt.savefig('output/Mnu_forecast_AdvACT.png', bbox_inches='tight',format='png')
+        plt.savefig(saveFile, bbox_inches='tight',format='png')
+        print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
