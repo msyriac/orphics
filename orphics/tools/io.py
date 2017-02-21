@@ -5,6 +5,7 @@ import matplotlib
 #matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
 import matplotlib.pyplot as plt
 import numpy as np
+import itertools
 
 def getLensParams(Config,section):
     import numpy as np
@@ -206,7 +207,7 @@ class FisherPlots(object):
     def addFisher(self,setName,fisherMat):
         self.fishers[setName] = fisherMat
         
-    def plotPair(self,paramXYPair,setNames,cols,lss,labels,saveFile,levels=[2.],**kwargs):
+    def plotPair(self,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],**kwargs):
         paramX,paramY = paramXYPair
 
         xval = self.fidDict[paramX]
@@ -229,8 +230,9 @@ class FisherPlots(object):
         fig=plt.figure(**kwargs)
         ax = fig.add_subplot(1,1,1)
 
-        #plt.tick_params(size=14,width=thk,labelsize = 16)
+        plt.tick_params(size=14,width=thk,labelsize = 16)
 
+        if cols is None: cols = itertools.repeat(None)
 
         for setName,col,ls,lab in zip(setNames,cols,lss,labels):
             fisher = self.fishers[setName]
@@ -242,7 +244,7 @@ class FisherPlots(object):
             chisq = np.array([[chi211,chi212],[chi212,chi222]])
 
             Lmat = np.linalg.cholesky(chisq)
-            ansout = np.dot(Lmat,circl)
+            ansout = np.dot(1.52*Lmat,circl)
             ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab)
         
 
@@ -252,7 +254,71 @@ class FisherPlots(object):
         ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
         ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
 
-        labsize = 12
+        labsize = 14
+        loc = 'upper right'
+        handles, labels = ax.get_legend_handles_labels()
+        legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
+
+
+        plt.savefig(saveFile, bbox_inches='tight',format='png')
+        print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
+
+
+
+class FisherPlotsExt(Plotter):
+    def __init__(self,paramList,paramLatexList,fidDict,ftsize=24,**kwargs):
+        Plotter.__init__(ftsize=ftsize,**kwargs)
+        self.fishers = {}
+        self.fidDict = fidDict
+        self.paramList = paramList
+        self.paramLatexList = paramLatexList
+
+
+        
+    def addPair(self,fisherMat,paramXYPair,**kwargs):#cols,lss,labels,saveFile,levels=[2.],**kwargs):
+        fisher = fisherMat
+        paramX,paramY = paramXYPair
+
+        xval = self.fidDict[paramX]
+        yval = self.fidDict[paramY]
+        i = self.paramList.index(paramX)
+        j = self.paramList.index(paramY)
+
+        thk = 3
+        xx = np.array(np.arange(360) / 180. * np.pi)
+        circl = np.array([np.cos(xx),np.sin(xx)])
+
+
+        paramlabely = '$'+self.paramLatexList[j]+'$' 
+        paramlabelx = '$'+self.paramLatexList[i]+'$'
+        
+        matplotlib.rc('axes', linewidth=thk)
+        matplotlib.rc('axes', labelcolor='k')
+        #plt.figure(figsize=(6,5.5))
+
+
+        plt.tick_params(size=14,width=thk,labelsize = 16)
+
+
+        Finv = np.linalg.inv(fisher)
+        chi211 = Finv[i,i]
+        chi222 = Finv[j,j]
+        chi212 = Finv[i,j]
+        
+        chisq = np.array([[chi211,chi212],[chi212,chi222]])
+
+        Lmat = np.linalg.cholesky(chisq)
+        ansout = np.dot(Lmat,circl)
+        self._ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,**kwargs)
+        
+
+
+
+
+        self._ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
+        self._ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
+
+        labsize = 14
         loc = 'upper right'
         handles, labels = ax.get_legend_handles_labels()
         legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)

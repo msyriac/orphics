@@ -241,7 +241,8 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 
 
 
-def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alphas=None,beamFile=None):
+def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alphas=None,beamFile=None, \
+                 noiseFileT=None,noiseFileP=None):
     # Returns 2d map noise in units of uK**0.
     # Despite the name of the function, there are options to add
     # a simplistic atmosphere noise model
