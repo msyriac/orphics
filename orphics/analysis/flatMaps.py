@@ -242,7 +242,7 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 
 
 def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alphas=None,beamFile=None, \
-                 noiseFileT=None,noiseFileP=None):
+                 noiseFiles=None):
     # Returns 2d map noise in units of uK**0.
     # Despite the name of the function, there are options to add
     # a simplistic atmosphere noise model
@@ -253,6 +253,11 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
     if alphas is None:
         alphas = (np.array(noiseLevels)*0.+1.).tolist()
 
+    if noiseFiles is None: noiseFiles = [None]*len(noiseLevels)
+        
+
+    
+        
     if beamFile is not None:
         from scipy.interpolate import interp1d
         ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
@@ -266,15 +271,21 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
 
     retList = []
 
-    for noiseLevel,lknee,alpha in zip(noiseLevels,lknees,alphas):
-        noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  
-
-        if lknee>0.:
-            atmFactor = (lknee*np.nan_to_num(1./modLMap))**(-alpha)
+    for noiseLevel,lknee,alpha,noiseFile in zip(noiseLevels,lknees,alphas,noiseFiles):
+        if noiseFile is not None:
+            ls,Nls = np.loadtxt(noiseFile,unpack=True)
+            nfunc = interp1d(ls,Nls,bounds_error=False,fill_value=np.inf)
+            retList.append(nfunc(modLMap))
         else:
-            atmFactor = 0.
+        
+            noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  
 
-        retList.append(noiseForFilter*(atmFactor+1.)/filt2d.copy())
+            if lknee>0.:
+                atmFactor = (lknee*np.nan_to_num(1./modLMap))**(-alpha)
+            else:
+                atmFactor = 0.
+
+            retList.append(noiseForFilter*(atmFactor+1.)/filt2d.copy())
 
     return retList
 
