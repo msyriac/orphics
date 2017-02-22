@@ -4,7 +4,7 @@ from pyfftw.interfaces.scipy_fftpack import ifft2
 
 from scipy.interpolate import splrep,splev
 from scipy.fftpack import fftshift
-from scipy.interpolate import RectBivariateSpline,interp2d
+from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 from orphics.tools.stats import timeit
 
 
@@ -258,10 +258,9 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
 
         
     # if one of the noise files is not specified, we will need a beam
-    if None is in noiseFiles:
+    if None in noiseFiles:
         
         if beamFile is not None:
-            from scipy.interpolate import interp1d
             ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
             filt = 1./(np.array(f_ell)**2.)
             bfunc = interp1d(ell,f_ell,bounds_error=False,fill_value=np.inf)
@@ -286,8 +285,9 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
                 atmFactor = (lknee*np.nan_to_num(1./modLMap))**(-alpha)
             else:
                 atmFactor = 0.
-
-            retList.append(noiseForFilter*(atmFactor+1.)/filt2d.copy())
+                
+            with np.errstate(divide='ignore'):
+                retList.append(noiseForFilter*(atmFactor+1.)*np.nan_to_num(1./filt2d.copy()))
 
     return retList
 
