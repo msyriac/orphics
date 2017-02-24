@@ -8,7 +8,7 @@ class Cosmology(object):
     Intended to be inherited by other classes like LimberCosmology and 
     ClusterCosmology
     '''
-    def __init__(self,paramDict,constDict,lmax=None,clTTFixFile=None,skipCls=False):
+    def __init__(self,paramDict,constDict,lmax=None,clTTFixFile=None,skipCls=False,pickling=False):
 
         cosmo = paramDict
         self.paramDict = paramDict
@@ -58,7 +58,7 @@ class Cosmology(object):
             print "Generating theory Cls..."
             self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
             self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
-            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000)
+            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=pickling)
             self.clttfunc = lambda ell: theory.lCl('TT',ell)
             self.theory = theory
 
