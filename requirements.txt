@@ -1,9 +1,8 @@
-camb==0.1.2
-healpy==1.9.1
+camb==0.1.4
+healpy==1.10.3
 matplotlib==1.5.3
-numpy==1.11.2
+numpy==1.11.3
 pyFFTW==0.10.4
 scipy==0.18.1
 astLib==0.8.0
-liteMap==0.2.1
 mpi4py==2.0.0
