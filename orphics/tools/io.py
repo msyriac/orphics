@@ -204,8 +204,33 @@ class FisherPlots(object):
         self.paramLatexList = paramLatexList
 
 
-    def addFisher(self,setName,fisherMat):
-        self.fishers[setName] = fisherMat
+    def addFisher(self,setName,fisherMat,gaussOnly=False):
+        self.fishers[setName] = (gaussOnly,fisherMat)
+
+    def plot1d(self,paramName,frange,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",labsize=12,labloc='upper left',xmultiplier=1.,labelXSuffix=""):
+
+        fval = self.fidDict[paramName]
+        i = self.paramList.index(paramName)
+        paramlabel = '$'+self.paramLatexList[i]+'$' 
+
+        pl = Plotter()
+        errs = {}
+        hasLabels = False
+        for setName,col,ls,lab in zip(setNames,cols,lss,labels):
+            if lab is not None: hasLabels = True
+            gaussOnly, fisher = self.fishers[setName]
+            if gaussOnly:
+                ErrSigmaSq = fisher**2.
+            else:
+                Finv = np.linalg.inv(fisher)
+                ErrSigmaSq = Finv[i,i]
+            gaussFunc = lambda x: np.exp(-(x-fval)**2./2./ErrSigmaSq)
+            pl.add(frange*xmultiplier,gaussFunc(frange),color=col,ls=ls,label=lab,lw=2)
+
+        pl._ax.tick_params(size=14,width=3,labelsize = 16)
+        pl._ax.set_xlabel(paramlabel+labelXSuffix,fontsize=24,weight='bold')
+        if hasLabels: pl.legendOn(labsize=labsize,loc=labloc)
+        pl.done(saveFile)
         
     def plotPair(self,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],**kwargs):
         paramX,paramY = paramXYPair
@@ -235,7 +260,7 @@ class FisherPlots(object):
         if cols is None: cols = itertools.repeat(None)
 
         for setName,col,ls,lab in zip(setNames,cols,lss,labels):
-            fisher = self.fishers[setName]
+            gaussOnly, fisher = self.fishers[setName]
             Finv = np.linalg.inv(fisher)
             chi211 = Finv[i,i]
             chi222 = Finv[j,j]
@@ -254,8 +279,9 @@ class FisherPlots(object):
         ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
         ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
 
-        labsize = 14
-        loc = 'upper right'
+        labsize = 12
+        #loc = 'upper right'
+        loc = 'center'
         handles, labels = ax.get_legend_handles_labels()
         legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
 
