@@ -4,12 +4,27 @@ from orphics.tools.io import Plotter,printC
 import numpy as np
 import time
 
+
+def cov2corr(cov):
+    # slow and stupid!
+    
+    d = np.diag(cov)
+    stddev = np.sqrt(d)
+    corr = cov.copy()*0.
+    for i in range(cov.shape[0]):
+        for j in range(cov.shape[0]):
+            corr[i,j] = cov[i,j]/stddev[i]/stddev[j]
+
+    return corr
+
 def fchisq(dataVector,siginv,theoryVector=0.,amp=1.):
     
     diff = dataVector - amp*theoryVector
     b = np.dot(siginv,diff)
     chisq = np.dot(diff,b)
     return chisq
+
+
 
 
 def getAmplitudeLikelihood(mean,covmat,amplitudeRange,theory):
@@ -85,6 +100,8 @@ def getStats(listOfBinned):
     if arr.shape[1]==1:
         ret['corr'] = 1.
     else:
+
+        # ???
         d = np.diag(ret['cov'])
         stddev = np.sqrt(d)
         ret['corr'] = ret['cov'] / stddev[:, None]
