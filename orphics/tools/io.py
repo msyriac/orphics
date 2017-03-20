@@ -61,6 +61,21 @@ def getLensParams(Config,section):
 
     return beamArcmin,beamFile,fgFile,noiseT,noiseP,tellmin,tellmax,pellmin,pellmax,lxcutT,lycutT,lxcutP,lycutP,lkneeT,alphaT,lkneeP,alphaP
 
+def getListFromConfigSection(Config,section_name,key_root,start_index=0):
+
+    i = start_index
+    retList = []
+    while True:
+        key_name = key_root+"("+str(i)+")"
+        try:
+            val = Config._sections[section_name][key_name]
+            retList.append(val)
+        except KeyError:
+            break
+        i+=1
+
+    return retList
+
 def dictOfListsFromSection(config,sectionName):
     del config._sections[sectionName]['__name__']
     return dict([a, listFromConfig(config,sectionName,a)] for a, x in config._sections[sectionName].iteritems())
