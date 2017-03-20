@@ -7,6 +7,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import itertools
 
+def quickPlot2d(array,outPath,**kwargs):
+    pl = Plotter()
+    pl.plot2d(array,**kwargs)
+    pl.done(outPath)
+
+
 def getLensParams(Config,section):
     import numpy as np
     def setDefault(Config,section,name,default=0,min=0):

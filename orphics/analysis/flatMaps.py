@@ -218,9 +218,18 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 
     if debug:
         from ..tools.output import Plotter
-
+        from scipy.interpolate import interp1d
+        _func = interp1d(l,Fl,kind=k,bounds_error=False,fill_value = 0)
+        print np.sort(lmapunravel)[1]
+        print lmapunravel.min(),template1d[lmapunravel==lmapunravel.min()]
+        print modLMap.ravel().min(),_func(modLMap.ravel()==modLMap.ravel().min())
         pl = Plotter()
-        pl.add(l,Fl)
+        pl.add(lmapunravel,template1d*(lmapunravel+1.)**2.,label="splev unravel",ls="-",marker="o")
+        pl.add(modLMap.ravel(),_func(modLMap.ravel())*(modLMap.ravel()+1.)**2.,label="interp1d unravel",ls="none",marker="x")
+        pl.add(l,_func(l)*(l+1)**2.,label="interp1d func")
+        pl.add(l,Fl*(l+1)**2.,label="true func")
+        pl.legendOn(loc='upper right', labsize=10)
+        pl._ax.set_xlim(0.,800.)
         pl.done("fl.png")
 
         pl = Plotter(scaleX='log',scaleY='log')
@@ -228,8 +237,8 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
         pl.done('debug.png')
 
         
-        template[np.where(lmap <= 100.)] = 0.
-        template[np.where(lmap >= 1000.)] = 0.
+        #template[np.where(lmap <= 100.)] = 0.
+        #template[np.where(lmap >= 1000.)] = 0.
         
         
         pl = Plotter()
@@ -312,7 +321,12 @@ def fourierMask(lx,ly,modLMap, lxcut = None, lycut = None, lmin = None, lmax = N
         output[wh,:] = 0
     return output
 
-
+def taper(lm,win):
+    lmret = lm.copy()
+    lmret.data[:,:] *= win[:,:]
+    w2 = np.sqrt(np.mean(win**2.))
+    lmret.data[:,:] /= w2    
+    return lmret
 
 
 def initializeCosineWindow(templateLiteMap,lenApod=30,pad=0):
