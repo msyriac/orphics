@@ -5,6 +5,31 @@ from scipy.interpolate import interp1d
 import time
 import cPickle as pickle
 
+def pad_1d_power(ell,Cl,ellmax):
+    if ell[-1]<ellmax:
+        appendArr = np.arange(ell[-1]+1,ellmax,1)
+        ell = np.append(np.asarray(ell),appendArr)
+        Cl = np.append(np.asarray(Cl),np.asarray([0.]*len(appendArr)))
+    return ell,Cl
+
+def get_noise_func(beamArcmin,noiseMukArcmin,TCMB=2.7255e6):
+    Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
+    noiseWhite = (np.pi / (180. * 60))**2.  * noiseMukArcmin**2. / TCMB**2.  
+    return lambda ell: noiseWhite*np.exp((ell**2.)*Sigma*Sigma)
+
+def total_1d_power(ell,Cl,ellmax,beamArcmin,noiseMukArcmin,TCMB=2.7255e6,deconvolve=False):
+    if ell[-1]<ellmax:
+        appendArr = np.arange(ell[-1]+1,ellmax,1)
+        ell = np.append(np.asarray(ell),appendArr)
+        Cl = np.append(np.asarray(Cl),np.asarray([0.]*len(appendArr)))
+    Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
+    beamFac = np.exp(-(ell**2.)*Sigma*Sigma)
+    Cl *= beamFac
+    noiseWhite = (np.pi / (180. * 60))**2.  * noiseMukArcmin**2. / TCMB**2.  
+    Cl += noiseWhite
+    if deconvolve: Cl /= beamFac
+    return ell, Cl
+
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000):
     '''
     Given a CAMB path+output_root, reads CMB and lensing Cls into 
