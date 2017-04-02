@@ -87,19 +87,9 @@ class LimberCosmology(Cosmology):
 
 
 
-    def __init__(self,paramDict,constDict,lmax=None,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True):
+    def __init__(self,paramDict,constDict,lmax=None,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,skipPower=False):
         Cosmology.__init__(self,paramDict,constDict,lmax,clTTFixFile,skipCls,pickling)
 
-        # self.H0 = cosmo['H0']
-        # self.omch2 = cosmo['omch2']
-        # self.ombh2 = cosmo['ombh2']
-        
-        # self.pars = camb.CAMBparams()
-        # self.pars.set_cosmology(H0=self.H0, ombh2=cosmo['ombh2'], omch2=self.omch2)
-        # self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
-
-        # self.results= camb.get_background(self.pars)
-        # self.omnuh2 = self.pars.omegan * ((self.H0 / 100.0) ** 2.)
         
         self.chistar = self.results.conformal_time(0)- model.tau_maxvis.value
         self.zstar = self.results.redshift_at_comoving_radial_distance(self.chistar)
@@ -119,9 +109,15 @@ class LimberCosmology(Cosmology):
         self.kernels = {}
         self._initWkappaCMB()
 
-        
+        self.nonlinear = nonlinear
+        self.skipPower = skipPower
+
+        if not(skipPower): self._initPower()
+
+
+    def _initPower(self):
         print "initializing power..."
-        self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zs[-1])
+        self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zs[-1])
         self.precalcFactor = self.Hzs**2. /self.chis/self.chis/self._cSpeedKmPerSec**2.
 
 
@@ -130,6 +126,7 @@ class LimberCosmology(Cosmology):
 
     def generateCls(self,ellrange,autoOnly=False,zmin=0.):
 
+        if self.skipPower: self._initPower()
 
 
         w = np.ones(self.chis.shape)
@@ -257,7 +254,7 @@ class LimberCosmology(Cosmology):
         if bias==None:
 
             retvals = self._lensWindow(self.kernels[tag],numzIntegral)
-
+            self.kernels[tag]['window_z'] = interp1d(self.zs,retvals.copy())
             self.kernels[tag]['W'] =  retvals *1.5*(self.omch2+self.ombh2+self.omnuh2)*100.*100.*(1.+self.zs)*self.chis/self.Hzs/self._cSpeedKmPerSec
             self.kernels[tag]['type'] = 'lensing'
         else:
@@ -287,6 +284,7 @@ class LimberCosmology(Cosmology):
         iwcmb =  1.5*(self.omch2+self.ombh2+self.omnuh2)*100.*100.*(1.+self.zs)*self.chis*((self.chistar - self.chis)/self.chistar)/self.Hzs/self._cSpeedKmPerSec
         self.kernels['cmb']={}
         self.kernels['cmb']['W'] = iwcmb
+        self.kernels['cmb']['window_z'] = interp1d(self.zs,(self.chistar - self.chis)/self.chistar)
                 
                 
 
