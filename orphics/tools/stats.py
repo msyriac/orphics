@@ -127,7 +127,7 @@ def bootstrapData(profs,Bmax=100000):
 
     return newprofs
                                                         
-class coreBinner:
+class bin1D:
     '''
     * Takes data defined on x0 and produces values binned on x.
     * Assumes x0 is linearly spaced and continuous in a domain?

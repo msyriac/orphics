@@ -1,20 +1,21 @@
 import numpy as np
-from pyfftw.interfaces.scipy_fftpack import fft2
-from pyfftw.interfaces.scipy_fftpack import ifft2
+#from pyfftw.interfaces.scipy_fftpack import fft2
+#from pyfftw.interfaces.scipy_fftpack import ifft2
 
 from scipy.interpolate import splrep,splev
 from scipy.fftpack import fftshift
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 from orphics.tools.stats import timeit
 
+from enlib.fft import fft,ifft
 
 #Take divergence using fourier space gradients
 def takeDiv(vecStampX,vecStampY,lxMap,lyMap):
 
-    fX = fft2(vecStampX)
-    fY = fft2(vecStampY)
+    fX = fft(vecStampX,axes=[-2,-1])
+    fY = fft(vecStampY,axes=[-2,-1])
 
-    return ifft2((lxMap*fX+lyMap*fY)*1j).real
+    return ifft((lxMap*fX+lyMap*fY)*1j,axes=[-2,-1],normalize=True).real
 
 
 
@@ -48,8 +49,8 @@ class GRFGen(object):
         bufferFactor = int(bufferFactor)
         self.b = bufferFactor
 
-        self.Ny = templateLiteMap.data.shape[1]*bufferFactor
-        self.Nx = templateLiteMap.data.shape[0]*bufferFactor
+        self.Ny = templateLiteMap.data.shape[0]*bufferFactor
+        self.Nx = templateLiteMap.data.shape[1]*bufferFactor
 
         Ny = self.Ny
         Nx = self.Nx
@@ -61,7 +62,7 @@ class GRFGen(object):
         #kk = splev(ll,s)
         kk = splev(self.modLMap,s)
 
-
+        self.power = kk.copy()
         
 
         kk[self.modLMap<2.]=0.
@@ -102,7 +103,7 @@ class GRFGen(object):
 
 
 
-        data = np.real(ifft2(kMap)) 
+        data = np.real(ifft(kMap,axes=[-2,-1],normalize=True)) 
 
         data = data[(self.b-1)/2*self.Ny:(self.b+1)/2*self.Ny,(self.b-1)/2*self.Nx:(self.b+1)/2*self.Nx]
 
@@ -112,18 +113,18 @@ class GRFGen(object):
 
 def stepFunctionFilterLiteMap(map2d,modLMap,ell):
 
-    kmap = fft2(map2d.copy())
+    kmap = fft(map2d.copy(),axes=[-2,-1])
     kmap[modLMap>ell]=0.
-    retMap = ifft2(kmap).real
+    retMap = ifft(kmap,axes=[-2,-1],normalize=True).real
 
     return retMap
 
 
 def TQUtoFourierTEB(T_map,Q_map,U_map,modLMap,angLMap):
 
-    fT=fft2(T_map)    
-    fQ=fft2(Q_map)        
-    fU=fft2(U_map)
+    fT=fft(T_map,axes=[-2,-1])    
+    fQ=fft(Q_map,axes=[-2,-1])        
+    fU=fft(U_map,axes=[-2,-1])
     
     fE=fT.copy()
     fB=fT.copy()
@@ -371,11 +372,19 @@ def deconvolveBeam(data,modLMap,ell,beam,returnFTOnly = False):
 
     beamTemplate =  makeTemplate(ell,beam,modLMap)
 
-    kMap = fft2(data)
+    kMap = fft(data,axes=[-2,-1])
 
     kMap[:,:] = (kMap[:,:] / beamTemplate[:,:])
     if returnFTOnly:
         return kMap
     else:
-        return ifft2(kMap).real
+        return ifft(kMap,axes=[-2,-1],normalize=True).real
 
+
+
+def convolveBeam(data,modLMap,beamTemplate):
+
+    kMap = fft(data,axes=[-2,-1])
+    kMap[:,:] = (kMap[:,:] * beamTemplate[:,:])
+    return ifft(kMap,axes=[-2,-1],normalize=True).real
+    

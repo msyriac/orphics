@@ -15,7 +15,7 @@ import json
 import ctypes
 import numpy as np
 
-import liteMap as lm
+import flipper.liteMap as lm
 import healpy as hp
 
 from scipy.interpolate import interp1d

@@ -5,6 +5,18 @@ from scipy.interpolate import interp1d
 import time
 import cPickle as pickle
 
+
+def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.):
+    if lknee>1.e-3:
+        atmFactor = (lknee/ell)**(-alpha)
+    else:
+        atmFactor = 0.
+    rms = rms_noise * (1./60.)*(np.pi/180.)
+    tht_fwhm = np.deg2rad(fwhm / 60.)
+    ans = (atmFactor+1.) * (rms**2.) * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
+    return ans
+
+
 def pad_1d_power(ell,Cl,ellmax):
     if ell[-1]<ellmax:
         appendArr = np.arange(ell[-1]+1,ellmax,1)

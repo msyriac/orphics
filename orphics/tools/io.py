@@ -208,9 +208,9 @@ class Plotter:
 
                                 
 
-    def done(self,fileName="output/default.png"):
+    def done(self,fileName="output/default.png",**kwargs):
 
-        plt.savefig(fileName,bbox_inches='tight')
+        plt.savefig(fileName,bbox_inches='tight',**kwargs)
 
         print bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC
         plt.close()
