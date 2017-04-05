@@ -7,6 +7,9 @@ import cPickle as pickle
 
 
 def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.):
+    '''Beam deconvolved noise in whatever units rms_noise is in.
+    e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.    
+    '''
     if lknee>1.e-3:
         atmFactor = (lknee/ell)**(-alpha)
     else:
