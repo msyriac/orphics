@@ -8,13 +8,30 @@ from scipy.interpolate import interp1d
 from scipy.integrate import quad
 import itertools
 
+defaultConstants = {}
+defaultConstants['TCMB'] = 2.7255
+defaultConstants['G_CGS'] = 6.67259e-08
+defaultConstants['MSUN_CGS'] = 1.98900e+33
+defaultConstants['MPC2CM'] = 3.085678e+24
+
+defaultCosmology = {}
+defaultCosmology['omch2'] = 0.1194
+defaultCosmology['ombh2'] = 0.022
+defaultCosmology['H0'] = 67.0
+defaultCosmology['ns'] = 0.96
+defaultCosmology['As'] = 2.2e-9
+defaultCosmology['mnu'] = 0.06
+defaultCosmology['w0'] = -1.0
+
+
+
 class Cosmology(object):
     '''
     A wrapper around CAMB that tries to pre-calculate as much as possible
     Intended to be inherited by other classes like LimberCosmology and 
     ClusterCosmology
     '''
-    def __init__(self,paramDict,constDict,lmax=None,clTTFixFile=None,skipCls=False,pickling=False):
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False):
 
         cosmo = paramDict
         self.paramDict = paramDict
@@ -22,8 +39,9 @@ class Cosmology(object):
         self.c = c
         self.cosmo = paramDict
 
-        self.c['TCMBmuK'] = self.c['TCMB'] * 1.0e6
 
+        self.c['TCMBmuK'] = self.c['TCMB'] * 1.0e6
+            
         self.H0 = cosmo['H0']
         self.h = self.H0/100.
         try:
@@ -76,18 +94,25 @@ class Cosmology(object):
             # np.savetxt("data/cltt_lensed_Feb18.txt",np.vstack((ells,cltts)).transpose())
 
             
-# Partially based on Anthony Lewis' CAMB Python Notebook
-# To do:
-# - Add support for curvature
-# - Test magnification bias for counts
-# - Test that delta function and step function dndz(z)s are equivalent as step function width -> 0
 
 
 class LimberCosmology(Cosmology):
+    '''Partially based on Anthony Lewis' CAMB Python Notebook
+    To do:
+    - Add support for curvature
+    - Test magnification bias for counts
+    - Test that delta function and step function dndz(z)s are equivalent as step function width -> 0
 
-
-
-    def __init__(self,paramDict,constDict,lmax=None,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,skipPower=False):
+    How To Use:
+    1. Initialize with cosmology, constants, lmax, kmax, number of z points
+    2. Add a delta function, step-function or generic dndz with addDeltaNz, addStepNz or addNz. A delta function window tagged "cmb" is automatically generated on initialization.
+    3. If you want, access the following objects (tag is the name of the window you specified in step 2):
+       a) LimberCosmologyObject.zs (the zrange on which the following things are evaluated)
+       b) LimberCosmologyObject.kernels[tag]['W'] (the lensing window function)
+       c) LimberCosmologyObject.kernels[tag]['window_z'] (only the (chi-chi)/chi part -- or equivalent integral for non-delta-function windows -- of the lensing windo returned as a callable function win(z))
+       d) LimberCosmologyObject.kernels[tag]['dndz'] (a callable function of z that gives the normalized redshift distribution of the sources)
+    '''
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,skipPower=False):
         Cosmology.__init__(self,paramDict,constDict,lmax,clTTFixFile,skipCls,pickling)
 
         
