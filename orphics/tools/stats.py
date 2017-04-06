@@ -4,6 +4,12 @@ from orphics.tools.io import Plotter,printC
 import numpy as np
 import time
 
+def npspace(minim,maxim,num,scale="lin"):
+    if scale=="lin" or scale=="linear":
+        return np.linspace(minim,maxim,num)
+    elif scale=="log":
+        return np.logspace(np.log10(minim),np.log10(maxim),num)
+
 
 def cov2corr(cov):
     # slow and stupid!

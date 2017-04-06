@@ -252,7 +252,7 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
 
 
 def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alphas=None,beamFile=None, \
-                 noiseFiles=None):
+                 noiseFuncs=None):
     # Returns 2d map noise in units of uK**0.
     # Despite the name of the function, there are options to add
     # a simplistic atmosphere noise model
@@ -264,11 +264,11 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
         alphas = (np.array(noiseLevels)*0.+1.).tolist()
 
     # we'll loop over it, so make it a list if nothing is specified
-    if noiseFiles is None: noiseFiles = [None]*len(noiseLevels)
+    if noiseFuncs is None: noiseFuncs = [None]*len(noiseLevels)
 
         
     # if one of the noise files is not specified, we will need a beam
-    if None in noiseFiles:
+    if None in noiseFuncs:
         
         if beamFile is not None:
             ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
@@ -282,10 +282,8 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
 
     retList = []
 
-    for noiseLevel,lknee,alpha,noiseFile in zip(noiseLevels,lknees,alphas,noiseFiles):
-        if noiseFile is not None:
-            ls,Nls = np.loadtxt(noiseFile,unpack=True)
-            nfunc = interp1d(ls,Nls,bounds_error=False,fill_value=np.inf)
+    for noiseLevel,lknee,alpha,noiseFunc in zip(noiseLevels,lknees,alphas,noiseFuncs):
+        if noiseFunc is not None:
             retList.append(nfunc(modLMap))
         else:
         

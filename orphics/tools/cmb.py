@@ -27,10 +27,10 @@ def pad_1d_power(ell,Cl,ellmax):
         Cl = np.append(np.asarray(Cl),np.asarray([0.]*len(appendArr)))
     return ell,Cl
 
-def get_noise_func(beamArcmin,noiseMukArcmin,TCMB=2.7255e6):
+def get_noise_func(beamArcmin,noiseMukArcmin,ellmin=-np.inf,ellmax=np.inf,TCMB=2.7255e6):
     Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
-    noiseWhite = (np.pi / (180. * 60))**2.  * noiseMukArcmin**2. / TCMB**2.  
-    return lambda ell: noiseWhite*np.exp((ell**2.)*Sigma*Sigma)
+    noiseWhite = (np.pi / (180. * 60))**2.  * noiseMukArcmin**2. / TCMB**2.
+    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: noiseWhite*np.exp((np.asarray(y)**2.)*Sigma*Sigma), lambda y: np.inf])
 
 def total_1d_power(ell,Cl,ellmax,beamArcmin,noiseMukArcmin,TCMB=2.7255e6,deconvolve=False):
     if ell[-1]<ellmax:
