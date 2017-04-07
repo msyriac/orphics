@@ -7,7 +7,10 @@ from scipy.fftpack import fftshift
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 from orphics.tools.stats import timeit
 
-from enlib.fft import fft,ifft
+try:
+    from enlib.fft import fft,ifft
+except:
+    print "WARNING: You imported orphics.analysis.flatMaps, some of which requires enlib. Couldn't find enlib. Functionality may be missing."
 
 #Take divergence using fourier space gradients
 def takeDiv(vecStampX,vecStampY,lxMap,lyMap):
