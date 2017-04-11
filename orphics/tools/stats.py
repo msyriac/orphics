@@ -4,6 +4,12 @@ from orphics.tools.io import Plotter,printC
 import numpy as np
 import time
 
+def npspace(minim,maxim,num,scale="lin"):
+    if scale=="lin" or scale=="linear":
+        return np.linspace(minim,maxim,num)
+    elif scale=="log":
+        return np.logspace(np.log10(minim),np.log10(maxim),num)
+
 
 def cov2corr(cov):
     # slow and stupid!
@@ -127,7 +133,7 @@ def bootstrapData(profs,Bmax=100000):
 
     return newprofs
                                                         
-class coreBinner:
+class bin1D:
     '''
     * Takes data defined on x0 and produces values binned on x.
     * Assumes x0 is linearly spaced and continuous in a domain?

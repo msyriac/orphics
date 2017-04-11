@@ -39,6 +39,18 @@ def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
 
 
 
+def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.):
+    '''Beam deconvolved noise in whatever units rms_noise is in.
+    e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.    
+    '''
+    if lknee>1.e-3:
+        atmFactor = (lknee/ell)**(-alpha)
+    else:
+        atmFactor = 0.
+    rms = rms_noise * (1./60.)*(np.pi/180.)
+    tht_fwhm = np.deg2rad(fwhm / 60.)
+    ans = (atmFactor+1.) * (rms**2.) * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
+    return ans
 
 
 def pad_1d_power(ell,Cl,ellmax):
@@ -48,10 +60,14 @@ def pad_1d_power(ell,Cl,ellmax):
         Cl = np.append(np.asarray(Cl),np.asarray([0.]*len(appendArr)))
     return ell,Cl
 
-def get_noise_func(beamArcmin,noiseMukArcmin,TCMB=2.7255e6):
+def get_noise_func(beamArcmin,noiseMukArcmin,ellmin=-np.inf,ellmax=np.inf,TCMB=2.7255e6,lknee=0.,alpha=0.):
+    if lknee>1.e-3:
+        atmFactor = (lknee/ell)**(-alpha)
+    else:
+        atmFactor = 0.
     Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
-    noiseWhite = (np.pi / (180. * 60))**2.  * noiseMukArcmin**2. / TCMB**2.  
-    return lambda ell: noiseWhite*np.exp((ell**2.)*Sigma*Sigma)
+    noiseWhite = (np.pi / (180. * 60))**2.  * noiseMukArcmin**2. / TCMB**2.
+    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: (atmFactor+1.) * noiseWhite*np.exp((np.asarray(y)**2.)*Sigma*Sigma), lambda y: np.inf])
 
 def total_1d_power(ell,Cl,ellmax,beamArcmin,noiseMukArcmin,TCMB=2.7255e6,deconvolve=False):
     if ell[-1]<ellmax:
@@ -151,12 +167,12 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
     try:
         assert pickling
-        clfile = "output/clsAll_"+time.strftime('%Y%m%d') +".pkl"
+        clfile = "output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl"
         cmbmat = pickle.load(open(clfile,'rb'))
         print "Loaded cached Cls from ", clfile
     except:
         cmbmat = results.get_cmb_power_spectra(pars)
-        if pickling: pickle.dump(cmbmat,open("output/clsAll_"+time.strftime('%Y%m%d') +".pkl",'wb'))
+        if pickling: pickle.dump(cmbmat,open("output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
 
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
@@ -176,13 +192,13 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
     try:
         assert pickling
-        clfile = "output/clphi_"+time.strftime('%Y%m%d') +".txt"
+        clfile = "output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt"
         clphi = np.loadtxt(clfile)
         print "Loaded cached Cls from ", clfile
     except:
         lensArr = results.get_lens_potential_cls(lmax=kellmax)
         clphi = lensArr[2:,0]
-        if pickling: np.savetxt("output/clphi_"+time.strftime('%Y%m%d') +".txt",clphi)
+        if pickling: np.savetxt("output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt",clphi)
 
     clkk = clphi* (2.*np.pi/4.)
     ells = np.arange(2,len(clkk)+2,1)
