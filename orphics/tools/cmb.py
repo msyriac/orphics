@@ -5,6 +5,42 @@ from scipy.interpolate import interp1d
 import time
 import cPickle as pickle
 
+
+def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
+    '''Get TT-lknee, TT-alpha, PP-lknee, PP-alpha 
+    Returns either as functions of beam FWHM (arcmin) or for specified beam FWHM (arcmin)
+    '''
+    if beamFWHMArcmin is None: assert returnFunctions
+    if not(returnFunctions): assert beamFWHMArcmin is not None
+    
+    # best fits from M.Hasselfield
+    ttalpha = -4.7
+    ttlknee = np.array([350.,3400.,4900.])
+    pplknee = np.array([60,330,460])
+    ppalpha = np.array([-2.6,-3.8,-3.9])
+    size = np.array([0.5,5.,7.]) # size in meters
+
+    freq = 150.e9
+    cspeed = 299792458.
+    wavelength = cspeed/freq
+    resin = 1.22*wavelength/size*60.*180./np.pi
+    from scipy.interpolate import interp1d,splrep,splev
+
+    ttlkneeFunc = interp1d(resin,ttlknee,fill_value="extrapolate",kind="linear")
+    ttalphaFunc = lambda x: ttalpha
+    pplkneeFunc = interp1d(resin,pplknee,fill_value="extrapolate",kind="linear")
+    ppalphaFunc = interp1d(resin,ppalpha,fill_value="extrapolate",kind="linear")
+
+    if returnFunctions:
+        return ttlkneeFunc,ttalphaFunc,pplkneeFunc,ppalphaFunc
+    else:
+        b = beamFWHMArcmin
+        return ttlkneeFunc(b),ttalphaFunc(b),pplkneeFunc(b),ppalphaFunc(b)
+
+
+
+
+
 def pad_1d_power(ell,Cl,ellmax):
     if ell[-1]<ellmax:
         appendArr = np.arange(ell[-1]+1,ellmax,1)
