@@ -20,6 +20,12 @@ def takeDiv(vecStampX,vecStampY,lxMap,lyMap):
 
     return ifft((lxMap*fX+lyMap*fY)*1j,axes=[-2,-1],normalize=True).real
 
+#Take divergence using fourier space gradients
+def takeGrad(stamp,lyMap,lxMap):
+
+    f = fft(stamp,axes=[-2,-1])
+
+    return ifft(lyMap*f*1j,axes=[-2,-1],normalize=True).real,ifft(lxMap*f*1j,axes=[-2,-1],normalize=True).real
 
 
 @timeit
