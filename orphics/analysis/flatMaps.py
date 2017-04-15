@@ -51,15 +51,19 @@ def interpolateGrid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3
 class GRFGen(object):
 
     def __init__(self,templateLiteMap,ell,Cell,bufferFactor=1):
+    # def __init__(self,Ny,Nx,py,px,modLMap,ell,Cell,bufferFactor=1):
         # Cell is dimensionless
 
         self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly = getFTAttributesFromLiteMap(templateLiteMap)
 
+        #self.modLMap = modLMap
         bufferFactor = int(bufferFactor)
         self.b = bufferFactor
 
-        self.Ny = templateLiteMap.data.shape[0]*bufferFactor
-        self.Nx = templateLiteMap.data.shape[1]*bufferFactor
+        self.Ny = templateLiteMap.Ny*bufferFactor
+        self.Nx = templateLiteMap.Nx*bufferFactor
+        #self.Ny = Ny*bufferFactor
+        #self.Nx = Nx*bufferFactor
 
         Ny = self.Ny
         Nx = self.Nx
@@ -82,6 +86,7 @@ class GRFGen(object):
         kk[self.modLMap>ell.max()] = 0.
 
         area = Nx*Ny*templateLiteMap.pixScaleX*templateLiteMap.pixScaleY
+        #area = Nx*Ny*px*py
         #p = np.reshape(kk,[Ny,Nx]) /area * (Nx*Ny)**2
         p = kk /area * (Nx*Ny)**2
 
@@ -120,10 +125,13 @@ class GRFGen(object):
         return data - data.mean()
 
 
-def stepFunctionFilterLiteMap(map2d,modLMap,ell):
+def stepFunctionFilterLiteMap(map2d,modLMap,ellMax,ellMin=None):
 
     kmap = fft(map2d.copy(),axes=[-2,-1])
-    kmap[modLMap>ell]=0.
+    kmap[modLMap>ellMax]=0.
+    if ellMin is not None:
+        kmap[modLMap<ellMin]=0.
+        
     retMap = ifft(kmap,axes=[-2,-1],normalize=True).real
 
     return retMap
@@ -336,6 +344,12 @@ def taper(lm,win):
     lmret.data[:,:] /= w2    
     return lmret
 
+def taperData(data2d,win):
+    data2d[:,:] *= win[:,:]
+    w2 = np.sqrt(np.mean(win**2.))
+    lmret.data[:,:] /= w2    
+    return data2d
+
 
 def initializeCosineWindow(templateLiteMap,lenApod=30,pad=0):
 	
@@ -373,6 +387,39 @@ def initializeCosineWindow(templateLiteMap,lenApod=30,pad=0):
 
     return(win.data)
 
+def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
+	
+    win=np.ones((Ny,Nx))
+
+    winX=win.copy()
+    winY=win.copy()
+
+    for j in range(pad,Ny-pad):
+            for i in range(pad,Nx-pad):
+                    if i<=(lenApod+pad):
+                            r=float(i)-pad
+                            winX[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+                    if i>=(Nx-1)-lenApod-pad:
+                            r=float((Nx-1)-i-pad)
+                            winX[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+
+    for i in range(pad,Nx-pad):
+            for j in range(pad,Ny-pad):
+                    if j<=(lenApod+pad):
+                            r=float(j)-pad
+                            winY[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+                    if j>=(Ny-1)-lenApod-pad:
+                            r=float((Ny-1)-j-pad)
+                            winY[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+
+    win[:]*=winX[:,:]*winY[:,:]
+    win[0:pad,:]=0
+    win[:,0:pad]=0
+    win[Nx-pad:Nx,:]=0
+    win[:,Nx-pad:Nx]=0
+
+    return win
+
 
 def deconvolveBeam(data,modLMap,ell,beam,returnFTOnly = False):
 
@@ -390,7 +437,6 @@ def deconvolveBeam(data,modLMap,ell,beam,returnFTOnly = False):
 
 
 def convolveBeam(data,modLMap,beamTemplate):
-
     kMap = fft(data,axes=[-2,-1])
     kMap[:,:] = (kMap[:,:] * beamTemplate[:,:])
     return ifft(kMap,axes=[-2,-1],normalize=True).real

@@ -6,7 +6,40 @@ import time
 import cPickle as pickle
 
 
-def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.):
+def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
+    '''Get TT-lknee, TT-alpha, PP-lknee, PP-alpha 
+    Returns either as functions of beam FWHM (arcmin) or for specified beam FWHM (arcmin)
+    '''
+    if beamFWHMArcmin is None: assert returnFunctions
+    if not(returnFunctions): assert beamFWHMArcmin is not None
+    
+    # best fits from M.Hasselfield
+    ttalpha = -4.7
+    ttlknee = np.array([350.,3400.,4900.])
+    pplknee = np.array([60,330,460])
+    ppalpha = np.array([-2.6,-3.8,-3.9])
+    size = np.array([0.5,5.,7.]) # size in meters
+
+    freq = 150.e9
+    cspeed = 299792458.
+    wavelength = cspeed/freq
+    resin = 1.22*wavelength/size*60.*180./np.pi
+    from scipy.interpolate import interp1d,splrep,splev
+
+    ttlkneeFunc = interp1d(resin,ttlknee,fill_value="extrapolate",kind="linear")
+    ttalphaFunc = lambda x: ttalpha
+    pplkneeFunc = interp1d(resin,pplknee,fill_value="extrapolate",kind="linear")
+    ppalphaFunc = interp1d(resin,ppalpha,fill_value="extrapolate",kind="linear")
+
+    if returnFunctions:
+        return ttlkneeFunc,ttalphaFunc,pplkneeFunc,ppalphaFunc
+    else:
+        b = beamFWHMArcmin
+        return ttlkneeFunc(b),ttalphaFunc(b),pplkneeFunc(b),ppalphaFunc(b)
+
+
+
+def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,TCMB=1.):
     '''Beam deconvolved noise in whatever units rms_noise is in.
     e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.    
     '''
@@ -17,7 +50,7 @@ def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.):
     rms = rms_noise * (1./60.)*(np.pi/180.)
     tht_fwhm = np.deg2rad(fwhm / 60.)
     ans = (atmFactor+1.) * (rms**2.) * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
-    return ans
+    return ans/TCMB**2.
 
 
 def pad_1d_power(ell,Cl,ellmax):
@@ -27,14 +60,17 @@ def pad_1d_power(ell,Cl,ellmax):
         Cl = np.append(np.asarray(Cl),np.asarray([0.]*len(appendArr)))
     return ell,Cl
 
+def noise_pad_infinity(Nlfunc,ellmin,ellmax):
+    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: Nlfunc(y), lambda y: np.inf])
+
 def get_noise_func(beamArcmin,noiseMukArcmin,ellmin=-np.inf,ellmax=np.inf,TCMB=2.7255e6,lknee=0.,alpha=0.):
     if lknee>1.e-3:
-        atmFactor = (lknee/ell)**(-alpha)
+        atmFactor = lambda ell: (lknee/ell)**(-alpha)
     else:
-        atmFactor = 0.
+        atmFactor = lambda ell: 0.
     Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
     noiseWhite = (np.pi / (180. * 60))**2.  * noiseMukArcmin**2. / TCMB**2.
-    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: (atmFactor+1.) * noiseWhite*np.exp((np.asarray(y)**2.)*Sigma*Sigma), lambda y: np.inf])
+    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: (atmFactor(y)+1.) * noiseWhite*np.exp((np.asarray(y)**2.)*Sigma*Sigma), lambda y: np.inf])
 
 def total_1d_power(ell,Cl,ellmax,beamArcmin,noiseMukArcmin,TCMB=2.7255e6,deconvolve=False):
     if ell[-1]<ellmax:
