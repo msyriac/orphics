@@ -184,12 +184,16 @@ class Plotter:
         Ny=data.shape[1]
         arr=data[clip:Nx-clip,clip:Ny-clip]
 
-        if lim==None:
+        if type(lim) is list:
+            limmin,limmax = lim
+        elif lim==None:
             limmin=None
+            limmax = None
         else:
             limmin=-lim
+            limmax = lim
 
-        img = self._ax.imshow(arr,interpolation="none",vmin=limmin,vmax=lim,cmap=cm,extent=extent,**kwargs)
+        img = self._ax.imshow(arr,interpolation="none",vmin=limmin,vmax=limmax,cmap=cm,extent=extent,**kwargs)
 
         if levels!=None:
            self._ax.contour(arr,levels=levels,extent=extent,origin="upper",colors=['black','black'],linestyles=['--','-'])
@@ -253,7 +257,7 @@ class FisherPlots(object):
         if hasLabels: pl.legendOn(labsize=labsize,loc=labloc)
         pl.done(saveFile)
         
-    def plotPair(self,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],**kwargs):
+    def plotPair(self,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,**kwargs):
         paramX,paramY = paramXYPair
 
         xval = self.fidDict[paramX]
@@ -300,6 +304,10 @@ class FisherPlots(object):
         ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
         ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
 
+        if xlims is not None: ax.set_xlim(*xlims)
+        if ylims is not None: ax.set_ylim(*ylims)
+        
+        
         labsize = 12
         #loc = 'upper right'
         loc = 'center'
