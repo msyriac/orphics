@@ -51,49 +51,39 @@ def interpolateGrid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3
 class GRFGen(object):
 
     def __init__(self,templateLiteMap,ell,Cell,bufferFactor=1):
-    # def __init__(self,Ny,Nx,py,px,modLMap,ell,Cell,bufferFactor=1):
-        # Cell is dimensionless
 
-        self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly = getFTAttributesFromLiteMap(templateLiteMap)
-
-        #self.modLMap = modLMap
         bufferFactor = int(bufferFactor)
-        self.b = bufferFactor
+        self.b = float(bufferFactor)
 
-        self.Ny = templateLiteMap.Ny*bufferFactor
-        self.Nx = templateLiteMap.Nx*bufferFactor
-        #self.Ny = Ny*bufferFactor
-        #self.Nx = Nx*bufferFactor
+        self.Ny,self.Nx = templateLiteMap.Ny,templateLiteMap.Nx
+        self.bNy = templateLiteMap.Ny*bufferFactor
+        self.bNx = templateLiteMap.Nx*bufferFactor
 
-        Ny = self.Ny
-        Nx = self.Nx
-
+        
         Cell[Cell<0.]=0.
 
+
+        ly = np.fft.fftfreq(self.bNy,d = templateLiteMap.pixScaleY)*(2*np.pi)
+        lx = np.fft.fftfreq(self.bNx,d = templateLiteMap.pixScaleX)*(2*np.pi)
+        self.modLMap = np.zeros([self.bNy,self.bNx])
+        iy, ix = np.mgrid[0:self.bNy,0:self.bNx]
+        self.modLMap[iy,ix] = np.sqrt(ly[iy]**2+lx[ix]**2)        
+
         s = splrep(ell,Cell,k=3) # maps will be uK fluctuations about zero
-        #ll = np.ravel(self.modLMap)
-        #kk = splev(ll,s)
         kk = splev(self.modLMap,s)
 
         self.power = kk.copy()
-        
+      
 
         kk[self.modLMap<2.]=0.
-        #kk[ll<2.]=0.
         
-        #id = np.where(ll>ell.max())
-        #kk[id] = 0.
         kk[self.modLMap>ell.max()] = 0.
 
-        area = Nx*Ny*templateLiteMap.pixScaleX*templateLiteMap.pixScaleY
-        #area = Nx*Ny*px*py
-        #p = np.reshape(kk,[Ny,Nx]) /area * (Nx*Ny)**2
-        p = kk /area * (Nx*Ny)**2
-
-        
+        area = self.bNx*self.bNy*templateLiteMap.pixScaleX*templateLiteMap.pixScaleY
+        p = kk /area * (self.bNx*self.bNy)**2
+      
         self.sqp = np.sqrt(p)
 
-    #@timeit
     def getMap(self,stepFilterEll=None):
         """
         Modified from sudeepdas/flipper
@@ -106,8 +96,8 @@ class GRFGen(object):
         """
 
 
-        realPart = self.sqp*np.random.randn(self.Ny,self.Nx)
-        imgPart = self.sqp*np.random.randn(self.Ny,self.Nx)
+        realPart = self.sqp*np.random.randn(self.bNy,self.bNx)
+        imgPart = self.sqp*np.random.randn(self.bNy,self.bNx)
 
 
         kMap = realPart+1.j*imgPart
@@ -119,8 +109,7 @@ class GRFGen(object):
 
         data = np.real(ifft(kMap,axes=[-2,-1],normalize=True)) 
 
-        data = data[(self.b-1)/2*self.Ny:(self.b+1)/2*self.Ny,(self.b-1)/2*self.Nx:(self.b+1)/2*self.Nx]
-
+        data = data[int((self.b-1)/2)*self.Ny:int((self.b+1)/2)*self.Ny,int((self.b-1)/2)*self.Nx:int((self.b+1)/2)*self.Nx]
 
         return data - data.mean()
 
@@ -340,8 +329,8 @@ def fourierMask(lx,ly,modLMap, lxcut = None, lycut = None, lmin = None, lmax = N
 def taper(lm,win):
     lmret = lm.copy()
     lmret.data[:,:] *= win[:,:]
-    w2 = np.sqrt(np.mean(win**2.))
-    lmret.data[:,:] /= w2    
+    #w2 = np.sqrt(np.mean(win**2.))
+    #lmret.data[:,:] /= w2    
     return lmret
 
 def taperData(data2d,win):

@@ -38,7 +38,10 @@ def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
         return ttlkneeFunc(b),ttalphaFunc(b),pplkneeFunc(b),ppalphaFunc(b)
 
 
-
+def gauss_beam(ell,fwhm):
+    tht_fwhm = np.deg2rad(fwhm / 60.)
+    return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
+    
 def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,TCMB=1.):
     '''Beam deconvolved noise in whatever units rms_noise is in.
     e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.    
