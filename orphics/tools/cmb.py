@@ -5,6 +5,22 @@ from scipy.interpolate import interp1d
 import time
 import cPickle as pickle
 
+def fit_noise_power(ells,nls,ell_fit=5000.,lknee_guess=2000.,alpha_guess=-4.0):
+    ''' Fit beam-convolved (i.e. does not know about beam) noise power to
+    an atmosphere+white noise model parameterized by rms_noise, lknee, alpha
+
+    ell_fit is the ell above which an average of the nls is taken to estimate
+    the rms white noise
+    '''
+    from scipy.optimize import curve_fit as cfit
+    
+    noise_guess = np.sqrt(np.nanmean(nls[ells>ell_fit]))*(180.*60./np.pi)
+    nlfitfunc = lambda ell,l,a: noise_func(ell,0.,noise_guess,l,a)#*cmb.gauss_beam(ells,fwhm)**2.
+    popt,pcov = cfit(nlfitfunc,ells,nls,p0=[lknee_guess,alpha_guess])
+    lknee_fit,alpha_fit = popt
+    return noise_guess,lknee_fit,alpha_fit
+
+
 
 def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
     '''Get TT-lknee, TT-alpha, PP-lknee, PP-alpha 
@@ -48,6 +64,7 @@ def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,TCMB=1.):
     '''
     if lknee>1.e-3:
         atmFactor = (lknee/ell)**(-alpha)
+        #atmFactor = (ell/lknee)**(alpha)
     else:
         atmFactor = 0.
     rms = rms_noise * (1./60.)*(np.pi/180.)

@@ -159,7 +159,7 @@ class Plotter:
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,labelX=None,labelY=None,scaleX="linear",scaleY="linear",ftsize=24,thk=3,**kwargs):
+    def __init__(self,labelX=None,labelY=None,scaleX="linear",scaleY="linear",ftsize=24,thk=1,**kwargs):
 
         matplotlib.rc('axes', linewidth=thk)
         matplotlib.rc('axes', labelcolor='k')
@@ -248,6 +248,8 @@ class FisherPlots(object):
         self.fidDict = fidDict
         self.paramList = paramList
         self.paramLatexList = paramLatexList
+        xx = np.array(np.arange(360) / 180. * np.pi)
+        self.circl = np.array([np.cos(xx),np.sin(xx)])
 
 
     def addFisher(self,setName,fisherMat,gaussOnly=False):
@@ -287,8 +289,8 @@ class FisherPlots(object):
         j = self.paramList.index(paramY)
 
         thk = 3
-        xx = np.array(np.arange(360) / 180. * np.pi)
-        circl = np.array([np.cos(xx),np.sin(xx)])
+        #xx = np.array(np.arange(360) / 180. * np.pi)
+        circl = self.circl #np.array([np.cos(xx),np.sin(xx)])
 
 
         paramlabely = '$'+self.paramLatexList[j]+'$' 
@@ -340,11 +342,9 @@ class FisherPlots(object):
         print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
 
 
-    def plotTri(self,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',**kwargs):
+    def plotTri(self,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,**kwargs):
 
-        xx = np.array(np.arange(360) / 180. * np.pi)
-        circl = np.array([np.cos(xx),np.sin(xx)])
-
+        circl = self.circl
         numpars = len(paramList)
         thk = 3
 
@@ -383,7 +383,7 @@ class FisherPlots(object):
 
                     ax = fig.add_subplot(numpars-1,numpars-1,count)
                     plt.tick_params(size=14,width=thk,labelsize = 16)
-                    ax.plot(xval,yval,'xk',mew=thk)
+                    if centerMarker: ax.plot(xval,yval,'xk',mew=thk)
                     ax.plot(ansout[0,:]+xval,ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab)
                     if (i==0):#(count ==1):
                         ax.set_ylabel(paramlabely, fontsize=32,weight='bold')
