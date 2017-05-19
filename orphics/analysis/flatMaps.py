@@ -340,8 +340,9 @@ def taperData(data2d,win):
     return data2d
 
 
-def initializeCosineWindow(templateLiteMap,lenApod=30,pad=0):
-	
+def initializeCosineWindow(templateLiteMap,lenApodY=30,lenApodX=None,pad=0):
+
+    if lenApodX is None: lenApodY=lenApodY
     Nx=templateLiteMap.Nx
     Ny=templateLiteMap.Ny
     win=templateLiteMap.copy()
@@ -351,22 +352,22 @@ def initializeCosineWindow(templateLiteMap,lenApod=30,pad=0):
     winY=win.copy()
 
     for j in range(pad,Ny-pad):
-            for i in range(pad,Nx-pad):
-                    if i<=(lenApod+pad):
-                            r=float(i)-pad
-                            winX.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
-                    if i>=(Nx-1)-lenApod-pad:
-                            r=float((Nx-1)-i-pad)
-                            winX.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+        for i in range(pad,Nx-pad):
+            if i<=(lenApodX+pad):
+                r=float(i)-pad
+                winX.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApodX))
+            if i>=(Nx-1)-lenApodX-pad:
+                r=float((Nx-1)-i-pad)
+                winX.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApodX))
 
     for i in range(pad,Nx-pad):
-            for j in range(pad,Ny-pad):
-                    if j<=(lenApod+pad):
-                            r=float(j)-pad
-                            winY.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
-                    if j>=(Ny-1)-lenApod-pad:
-                            r=float((Ny-1)-j-pad)
-                            winY.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+        for j in range(pad,Ny-pad):
+            if j<=(lenApodY+pad):
+                r=float(j)-pad
+                winY.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApodY))
+            if j>=(Ny-1)-lenApodY-pad:
+                r=float((Ny-1)-j-pad)
+                winY.data[j,i]=1./2*(1-np.cos(-np.pi*r/lenApodY))
 
     win.data[:]*=winX.data[:,:]*winY.data[:,:]
     win.data[0:pad,:]=0
@@ -375,6 +376,8 @@ def initializeCosineWindow(templateLiteMap,lenApod=30,pad=0):
     win.data[:,Nx-pad:Nx]=0
 
     return(win.data)
+
+
 
 def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
 	
@@ -409,8 +412,41 @@ def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
 
     return win
 
+def quickWindow(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
+	
+    win=np.ones((Ny,Nx))
 
-def deconvolveBeam(data,modLMap,ell,beam,returnFTOnly = False):
+    winX=win.copy()
+    winY=win.copy()
+
+    
+    for j in range(pad,Ny-pad):
+            for i in range(pad,Nx-pad):
+                    if i<=(lenApod+pad):
+                            r=float(i)-pad
+                            winX[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+                    if i>=(Nx-1)-lenApod-pad:
+                            r=float((Nx-1)-i-pad)
+                            winX[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+
+    for i in range(pad,Nx-pad):
+            for j in range(pad,Ny-pad):
+                    if j<=(lenApod+pad):
+                            r=float(j)-pad
+                            winY[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+                    if j>=(Ny-1)-lenApod-pad:
+                            r=float((Ny-1)-j-pad)
+                            winY[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
+
+    win[:]*=winX[:,:]*winY[:,:]
+    win[0:pad,:]=0
+    win[:,0:pad]=0
+    win[Nx-pad:Nx,:]=0
+    win[:,Nx-pad:Nx]=0
+
+    return win
+
+def deconvolveBeam(data,modLMap,ell,beam,lowPass=None,returnFTOnly = False):
 
 
     beamTemplate =  makeTemplate(ell,beam,modLMap)
@@ -418,6 +454,7 @@ def deconvolveBeam(data,modLMap,ell,beam,returnFTOnly = False):
     kMap = fft(data,axes=[-2,-1])
 
     kMap[:,:] = (kMap[:,:] / beamTemplate[:,:])
+    if lowPass is not None: kMap[modLMap>lowPass] = 0.
     if returnFTOnly:
         return kMap
     else:
@@ -429,4 +466,11 @@ def convolveBeam(data,modLMap,beamTemplate):
     kMap = fft(data,axes=[-2,-1])
     kMap[:,:] = (kMap[:,:] * beamTemplate[:,:])
     return ifft(kMap,axes=[-2,-1],normalize=True).real
-    
+
+def smooth(data,modLMap,gauss_sigma_arcmin):
+    kMap = fft(data,axes=[-2,-1])
+    sigma = np.deg2rad(gauss_sigma_arcmin / 60.)
+    beamTemplate = np.exp(-(sigma**2.)*(modLMap**2.) / (2.))
+    kMap[:,:] = (kMap[:,:] * beamTemplate[:,:])
+    return ifft(kMap,axes=[-2,-1],normalize=True).real
+

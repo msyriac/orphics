@@ -21,9 +21,11 @@ def nostdout():
     sys.stdout = save_stdout
 
 
-def highResPlot2d(array,outPath,verbose=True):
-    from enlib import enmap, enplot    
-    img = enplot.draw_map_field(enmap.enmap(array)[None],enplot.parse_args("-vvvg moo"))
+def highResPlot2d(array,outPath,down=None,verbose=True):
+    from enlib import enmap, enplot
+    dplus = ""
+    if down is not None: dplus = " -d "+str(down)
+    img = enplot.draw_map_field(enmap.enmap(array)[None],enplot.parse_args("-vvvg moo"+dplus))
     img.save(outPath)
     if verbose: print bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC
 

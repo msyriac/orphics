@@ -6,7 +6,7 @@ import time
 import cPickle as pickle
 
 def fit_noise_power(ells,nls,ell_fit=5000.,lknee_guess=2000.,alpha_guess=-4.0):
-    ''' Fit beam-convolved (i.e. does not know about beam) noise power to
+    ''' Fit beam-convolved (i.e. does not know about beam) noise power (uK^2 units) to
     an atmosphere+white noise model parameterized by rms_noise, lknee, alpha
 
     ell_fit is the ell above which an average of the nls is taken to estimate

@@ -41,7 +41,8 @@ class fitsMapFromCat(object):
 
         self.cuts.append(cutName)
         for suffix in self.suffixes:
-            for fName,template in zip(self.fieldNames,self.tList):
+            for fName,templateA in zip(self.fieldNames,self.tList):
+                template = templateA.copy()
                 template.data = template.data*0.
                 self.lMaps[self._name(fName,suffix,cutName)] = template.copy()
                 
