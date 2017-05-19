@@ -339,10 +339,46 @@ def taperData(data2d,win):
     lmret.data[:,:] /= w2    
     return data2d
 
+def cosineWindow(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
+    win=np.ones((Ny,Nx))
+    
+    i = np.arange(Nx) 
+    j = np.arange(Ny)
+    ii,jj = np.meshgrid(i,j)
+
+    # ii is array of x indices
+    # jj is array of y indices
+    # numpy indexes (j,i)
+
+    # xdirection
+    if lenApodX>0:
+        r=ii.astype(float)-padX
+        sel = np.where(ii<=(lenApodX+padX))
+        win[sel] = 1./2*(1-np.cos(-np.pi*r[sel]/lenApodX))
+        sel = np.where(ii>=((Nx-1)-lenApodX-padX))
+        r=((Nx-1)-ii-padX).astype(float)
+        win[sel] = 1./2*(1-np.cos(-np.pi*r[sel]/lenApodX))
+    # ydirection
+    if lenApodY>0:
+        r=jj.astype(float)-padY
+        sel = np.where(jj<=(lenApodY+padY))
+        win[sel] *= 1./2*(1-np.cos(-np.pi*r[sel]/lenApodY))
+        sel = np.where(jj>=((Ny-1)-lenApodY-padY))
+        r=((Ny-1)-jj-padY).astype(float)
+        win[sel] *= 1./2*(1-np.cos(-np.pi*r[sel]/lenApodY))
+
+    win[0:padY,:]=0
+    win[:,0:padX]=0
+    win[Ny-padY:,:]=0
+    win[:,Nx-padX:]=0
+    return win
 
 def initializeCosineWindow(templateLiteMap,lenApodY=30,lenApodX=None,pad=0):
 
     if lenApodX is None: lenApodY=lenApodY
+    print "WARNING: This function is deprecated and will be removed. \
+    Please replace with the much faster flatMaps.cosineWindow function."
+	
     Nx=templateLiteMap.Nx
     Ny=templateLiteMap.Ny
     win=templateLiteMap.copy()
@@ -412,7 +448,9 @@ def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
 
     return win
 
-def quickWindow(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
+def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
+    print "WARNING: This function is deprecated and will be removed. \
+    Please replace with the much faster flatMaps.cosineWindow function."
 	
     win=np.ones((Ny,Nx))
 
