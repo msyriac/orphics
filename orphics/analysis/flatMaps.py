@@ -1,6 +1,4 @@
 import numpy as np
-#from pyfftw.interfaces.scipy_fftpack import fft2
-#from pyfftw.interfaces.scipy_fftpack import ifft2
 
 from scipy.interpolate import splrep,splev
 from scipy.fftpack import fftshift
@@ -340,8 +338,8 @@ def fourierMask(lx,ly,modLMap, lxcut = None, lycut = None, lmin = None, lmax = N
 def taper(lm,win):
     lmret = lm.copy()
     lmret.data[:,:] *= win[:,:]
-    w2 = np.sqrt(np.mean(win**2.))
-    lmret.data[:,:] /= w2    
+    #w2 = np.sqrt(np.mean(win**2.))
+    #lmret.data[:,:] /= w2    
     return lmret
 
 def taperData(data2d,win):
