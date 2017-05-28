@@ -50,7 +50,7 @@ def interpolateGrid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3
 
 class GRFGen(object):
 
-    def __init__(self,templateLiteMap,ell,Cell,bufferFactor=1):
+    def __init__(self,templateLiteMap,ell=None,Cell=None,power2d=None,bufferFactor=1):
 
         bufferFactor = int(bufferFactor)
         self.b = float(bufferFactor)
@@ -59,26 +59,24 @@ class GRFGen(object):
         self.bNy = templateLiteMap.Ny*bufferFactor
         self.bNx = templateLiteMap.Nx*bufferFactor
 
-        
-        Cell[Cell<0.]=0.
-
-
         ly = np.fft.fftfreq(self.bNy,d = templateLiteMap.pixScaleY)*(2*np.pi)
         lx = np.fft.fftfreq(self.bNx,d = templateLiteMap.pixScaleX)*(2*np.pi)
         self.modLMap = np.zeros([self.bNy,self.bNx])
         iy, ix = np.mgrid[0:self.bNy,0:self.bNx]
         self.modLMap[iy,ix] = np.sqrt(ly[iy]**2+lx[ix]**2)        
 
-        s = splrep(ell,Cell,k=3) # maps will be uK fluctuations about zero
-        kk = splev(self.modLMap,s)
-
+        if Cell is not None:
+            assert ell is not None
+            Cell[Cell<0.]=0.
+            s = splrep(ell,Cell,k=3) # maps will be uK fluctuations about zero
+            kk = splev(self.modLMap,s)
+            kk[self.modLMap>ell.max()] = 0.
+        elif power2d is not None:
+            kk = power2d.copy()
+            
         self.power = kk.copy()
-      
-
         kk[self.modLMap<2.]=0.
         
-        kk[self.modLMap>ell.max()] = 0.
-
         area = self.bNx*self.bNy*templateLiteMap.pixScaleX*templateLiteMap.pixScaleY
         p = kk /area * (self.bNx*self.bNy)**2
       
@@ -339,6 +337,7 @@ def taperData(data2d,win):
     lmret.data[:,:] /= w2    
     return data2d
 
+@timeit
 def cosineWindow(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
     win=np.ones((Ny,Nx))
     
@@ -416,39 +415,6 @@ def initializeCosineWindow(templateLiteMap,lenApodY=30,lenApodX=None,pad=0):
 
 
 def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
-	
-    win=np.ones((Ny,Nx))
-
-    winX=win.copy()
-    winY=win.copy()
-
-    for j in range(pad,Ny-pad):
-            for i in range(pad,Nx-pad):
-                    if i<=(lenApod+pad):
-                            r=float(i)-pad
-                            winX[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
-                    if i>=(Nx-1)-lenApod-pad:
-                            r=float((Nx-1)-i-pad)
-                            winX[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
-
-    for i in range(pad,Nx-pad):
-            for j in range(pad,Ny-pad):
-                    if j<=(lenApod+pad):
-                            r=float(j)-pad
-                            winY[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
-                    if j>=(Ny-1)-lenApod-pad:
-                            r=float((Ny-1)-j-pad)
-                            winY[j,i]=1./2*(1-np.cos(-np.pi*r/lenApod))
-
-    win[:]*=winX[:,:]*winY[:,:]
-    win[0:pad,:]=0
-    win[:,0:pad]=0
-    win[Nx-pad:Nx,:]=0
-    win[:,Nx-pad:Nx]=0
-
-    return win
-
-def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
     print "WARNING: This function is deprecated and will be removed. \
     Please replace with the much faster flatMaps.cosineWindow function."
 	
@@ -505,10 +471,11 @@ def convolveBeam(data,modLMap,beamTemplate):
     kMap[:,:] = (kMap[:,:] * beamTemplate[:,:])
     return ifft(kMap,axes=[-2,-1],normalize=True).real
 
+@timeit
 def smooth(data,modLMap,gauss_sigma_arcmin):
     kMap = fft(data,axes=[-2,-1])
     sigma = np.deg2rad(gauss_sigma_arcmin / 60.)
-    beamTemplate = np.exp(-(sigma**2.)*(modLMap**2.) / (2.))
-    kMap[:,:] = (kMap[:,:] * beamTemplate[:,:])
+    beamTemplate = np.nan_to_num(1./np.exp((sigma**2.)*(modLMap**2.) / (2.)))
+    kMap[:,:] = np.nan_to_num(kMap[:,:] * beamTemplate[:,:])
     return ifft(kMap,axes=[-2,-1],normalize=True).real
 
