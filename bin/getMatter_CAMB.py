@@ -3,7 +3,7 @@ import sys,os
 import ConfigParser
 import itertools
 import os.path
-from cambCall import cambInterface
+from orphics.theory.cambCall import cambInterface
 
 '''
 This script gets the matter power spectrum P(k) from CAMB, axionCAMB, ... etc.

@@ -7,6 +7,29 @@ import matplotlib.pyplot as plt
 import numpy as np
 import itertools
 
+import contextlib
+import sys
+
+class DummyFile(object):
+    def write(self, x): pass
+
+@contextlib.contextmanager
+def nostdout():
+    save_stdout = sys.stdout
+    sys.stdout = DummyFile()
+    yield
+    sys.stdout = save_stdout
+
+
+def highResPlot2d(array,outPath,down=None,verbose=True):
+    from enlib import enmap, enplot
+    dplus = ""
+    if down is not None: dplus = " -d "+str(down)
+    img = enplot.draw_map_field(enmap.enmap(array)[None],enplot.parse_args("-vvvg moo"+dplus))
+    img.save(outPath)
+    if verbose: print bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC
+
+    
 def quickPlot2d(array,outPath,**kwargs):
     pl = Plotter()
     pl.plot2d(array,**kwargs)
@@ -146,12 +169,18 @@ class Plotter:
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,labelX=None,labelY=None,scaleX="linear",scaleY="linear",ftsize=24,**kwargs):
+    def __init__(self,labelX=None,labelY=None,scaleX="linear",scaleY="linear",ftsize=24,thk=1,**kwargs):
 
+        matplotlib.rc('axes', linewidth=thk)
+        matplotlib.rc('axes', labelcolor='k')
+        self.thk = thk
+        
         self._fig=plt.figure(**kwargs)
         self._ax=self._fig.add_subplot(1,1,1)
 
         ax = self._ax
+
+
 
         if labelX!=None: ax.set_xlabel(labelX,fontsize=ftsize)
         if labelY!=None: ax.set_ylabel(labelY,fontsize=ftsize)
@@ -160,6 +189,8 @@ class Plotter:
         ax.set_yscale(scaleY, nonposy='clip')
 
     def legendOn(self,loc='upper left',labsize=18,**kwargs):
+        plt.tick_params(size=labsize,width=self.thk,labelsize = labsize)
+
         handles, labels = self._ax.get_legend_handles_labels()
         legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)
 
@@ -227,6 +258,8 @@ class FisherPlots(object):
         self.fidDict = fidDict
         self.paramList = paramList
         self.paramLatexList = paramLatexList
+        xx = np.array(np.arange(360) / 180. * np.pi)
+        self.circl = np.array([np.cos(xx),np.sin(xx)])
 
 
     def addFisher(self,setName,fisherMat,gaussOnly=False):
@@ -257,7 +290,7 @@ class FisherPlots(object):
         if hasLabels: pl.legendOn(labsize=labsize,loc=labloc)
         pl.done(saveFile)
         
-    def plotPair(self,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,**kwargs):
+    def plotPair(self,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='center',**kwargs):
         paramX,paramY = paramXYPair
 
         xval = self.fidDict[paramX]
@@ -266,8 +299,8 @@ class FisherPlots(object):
         j = self.paramList.index(paramY)
 
         thk = 3
-        xx = np.array(np.arange(360) / 180. * np.pi)
-        circl = np.array([np.cos(xx),np.sin(xx)])
+        #xx = np.array(np.arange(360) / 180. * np.pi)
+        circl = self.circl #np.array([np.cos(xx),np.sin(xx)])
 
 
         paramlabely = '$'+self.paramLatexList[j]+'$' 
@@ -310,7 +343,7 @@ class FisherPlots(object):
         
         labsize = 12
         #loc = 'upper right'
-        loc = 'center'
+        #loc = 'center'
         handles, labels = ax.get_legend_handles_labels()
         legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
 
@@ -319,65 +352,60 @@ class FisherPlots(object):
         print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
 
 
+    def plotTri(self,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,**kwargs):
 
-class FisherPlotsExt(Plotter):
-    def __init__(self,paramList,paramLatexList,fidDict,ftsize=24,**kwargs):
-        Plotter.__init__(ftsize=ftsize,**kwargs)
-        self.fishers = {}
-        self.fidDict = fidDict
-        self.paramList = paramList
-        self.paramLatexList = paramLatexList
-
-
-        
-    def addPair(self,fisherMat,paramXYPair,**kwargs):#cols,lss,labels,saveFile,levels=[2.],**kwargs):
-        fisher = fisherMat
-        paramX,paramY = paramXYPair
-
-        xval = self.fidDict[paramX]
-        yval = self.fidDict[paramY]
-        i = self.paramList.index(paramX)
-        j = self.paramList.index(paramY)
-
+        circl = self.circl
+        numpars = len(paramList)
         thk = 3
-        xx = np.array(np.arange(360) / 180. * np.pi)
-        circl = np.array([np.cos(xx),np.sin(xx)])
 
-
-        paramlabely = '$'+self.paramLatexList[j]+'$' 
-        paramlabelx = '$'+self.paramLatexList[i]+'$'
-        
         matplotlib.rc('axes', linewidth=thk)
-        matplotlib.rc('axes', labelcolor='k')
-        #plt.figure(figsize=(6,5.5))
-
-
-        plt.tick_params(size=14,width=thk,labelsize = 16)
-
-
-        Finv = np.linalg.inv(fisher)
-        chi211 = Finv[i,i]
-        chi222 = Finv[j,j]
-        chi212 = Finv[i,j]
+        fig=plt.figure(figsize=(4*numpars,4*numpars),**kwargs)
         
-        chisq = np.array([[chi211,chi212],[chi212,chi222]])
+        if cols is None: cols = itertools.repeat(None)
 
-        Lmat = np.linalg.cholesky(chisq)
-        ansout = np.dot(Lmat,circl)
-        self._ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,**kwargs)
+        for setName,col,ls,lab in zip(setNames,cols,lss,labels):
+            gaussOnly, fisher = self.fishers[setName]
+            Finv = np.linalg.inv(fisher)
+            for i in xrange(0,numpars):
+                for j in xrange(i+1,numpars):
+                    count = 1+(j-1)*(numpars-1) + i
+
+                    paramX = paramList[i]
+                    paramY = paramList[j]
+
+                    p = self.paramList.index(paramX)
+                    q = self.paramList.index(paramY)
+
+                    chi211 = Finv[p,p]
+                    chi222 = Finv[q,q]
+                    chi212 = Finv[p,q]
+
+                    xval = self.fidDict[paramX]
+                    yval = self.fidDict[paramY]
+
+
+                    chisq = np.array([[chi211,chi212],[chi212,chi222]])
+                    Lmat = np.linalg.cholesky(chisq)
+                    ansout = np.dot(1.52*Lmat,circl)
+
+                    paramlabely = '$'+self.paramLatexList[q]+'$' 
+                    paramlabelx = '$'+self.paramLatexList[p]+'$'
+
+                    ax = fig.add_subplot(numpars-1,numpars-1,count)
+                    plt.tick_params(size=14,width=thk,labelsize = 16)
+                    if centerMarker: ax.plot(xval,yval,'xk',mew=thk)
+                    ax.plot(ansout[0,:]+xval,ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab)
+                    if (i==0):#(count ==1):
+                        ax.set_ylabel(paramlabely, fontsize=32,weight='bold')
+                    if (j == (numpars-1)):
+                        ax.set_xlabel(paramlabelx, fontsize=32,weight='bold')
+
         
-
-
-
-
-        self._ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
-        self._ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
-
-        labsize = 14
-        loc = 'upper right'
+        labsize = 32
         handles, labels = ax.get_legend_handles_labels()
-        legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)
-
+        legend = fig.legend(handles, labels,prop={'size':labsize},numpoints=1,frameon = 0,loc=loc, bbox_to_anchor = (-0.1,-0.1,1,1),bbox_transform = plt.gcf().transFigure,**kwargs) #
 
         plt.savefig(saveFile, bbox_inches='tight',format='png')
         print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
+                    
+

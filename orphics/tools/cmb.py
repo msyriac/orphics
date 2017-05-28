@@ -5,6 +5,22 @@ from scipy.interpolate import interp1d
 import time
 import cPickle as pickle
 
+def fit_noise_power(ells,nls,ell_fit=5000.,lknee_guess=2000.,alpha_guess=-4.0):
+    ''' Fit beam-convolved (i.e. does not know about beam) noise power (uK^2 units) to
+    an atmosphere+white noise model parameterized by rms_noise, lknee, alpha
+
+    ell_fit is the ell above which an average of the nls is taken to estimate
+    the rms white noise
+    '''
+    from scipy.optimize import curve_fit as cfit
+    
+    noise_guess = np.sqrt(np.nanmean(nls[ells>ell_fit]))*(180.*60./np.pi)
+    nlfitfunc = lambda ell,l,a: noise_func(ell,0.,noise_guess,l,a)#*cmb.gauss_beam(ells,fwhm)**2.
+    popt,pcov = cfit(nlfitfunc,ells,nls,p0=[lknee_guess,alpha_guess])
+    lknee_fit,alpha_fit = popt
+    return noise_guess,lknee_fit,alpha_fit
+
+
 
 def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
     '''Get TT-lknee, TT-alpha, PP-lknee, PP-alpha 
@@ -38,13 +54,17 @@ def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
         return ttlkneeFunc(b),ttalphaFunc(b),pplkneeFunc(b),ppalphaFunc(b)
 
 
-
+def gauss_beam(ell,fwhm):
+    tht_fwhm = np.deg2rad(fwhm / 60.)
+    return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
+    
 def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,TCMB=1.):
     '''Beam deconvolved noise in whatever units rms_noise is in.
     e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.    
     '''
     if lknee>1.e-3:
         atmFactor = (lknee/ell)**(-alpha)
+        #atmFactor = (ell/lknee)**(alpha)
     else:
         atmFactor = 0.
     rms = rms_noise * (1./60.)*(np.pi/180.)
