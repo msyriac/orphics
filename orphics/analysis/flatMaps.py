@@ -4,12 +4,37 @@ from scipy.interpolate import splrep,splev
 from scipy.fftpack import fftshift
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 from orphics.tools.stats import timeit
+import flipper.fftTools as ft
 
 try:
     from enlib.fft import fft,ifft
 except:
     print "WARNING: You imported orphics.analysis.flatMaps, some of which requires enlib. Couldn't find enlib. Functionality may be missing."
 
+
+@timeit
+def get_simple_power(map1,mask1,map2=None,mask2=None):
+    '''Mask a map (pair) and calculate its power spectrum
+    with only a norm (w2) correction.
+    '''
+    if mask2 is None: mask2=np.asarray(mask1).copy()
+   
+    pass1 = map1.copy()
+    pass1.data = pass1.data * mask1
+    #from orphics.tools.io import quickPlot2d
+    #quickPlot2d(pass1.data,"temp.png")
+    #sys.exit()
+    if map2 is not None:
+        pass2 = map2.copy()
+        pass2.data = pass2.data * mask2
+        power = ft.powerFromLiteMap(pass1,pass2)
+    else:        
+        power = ft.powerFromLiteMap(pass1)
+    w2 = np.mean(mask1*mask2)
+    power.powerMap /= w2    
+    return power.powerMap
+
+    
 #Take divergence using fourier space gradients
 def takeDiv(vecStampX,vecStampY,lxMap,lyMap):
 
