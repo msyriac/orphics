@@ -5,11 +5,11 @@ from scipy.fftpack import fftshift
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 from orphics.tools.stats import timeit
 import flipper.fftTools as ft
-
 try:
-    from enlib.fft import fft,ifft
+    from flipper.fft import fft,ifft
 except:
-    print "WARNING: You imported orphics.analysis.flatMaps, some of which requires enlib. Couldn't find enlib. Functionality may be missing."
+    import logging
+    logging.warning("You seem to be using a version of flipper that does not have the 'flipper.fft' module, a wrapper for fast multi-threaded pyfftw FFTs. Please use the version of flipper maintained by the ACT Collaboration at https://github.com/ACTCollaboration/flipper .")
 
 
 @timeit
@@ -500,5 +500,13 @@ def smooth(data,modLMap,gauss_sigma_arcmin):
     sigma = np.deg2rad(gauss_sigma_arcmin / 60.)
     beamTemplate = np.nan_to_num(1./np.exp((sigma**2.)*(modLMap**2.) / (2.)))
     kMap[:,:] = np.nan_to_num(kMap[:,:] * beamTemplate[:,:])
+    return ifft(kMap,axes=[-2,-1],normalize=True).real
+
+
+@timeit
+def filter_map(data2d,filter2d,modLMap,lowPass=None):
+    kMap = fft(data2d,axes=[-2,-1])
+    kMap[:,:] = np.nan_to_num(kMap[:,:] * filter2d[:,:])
+    if lowPass is not None: kMap[modLMap>lowPass] = 0.
     return ifft(kMap,axes=[-2,-1],normalize=True).real
 

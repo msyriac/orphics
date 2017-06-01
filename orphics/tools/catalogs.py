@@ -34,3 +34,35 @@ def getCountMapFromCatalog(templateLiteMap,ras,decs,curved=False):
 
     return fmapper.getMap("ct","temp",'')
 
+
+def getCountMapsFromCatalogFile(templateLiteMap,fitsFile,raMin,raMax,nsplits=1,Nmax=None,curved=False):
+
+    from ..analysis.galaxyMapMaker import fitsMapFromCat as galMapper
+    import astropy.io.fits as fitsio
+
+    f = fitsio.open(fitsFile)
+
+    suffixes = []
+    for i in range(nsplits):
+        suffixes.append("ct"+str(i))
+    fmapper = galMapper(suffixes,[templateLiteMap],["temp"])
+    fmapper.addCut('')
+    if Nmax is None: Nmax = f[1].data['RA'].size
+
+    i=0
+    j=0
+    while i<Nmax:
+        try:
+            ra = f[1].data['RA'][i]
+            dec = f[1].data['DEC'][i]
+        except:
+            break
+        if ra>raMin and ra<raMax: 
+            fmapper.updateIndex(ra,dec)
+            fmapper.increment("ct"+str(j%nsplits),'',1)
+            j+=1
+        i+=1
+        if i%10000==0: print i
+
+    f.close()
+    return [fmapper.getMap("ct"+str(k),"temp",'') for k in range(nsplits)]

@@ -1,11 +1,8 @@
 import matplotlib
-#matplotlib.rcParams['mathtext.fontset'] = 'custom'
-#matplotlib.rcParams['mathtext.rm'] = 'Bitstream Vera Sans'
-#matplotlib.rcParams['mathtext.it'] = 'Bitstream Vera Sans:italic'
-#matplotlib.rcParams['mathtext.bf'] = 'Bitstream Vera Sans:bold'
 import matplotlib.pyplot as plt
 import numpy as np
 import itertools
+import os.path
 
 import contextlib
 import sys
@@ -21,8 +18,16 @@ def nostdout():
     sys.stdout = save_stdout
 
 
-def highResPlot2d(array,outPath,down=None,verbose=True):
-    from enlib import enmap, enplot
+def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True):
+    if not(overwrite):
+        if os.path.isfile(outPath): return
+    try:
+        from enlib import enmap, enplot
+    except:
+        printC("Could not produce plot "+outPath+". High resolution plotting requires enlib, which couldn't be imported. Continuing without plotting.",color='fail')
+        return
+        
+        
     dplus = ""
     if down is not None: dplus = " -d "+str(down)
     img = enplot.draw_map_field(enmap.enmap(array)[None],enplot.parse_args("-vvvg moo"+dplus))
@@ -380,17 +385,29 @@ class FisherPlots(object):
                     chi222 = Finv[q,q]
                     chi212 = Finv[p,q]
 
-                    xval = self.fidDict[paramX]
-                    yval = self.fidDict[paramY]
+                    # a sigma8 hack
+                    if "S8" in paramX:
+                        xval = 0.8
+                        paramlabelx = '$\sigma_8(z_{'+paramX[3:]+'})$'
+                    else:
+                        xval = self.fidDict[paramX]
+                        paramlabelx = '$'+self.paramLatexList[p]+'$'
+                    if "S8" in paramY:
+                        yval = 0.8
+                        paramlabely = '$\sigma_8(z_{'+paramY[3:]+'})$'
+                    else:
+                        yval = self.fidDict[paramY]
+                        paramlabely = '$'+self.paramLatexList[q]+'$' 
 
-
+                    if paramX=="S8All": paramlabelx = '$\sigma_8$'
+                    if paramY=="S8All": paramlabely = '$\sigma_8$'
+                        
                     chisq = np.array([[chi211,chi212],[chi212,chi222]])
                     Lmat = np.linalg.cholesky(chisq)
                     ansout = np.dot(1.52*Lmat,circl)
 
-                    paramlabely = '$'+self.paramLatexList[q]+'$' 
-                    paramlabelx = '$'+self.paramLatexList[p]+'$'
-
+                    
+                    
                     ax = fig.add_subplot(numpars-1,numpars-1,count)
                     plt.tick_params(size=14,width=thk,labelsize = 16)
                     if centerMarker: ax.plot(xval,yval,'xk',mew=thk)
