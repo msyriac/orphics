@@ -76,6 +76,12 @@ class LensForecast:
 
         self._haveKS = True
 
+    def loadGenericCls(self,specType,ellsCls,Cls,ellsNls=None,Nls=None):
+        if Nls is not None: self.Nls[specType] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
+        self.theory.loadGenericCls(ellsCls,Cls,specType)
+        
+        
+
     def KnoxCov(self,specTypeXY,specTypeWZ,ellBinEdges,fsky):
         '''
         returns cov(Cl_XY,Cl_WZ),signalToNoise(Cl_XY)^2, signalToNoise(Cl_WZ)^2

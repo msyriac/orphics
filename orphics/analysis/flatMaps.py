@@ -504,9 +504,10 @@ def smooth(data,modLMap,gauss_sigma_arcmin):
 
 
 @timeit
-def filter_map(data2d,filter2d,modLMap,lowPass=None):
+def filter_map(data2d,filter2d,modLMap,lowPass=None,highPass=None):
     kMap = fft(data2d,axes=[-2,-1])
     kMap[:,:] = np.nan_to_num(kMap[:,:] * filter2d[:,:])
     if lowPass is not None: kMap[modLMap>lowPass] = 0.
+    if highPass is not None: kMap[modLMap<highPass] = 0.
     return ifft(kMap,axes=[-2,-1],normalize=True).real
 

@@ -9,3 +9,8 @@ otherwise
 
 `pip install .`
 
+or
+
+`python setup.py install --user`
+
+

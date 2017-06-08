@@ -28,9 +28,11 @@ def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True):
         return
         
         
-    dplus = ""
-    if down is not None: dplus = " -d "+str(down)
-    img = enplot.draw_map_field(enmap.enmap(array)[None],enplot.parse_args("-vvvg moo"+dplus))
+    if (down is not None) and (down!=1):
+        downmap = enmap.downgrade(enmap.enmap(array)[None], down)
+    else:
+        downmap = enmap.enmap(array)[None]
+    img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"))
     img.save(outPath)
     if verbose: print bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC
 
