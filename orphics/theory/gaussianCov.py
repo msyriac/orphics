@@ -88,6 +88,7 @@ class LensForecast:
         a,b = spec
         ells = np.arange(ell_left,ell_right+1,1)
         cls = self.theory.gCl(spec,ells)
+        Noise = 0.
         if noise:
             if a==b:
                 Noise = self.Nls[spec](ells)
