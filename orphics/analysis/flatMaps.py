@@ -147,6 +147,17 @@ def stepFunctionFilterLiteMap(map2d,modLMap,ellMax,ellMin=None):
     return retMap
 
 
+def FourierTQUtoFourierTEB(fT,fQ,fU,modLMap,angLMap):
+
+    
+    fE=fT.copy()
+    fB=fT.copy()
+    fE[:]=fQ[:]*np.cos(2.*angLMap)+fU*np.sin(2.*angLMap)
+    fB[:]=-fQ[:]*np.sin(2.*angLMap)+fU*np.cos(2.*angLMap)
+    
+    return(fT, fE, fB)
+
+
 def TQUtoFourierTEB(T_map,Q_map,U_map,modLMap,angLMap):
 
     fT=fft(T_map,axes=[-2,-1])    
@@ -473,10 +484,9 @@ def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
 
     return win
 
-def deconvolveBeam(data,modLMap,ell,beam,lowPass=None,returnFTOnly = False):
+def deconvolveBeam(data,modLMap,beamTemplate,lowPass=None,returnFTOnly = False):
 
 
-    beamTemplate =  makeTemplate(ell,beam,modLMap)
 
     kMap = fft(data,axes=[-2,-1])
 

@@ -141,9 +141,9 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
     theory.loadCls(ell,lclee,'EE',lensed=True,interporder="linear",lpad=lpad)
     theory.loadCls(ell,lclbb,'BB',lensed=True,interporder="linear",lpad=lpad)
 
-    ell, cldd = np.loadtxt(cambRoot+"_lenspotentialCls.dat",unpack=True,usecols=[0,5])
+    elldd, cldd = np.loadtxt(cambRoot+"_lenspotentialCls.dat",unpack=True,usecols=[0,5])
     clkk = 2.*np.pi*cldd/4. #/ell/(ell+1.)
-    theory.loadGenericCls(ell,clkk,"kk",lpad=lpad)
+    theory.loadGenericCls(elldd,clkk,"kk",lpad=lpad)
 
 
     if unlensedEqualsLensed:

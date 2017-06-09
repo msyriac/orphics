@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 
 class LensForecast:
 
-    def __init__(self):
+    def __init__(self,theory=None):
         '''
         Make S/N projections for CMB and OWL auto and cross-correlations.
 
@@ -24,7 +24,11 @@ class LensForecast:
         
         self._haveKS = False
 
-        self.theory = TheorySpectra()
+        if theory is None:
+            self.theory = TheorySpectra()
+        else:
+            self.theory = theory
+            
         self.Nls = {}
         
 
@@ -80,7 +84,7 @@ class LensForecast:
         if Nls is not None: self.Nls[specType] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
         self.theory.loadGenericCls(ellsCls,Cls,specType)
         
-    def _bin_cls(spec,ell_left,ell_right,noise=True):
+    def _bin_cls(self,spec,ell_left,ell_right,noise=True):
         a,b = spec
         ells = np.arange(ell_left,ell_right+1,1)
         cls = self.theory.gCl(spec,ells)
