@@ -260,30 +260,35 @@ class Plotter:
 
 
 class FisherPlots(object):
-    def __init__(self,paramList,paramLatexList,fidDict):
+    def __init__(self):
         self.fishers = {}
-        self.fidDict = fidDict
-        self.paramList = paramList
-        self.paramLatexList = paramLatexList
+        self.fidDicts = {}
+        self.paramLists = {}
+        self.paramLatexLists = {}
         xx = np.array(np.arange(360) / 180. * np.pi)
         self.circl = np.array([np.cos(xx),np.sin(xx)])
 
+    def addSection(self,section,paramList,paramLatexList,fidDict):
+        self.fishers[section] = {}
+        self.fidDicts[section] = fidDict
+        self.paramLists[section] = paramList
+        self.paramLatexLists[section] = paramLatexList
 
-    def addFisher(self,setName,fisherMat,gaussOnly=False):
-        self.fishers[setName] = (gaussOnly,fisherMat)
+    def addFisher(self,section,setName,fisherMat,gaussOnly=False):
+        self.fishers[section][setName] = (gaussOnly,fisherMat)
 
-    def plot1d(self,paramName,frange,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",labsize=12,labloc='upper left',xmultiplier=1.,labelXSuffix=""):
+    def plot1d(self,section,paramName,frange,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",labsize=12,labloc='upper left',xmultiplier=1.,labelXSuffix=""):
 
-        fval = self.fidDict[paramName]
-        i = self.paramList.index(paramName)
-        paramlabel = '$'+self.paramLatexList[i]+'$' 
+        fval = self.fidDicts[section][paramName]
+        i = self.paramLists[section].index(paramName)
+        paramlabel = '$'+self.paramLatexLists[section][i]+'$' 
 
         pl = Plotter()
         errs = {}
         hasLabels = False
         for setName,col,ls,lab in zip(setNames,cols,lss,labels):
             if lab is not None: hasLabels = True
-            gaussOnly, fisher = self.fishers[setName]
+            gaussOnly, fisher = self.fishers[section][setName]
             if gaussOnly:
                 ErrSigmaSq = fisher**2.
             else:
@@ -296,36 +301,42 @@ class FisherPlots(object):
         pl._ax.set_xlabel(paramlabel+labelXSuffix,fontsize=24,weight='bold')
         if hasLabels: pl.legendOn(labsize=labsize,loc=labloc)
         pl.done(saveFile)
-        
-    def plotPair(self,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='center',**kwargs):
+
+
+    def startFig(self,**kwargs):
+        self.fig = plt.figure(**kwargs)
+        self.ax = self.fig.add_subplot(1,1,1)
+
+    def plotPair(self,section,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),levels=[2.],xlims=None,ylims=None,loc='center',alphas=None,**kwargs):
+        if alphas is None: alphas = [1]*len(setNames)
         paramX,paramY = paramXYPair
 
-        xval = self.fidDict[paramX]
-        yval = self.fidDict[paramY]
-        i = self.paramList.index(paramX)
-        j = self.paramList.index(paramY)
+        xval = self.fidDicts[section][paramX]
+        yval = self.fidDicts[section][paramY]
+        i = self.paramLists[section].index(paramX)
+        j = self.paramLists[section].index(paramY)
 
         thk = 3
         #xx = np.array(np.arange(360) / 180. * np.pi)
         circl = self.circl #np.array([np.cos(xx),np.sin(xx)])
 
 
-        paramlabely = '$'+self.paramLatexList[j]+'$' 
-        paramlabelx = '$'+self.paramLatexList[i]+'$'
+        paramlabely = '$'+self.paramLatexLists[section][j]+'$' 
+        paramlabelx = '$'+self.paramLatexLists[section][i]+'$'
         
         matplotlib.rc('axes', linewidth=thk)
         matplotlib.rc('axes', labelcolor='k')
         #plt.figure(figsize=(6,5.5))
 
-        fig=plt.figure(**kwargs)
-        ax = fig.add_subplot(1,1,1)
+        fig=self.fig #
+        ax = self.ax 
 
         plt.tick_params(size=14,width=thk,labelsize = 16)
 
         if cols is None: cols = itertools.repeat(None)
 
-        for setName,col,ls,lab in zip(setNames,cols,lss,labels):
-            gaussOnly, fisher = self.fishers[setName]
+        for setName,col,ls,lab,alpha in zip(setNames,cols,lss,labels,alphas):
+            gaussOnly, fisher = self.fishers[section][setName]
             Finv = np.linalg.inv(fisher)
             chi211 = Finv[i,i]
             chi222 = Finv[j,j]
@@ -335,7 +346,7 @@ class FisherPlots(object):
 
             Lmat = np.linalg.cholesky(chisq)
             ansout = np.dot(1.52*Lmat,circl)
-            ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab)
+            ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab,alpha=alpha)
         
 
 
@@ -354,12 +365,12 @@ class FisherPlots(object):
         handles, labels = ax.get_legend_handles_labels()
         legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
 
-
+    def done(self,saveFile):
         plt.savefig(saveFile, bbox_inches='tight',format='png')
         print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
 
 
-    def plotTri(self,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,**kwargs):
+    def plotTri(self,section,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,**kwargs):
 
         circl = self.circl
         numpars = len(paramList)
@@ -371,7 +382,7 @@ class FisherPlots(object):
         if cols is None: cols = itertools.repeat(None)
 
         for setName,col,ls,lab in zip(setNames,cols,lss,labels):
-            gaussOnly, fisher = self.fishers[setName]
+            gaussOnly, fisher = self.fishers[section][setName]
             Finv = np.linalg.inv(fisher)
             for i in xrange(0,numpars):
                 for j in xrange(i+1,numpars):
@@ -380,8 +391,8 @@ class FisherPlots(object):
                     paramX = paramList[i]
                     paramY = paramList[j]
 
-                    p = self.paramList.index(paramX)
-                    q = self.paramList.index(paramY)
+                    p = self.paramLists[section].index(paramX)
+                    q = self.paramLists[section].index(paramY)
 
                     chi211 = Finv[p,p]
                     chi222 = Finv[q,q]
@@ -392,14 +403,14 @@ class FisherPlots(object):
                         xval = 0.8
                         paramlabelx = '$\sigma_8(z_{'+paramX[3:]+'})$'
                     else:
-                        xval = self.fidDict[paramX]
-                        paramlabelx = '$'+self.paramLatexList[p]+'$'
+                        xval = self.fidDicts[section][paramX]
+                        paramlabelx = '$'+self.paramLatexLists[section][p]+'$'
                     if "S8" in paramY:
                         yval = 0.8
                         paramlabely = '$\sigma_8(z_{'+paramY[3:]+'})$'
                     else:
-                        yval = self.fidDict[paramY]
-                        paramlabely = '$'+self.paramLatexList[q]+'$' 
+                        yval = self.fidDicts[section][paramY]
+                        paramlabely = '$'+self.paramLatexLists[section][q]+'$' 
 
                     if paramX=="S8All": paramlabelx = '$\sigma_8$'
                     if paramY=="S8All": paramlabely = '$\sigma_8$'
