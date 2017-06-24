@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import itertools
 import os.path
-
+import traceback
 import contextlib
 import sys
 
@@ -24,6 +24,7 @@ def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True):
     try:
         from enlib import enmap, enplot
     except:
+        traceback.print_exc()
         printC("Could not produce plot "+outPath+". High resolution plotting requires enlib, which couldn't be imported. Continuing without plotting.",color='fail')
         return
         
