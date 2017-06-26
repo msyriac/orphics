@@ -12,6 +12,11 @@ except:
     logging.warning("You seem to be using a version of flipper that does not have the 'flipper.fft' module, a wrapper for fast multi-threaded pyfftw FFTs. Please use the version of flipper maintained by the ACT Collaboration at https://github.com/ACTCollaboration/flipper .")
 
 
+def pixel_window_function(modLMap,thetaMap,pixScaleX,pixScaleY):
+    from scipy.special import j0
+    return j0(modLMap*pixScaleX*np.cos(thetaMap)/2.)*j0(modLMap*pixScaleY*np.sin(thetaMap)/2.) # are cos and sin orders correct?
+
+    
 @timeit
 def get_simple_power(map1,mask1,map2=None,mask2=None):
     '''Mask a map (pair) and calculate its power spectrum
