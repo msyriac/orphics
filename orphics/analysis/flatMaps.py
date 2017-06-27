@@ -14,9 +14,15 @@ except:
 
 def pixel_window_function(modLMap,thetaMap,pixScaleX,pixScaleY):
     from scipy.special import j0
-    return j0(modLMap*pixScaleX*np.cos(thetaMap)/2.)*j0(modLMap*pixScaleY*np.sin(thetaMap)/2.) # are cos and sin orders correct?
+    #return j0(modLMap*pixScaleX*np.cos(thetaMap)/2.)*j0(modLMap*pixScaleY*np.sin(thetaMap)/2.) # are cos and sin orders correct?
+    return np.sinc(modLMap*pixScaleX*np.cos(thetaMap)/2./np.pi)*np.sinc(modLMap*pixScaleY*np.sin(thetaMap)/2./np.pi) # are cos and sin orders correct?
 
-    
+
+def pixwin(l, pixsize):
+    # pixsize = 0.5 arcmin for ACT
+    pixsize = pixsize  * np.pi / (60. * 180)
+    return np.sinc(l * pixsize / (2. * np.pi))**2
+
 @timeit
 def get_simple_power(map1,mask1,map2=None,mask2=None):
     '''Mask a map (pair) and calculate its power spectrum
