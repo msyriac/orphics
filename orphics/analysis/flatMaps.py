@@ -457,7 +457,10 @@ def initializeCosineWindow(templateLiteMap,lenApodY=30,lenApodX=None,pad=0):
 
     return(win.data)
 
-def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,catalog=None,n_random_points=None):
+def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,ras=None,decs=None,n_random_points=None):
+    from skimage.transform import resize
+    import orphics.tools.stats as stats
+
     width_stamp_degrees = width_stamp_arcminute /60.
     Np = np.int(width_stamp_arcminute/pix_scale+0.5)
     pad = np.int(Np/2+0.5)
@@ -467,8 +470,8 @@ def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,cat
     stack=0
     N=0
 
-    if catalog is not None:
-        looprange = range(0,len(catalog))
+    if ras is not None:
+        looprange = range(0,len(ras))
         assert n_random_points is None
         random = False
     else:
@@ -483,8 +486,8 @@ def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,cat
                         ra = np.random.uniform(*ra_range)
                         dec =np.random.uniform(*dec_range)
         else:
-                        ra=catalog[i][1]
-                        dec=catalog[i][2]
+                        ra=ras[i] #catalog[i][1]
+                        dec=decs[i] #catalog[i][2]
         ix, iy = lmap.skyToPix(ra,dec)
         if ix>=pad and ix<lmap.Nx-pad and iy>=pad and iy<lmap.Ny-pad:
             print(i)
@@ -495,7 +498,7 @@ def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,cat
             cutout = resize(smap.data.copy(),output_shape=(Np,Np))
             #print (cutout.shape)
             stack = stack + cutout
-            xMap,yMap,modRMap,xx,yy = fmaps.getRealAttributes(smap)
+            xMap,yMap,modRMap,xx,yy = getRealAttributes(smap)
             N=N+1.
         else:
             print ("skip")
@@ -504,17 +507,17 @@ def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,cat
     #print(smap.data.shape)
     print(stack)
     print(N)
-    io.quickPlot2d(stack,out_dir+"stack.png")
+    # io.quickPlot2d(stack,out_dir+"stack.png")
 
     dt = pix_scale
     arcmax = 20.
     thetaRange = np.arange(0.,arcmax,dt)
-    breal = bin2D(modRMap*180.*60./np.pi,thetaRange)
+    breal = stats.bin2D(modRMap*180.*60./np.pi,thetaRange)
     cents,recons = breal.bin(stack)
-    pl = Plotter(labelX='Distance from Center (arcminutes)',labelY='Temperature Fluctuation ($\mu K$)', ftsize=10)
-    pl.add(cents,recons)
-    pl._ax.axhline(y=0.,ls="--",alpha=0.5)
-    pl.done(out_dir+"profiles.png")
+    # pl = Plotter(labelX='Distance from Center (arcminutes)',labelY='Temperature Fluctuation ($\mu K$)', ftsize=10)
+    # pl.add(cents,recons)
+    # pl._ax.axhline(y=0.,ls="--",alpha=0.5)
+    # pl.done(out_dir+"profiles.png")
     return stack, cents, recons
 
 def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
