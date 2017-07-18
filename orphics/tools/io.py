@@ -36,7 +36,7 @@ def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True):
         downmap = enmap.enmap(array)[None]
     img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"))
     img.save(outPath)
-    if verbose: print bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC
+    if verbose: print (bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC)
 
     
 def quickPlot2d(array,outPath,**kwargs):
