@@ -6,6 +6,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import itertools
+from __future__ import print_function
 
 def quickPlot2d(array,outPath,**kwargs):
     pl = Plotter()
@@ -124,7 +125,7 @@ def printC(string,color=None,bold=False,uline=False):
 
     
 
-    print x+string+bcolors.ENDC
+    print (x+string+bcolors.ENDC)
 
 
 class bcolors:
@@ -212,7 +213,7 @@ class Plotter:
 
         plt.savefig(fileName,bbox_inches='tight',**kwargs)
 
-        print bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC
+        print (bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC)
         plt.close()
 
 
@@ -308,7 +309,7 @@ class FisherPlots(object):
 
 
         plt.savefig(saveFile, bbox_inches='tight',format='png')
-        print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
+        print (bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
 
 
 
@@ -372,4 +373,4 @@ class FisherPlotsExt(Plotter):
 
 
         plt.savefig(saveFile, bbox_inches='tight',format='png')
-        print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
+        print (bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
