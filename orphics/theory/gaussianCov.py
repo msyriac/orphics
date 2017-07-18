@@ -6,7 +6,7 @@ from scipy.interpolate import interp1d
 
 class LensForecast:
 
-    def __init__(self):
+    def __init__(self,theory=None):
         '''
         Make S/N projections for CMB and OWL auto and cross-correlations.
 
@@ -24,7 +24,11 @@ class LensForecast:
         
         self._haveKS = False
 
-        self.theory = TheorySpectra()
+        if theory is None:
+            self.theory = TheorySpectra()
+        else:
+            self.theory = theory
+            
         self.Nls = {}
         
 
@@ -76,17 +80,29 @@ class LensForecast:
 
         self._haveKS = True
 
+    def loadGenericCls(self,specType,ellsCls,Cls,ellsNls=None,Nls=None):
+        if Nls is not None: self.Nls[specType] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
+        self.theory.loadGenericCls(ellsCls,Cls,specType)
+        
+    def _bin_cls(self,spec,ell_left,ell_right,noise=True):
+        a,b = spec
+        ells = np.arange(ell_left,ell_right+1,1)
+        cls = self.theory.gCl(spec,ells)
+        Noise = 0.
+        if noise:
+            if a==b:
+                Noise = self.Nls[spec](ells)
+            else:
+                Noise = 0.
+        tot = cls+Noise
+        return np.sum(ells*tot)/np.sum(ells)
+
     def KnoxCov(self,specTypeXY,specTypeWZ,ellBinEdges,fsky):
         '''
         returns cov(Cl_XY,Cl_WZ),signalToNoise(Cl_XY)^2, signalToNoise(Cl_WZ)^2
         '''
-        def ClTot(spec,ell):
-            a,b = spec
-            if a==b:
-                Noise = self.Nls[spec](ell)
-            else:
-                Noise = 0.
-            return self.theory.gCl(spec,ell)+Noise        
+        def ClTot(spec,ell1,ell2):
+            return self._bin_cls(spec,ell1,ell2,noise=True)
         
         X, Y = specTypeXY
         W, Z = specTypeWZ
@@ -97,12 +113,16 @@ class LensForecast:
         covs = []
         sigs1 = []
         sigs2 = []
-        for ellMid,ellWidth in zip(ellMids,ellWidths):
-            ClSum = ClTot(X+W,ellMid)*ClTot(Y+Z,ellMid)+ClTot(X+Z,ellMid)*ClTot(Y+W,ellMid)
+
+        for ell_left,ell_right in zip(ellBinEdges[:-1],ellBinEdges[1:]):
+            ClSum = ClTot(X+W,ell_left,ell_right)*ClTot(Y+Z,ell_left,ell_right)+ClTot(X+Z,ell_left,ell_right)*ClTot(Y+W,ell_left,ell_right)
+            ellMid = (ell_right+ell_left)/2.
+            ellWidth = ell_right-ell_left
             var = ClSum/(2.*ellMid+1.)/ellWidth/fsky
             covs.append(var)
-            sigs1.append(self.theory.gCl(specTypeXY,ellMid)**2.*np.nan_to_num(1./var))
-            sigs2.append(self.theory.gCl(specTypeWZ,ellMid)**2.*np.nan_to_num(1./var))
+            sigs1.append(self._bin_cls(specTypeXY,ell_left,ell_right,noise=False)**2.*np.nan_to_num(1./var))
+            sigs2.append(self._bin_cls(specTypeWZ,ell_left,ell_right,noise=False)**2.*np.nan_to_num(1./var))
+        
 
         return np.array(covs), np.array(sigs1), np.array(sigs2)
 
