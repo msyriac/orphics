@@ -1,3 +1,4 @@
+from __future__ import print_function
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -35,7 +36,7 @@ def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True,crange=Non
         downmap = enmap.enmap(array)[None]
     img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
     img.save(outPath)
-    if verbose: print bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC
+    if verbose: print (bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC)
 
     
 def quickPlot2d(array,outPath,**kwargs):
@@ -155,7 +156,7 @@ def printC(string,color=None,bold=False,uline=False):
 
     
 
-    print x+string+bcolors.ENDC
+    print (x+string+bcolors.ENDC)
 
 
 class bcolors:
@@ -255,7 +256,7 @@ class Plotter:
 
         plt.savefig(fileName,bbox_inches='tight',**kwargs)
 
-        print bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC
+        print (bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC)
         plt.close()
 
 
@@ -368,7 +369,7 @@ class FisherPlots(object):
 
     def done(self,saveFile):
         plt.savefig(saveFile, bbox_inches='tight',format='png')
-        print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
+        print (bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
 
 
     def plotTri(self,section,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,**kwargs):
@@ -437,6 +438,4 @@ class FisherPlots(object):
         legend = fig.legend(handles, labels,prop={'size':labsize},numpoints=1,frameon = 0,loc=loc, bbox_to_anchor = (-0.1,-0.1,1,1),bbox_transform = plt.gcf().transFigure,**kwargs) #
 
         plt.savefig(saveFile, bbox_inches='tight',format='png')
-        print bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC
-                    
-
+        print (bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
