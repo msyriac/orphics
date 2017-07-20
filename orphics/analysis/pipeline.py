@@ -3,6 +3,8 @@ import sys
 from enlib import enmap,powspec
 from orphics.tools.stats import timeit
 import commands
+import logging
+from __future__ import print_function
 
 class Pipeline(object):
     """ This class allows flexible distribution of N tasks across m MPI cores.
@@ -19,75 +21,65 @@ class Pipeline(object):
     But you don't want to use all cores because the node memory is limited.
     You only want to use 4 cores per node. Then you specify:
 
-    cores_per_node = 8
-    max_cores_per_node = 4
+    stride = 2
 
-    This will "stride" the MPI cores by k = cores_per_node/max_cores_per_node = 2
-    involving only ever other MPI core in communications. This means that the number
-    of available cores j = m/k = 40. So the number of serial tasks is now 4 instead
-    of 2.
+    This will "stride" the MPI cores by k = 2 involving only ever other MPI core 
+    in communications. This means that the number of available cores j = m/k = 40. 
+    So the number of serial tasks is now 4 instead of 2.
 
 
     The base class Pipeline just implements the job distribution and striding. It is
-    up to the derived classes to overload the "define_job" function and actually
+    up to the derived classes to overload the "task" function and actually
     do something.
     
     """
     
 
-    def __init__(self,MPI_Comm_World,num_tasks,cores_per_node=None,max_cores_per_node=None):
+    def __init__(self,MPI_Comm_World,num_tasks,stride=None):
 
-        self.mcomm = MPI_Comm_World
-        self.mrank = self.mcomm.Get_rank()
-        self.msize = self.mcomm.Get_size()
+        wcomm = MPI_Comm_World
+        wrank = wcomm.Get_rank()
+        wsize = wcomm.Get_size()
+        self.wsize = wsize
 
-        maxcores = max_cores_per_node
-        cpernode = cores_per_node
-        msize = self.msize
         
-        if maxcores is not None:
+        if stride is not None:
             # we want to do some striding
-            assert cpernode is not None
-            assert cpernode%maxcores==0
-
-            self.stride = cpernode/maxcores # stride value
-            assert msize%self.stride==0
+            assert wsize%stride==0
             
         else:
             # no striding
-            self.stride = 1
+            stride = 1
 
-        self.avail_cores = msize/self.stride
+        avail_cores = wsize/stride
 
-        self.participants = range(0,msize,self.stride) # the cores that participate in MPI comm
-
+        participants = range(0,wsize,stride) # the cores that participate in MPI comm
+        
         task_ids = range(num_tasks)
-        min_each, rem = divmod(num_tasks,self.avail_cores)
-        num_each = np.array([min_each]*self.avail_cores) # first distribute equally
+        min_each, rem = divmod(num_tasks,avail_cores)
+        num_each = np.array([min_each]*avail_cores) # first distribute equally
         if rem>0: num_each[-rem:] += 1  # add the remainder to the last set of cores (so that rank 0 never gets extra jobs)
 
-        self.num_each = np.zeros(msize,dtype=np.int)
-        self.num_each[self.participants] = num_each
-        self.num_each = self.num_each.tolist()
-        assert sum(self.num_each)==num_tasks
+        assert sum(num_each)==num_tasks
+        self.num_each = num_each
 
-        self.num_mine = self.num_each[self.mrank]
-
-        
-        if self.mrank not in self.participants:
-            self.idle = True
-            sys.exit(1)
+        if wrank in participants:
+            self.mcomm = MPI_Comm_World.Split(color=55,key=wrank)
+            self.mrank = self.mcomm.Get_rank()
+            self.msize = self.mcomm.Get_size()
+            self.num_mine = num_each[self.mrank]
+            
         else:
-            self.idle = False
+            idlecomm = MPI_Comm_World.Split(color=75,key=-wrank)
+            sys.exit(1)
 
 
 
     def distribute(self,array,tag):
         """ Send array from rank=0 to all participating MPI cores.
         """
-        assert(not(self.idle))
         if self.mrank==0:
-            for i in self.participants[1:]:
+            for i in range(self.msize):
                 self.mcomm.Send(array,dest=i,tag=tag)
         else:
             self.mcomm.Recv(array,source=0,tag=tag)
@@ -95,9 +87,8 @@ class Pipeline(object):
         
     def info(self):
         if self.mrank==0:
-            print "Rank 0 says the participants are ", self.participants
-            print "Jobs in each core :", self.num_each
-        print "==== My rank is ", self.mrank, ". Hostname: ", commands.getoutput("hostname"),". Idle: ", self.idle, ". I have ", self.num_mine, " tasks. ==="
+            print ("Jobs in each core :", self.num_each)
+        print ("==== My rank is ", self.mrank, ". Hostname: ", commands.getoutput("hostname") ,". I have ", self.num_mine, " tasks. ===")
 
     def task(self):
         pass
@@ -114,8 +105,8 @@ class Pipeline(object):
             
 
 class CMB_Pipeline(Pipeline):
-    def __init__(self,MPI_Comm_World,num_tasks,cosmology,patch_shape,patch_wcs,cores_per_node=None,max_cores_per_node=None):
-        super(CMB_Pipeline, self).__init__(MPI_Comm_World,num_tasks,cores_per_node,max_cores_per_node)
+    def __init__(self,MPI_Comm_World,num_tasks,cosmology,patch_shape,patch_wcs,stride=None):
+        super(CMB_Pipeline, self).__init__(MPI_Comm_World,num_tasks,stride)
         self.shape = patch_shape
         self.wcs = patch_wcs
         self.ps = powspec.read_spectrum("../alhazen/data/cl_lensinput.dat") # !!!!
@@ -131,29 +122,48 @@ class CMB_Pipeline(Pipeline):
     
         
 class CMB_Lensing_Pipeline(CMB_Pipeline):
-    def __init__(self,MPI_Comm_World,num_tasks,cosmology,patch_shape,patch_wcs,input_kappa=None,cores_per_node=None,max_cores_per_node=None):
-        super(CMB_Lensing_Pipeline, self).__init__(MPI_Comm_World,num_tasks,cosmology,patch_shape,patch_wcs,cores_per_node,max_cores_per_node)
-        self.input_kappa = input_kappa
+    def __init__(self,MPI_Comm_World,num_tasks,cosmology,patch_shape,patch_wcs,
+                 input_kappa=None,input_phi=None,input_disp_map=None,stride=None):
+        super(CMB_Lensing_Pipeline, self).__init__(MPI_Comm_World,num_tasks,cosmology,patch_shape,patch_wcs,stride)
+
+
+        assert count_not_nones([input_kappa,input_phi,input_disp])<=1
+        
+        if input_kappa is not None:
+            fkappa = fft(input_kappa)
+            self.disp_pix = ifft(ells*fkappa/ell**2.)
+        elif input_phi is not None:
+            fphi = fft(input_phi)
+            self.disp_pix = 
+        elif input_disp_map is not None:
+            self.disp_pix = input_disp_map
+
+    def lens_map(self,unlensed=self.unlensed,disp_pix=self.disp_pix):
+        assert disp_pix is not None,"No input displacement specified."
+        
     
 
 
-# def is_only_one_not_none(a):
-#     """ Useful for function arguments, returns True if the list 'a'
-#     contains only one non-None object and False if otherwise.
+def is_only_one_not_none(a):
+    """ Useful for function arguments, returns True if the list 'a'
+    contains only one non-None object and False if otherwise.
 
-#     Examples:
+    Examples:
 
-#     >>> is_only_one_not_none([None,None,None])
-#     >>> False
-#     >>> is_only_one_not_none([None,1,1,4])
-#     >>> False
-#     >>> is_only_one_not_none([1,None,None,None])
-#     >>> True
-#     >>> is_only_one_not_none([None,None,6,None])
-#     >>> True
-#     """
-#     return True if sum([int(x is not None) for x in a])==1 else False
-    
+    >>> is_only_one_not_none([None,None,None])
+    >>> False
+    >>> is_only_one_not_none([None,1,1,4])
+    >>> False
+    >>> is_only_one_not_none([1,None,None,None])
+    >>> True
+    >>> is_only_one_not_none([None,None,6,None])
+    >>> True
+    """
+    return True if count_not_nones(a)==1 else False
+
+def count_not_nones(a):
+    return sum([int(x is not None) for x in a])
+
 
 # class CMB_Array_Patch(object):
 #     """ Make one of these for each array+patch combination.

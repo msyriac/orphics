@@ -1,6 +1,9 @@
-#from __future__ import print_function
+from __future__ import print_function
 from enlib import enmap,utils
 from alhazen.halos import NFWkappa
+from mpi4py import MPI
+import numpy as np
+import orphics.analysis.pipeline as pipes
 
 wdeg = 100./60.
 hwidth = wdeg*60.
@@ -10,22 +13,26 @@ px = 0.1
 
 shape_car, wcs_car = enmap.geometry(pos=[[-hwidth*arcmin,-hwidth*arcmin],[hwidth*arcmin,hwidth*arcmin]], res=px*arcmin, proj="car")
 
-# shape_cea, wcs_cea = enmap.geometry(pos=[[-hwidth*arcmin,-hwidth*arcmin],[hwidth*arcmin,hwidth*arcmin]], res=px*arcmin, proj="cea")
 
 
-# print(shape_car)
-# print(wcs_car)
+# === COSMOLOGY ===
+cosmologyName = 'LACosmology' # from ini file
+iniFile = "../SZ_filter/input/params.ini"
+Config = SafeConfigParser()
+Config.optionxform=str
+Config.read(iniFile)
+lmax = 8000
+cosmoDict = dictFromSection(Config,cosmologyName)
+constDict = dictFromSection(Config,'constants')
+cc = ClusterCosmology(cosmoDict,constDict,lmax)
+TCMB = 2.7255e6
 
-# print(shape_cea)
-# print(wcs_cea)
+#=== KAPPA MAP ===
+kappaMap,r500 = NFWkappa(cc,massOverh,concentration,zL,thetaMap*180.*60./np.pi,sourceZ,overdensity=overdensity,critical=critical,atClusterZ=atClusterZ)
 
-from mpi4py import MPI
-import numpy as np
-import orphics.analysis.pipeline as pipes
 
 p = pipes.CMB_Pipeline(MPI.COMM_WORLD, num_tasks = 20,
-                       cosmology = None, patch_shape = shape_car, patch_wcs = wcs_car,
-                       cores_per_node = None, max_cores_per_node = None)
+                       cosmology = None, patch_shape = shape_car, patch_wcs = wcs_car, stride=2)
 p.loop()
 
 # if p.mrank==0:

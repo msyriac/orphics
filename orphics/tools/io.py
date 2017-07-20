@@ -18,7 +18,7 @@ def nostdout():
     sys.stdout = save_stdout
 
 
-def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True):
+def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True,crange=None):
     if not(overwrite):
         if os.path.isfile(outPath): return
     try:
@@ -33,7 +33,7 @@ def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True):
         downmap = enmap.downgrade(enmap.enmap(array)[None], down)
     else:
         downmap = enmap.enmap(array)[None]
-    img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"))
+    img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
     img.save(outPath)
     if verbose: print bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC
 
