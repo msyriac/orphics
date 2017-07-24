@@ -1,5 +1,5 @@
 import numpy as np
-
+import copy
 from scipy.interpolate import splrep,splev
 from scipy.fftpack import fftshift
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
@@ -31,11 +31,13 @@ def pixwin(l, pixsize):
     return np.sinc(l * pixsize / (2. * np.pi))**2
 
 @timeit
-def get_simple_power(map1,mask1,map2=None,mask2=None):
+def get_simple_power(map1,mask1=1.,map2=None,mask2=None):
     '''Mask a map (pair) and calculate its power spectrum
     with only a norm (w2) correction.
     '''
-    if mask2 is None: mask2=np.asarray(mask1).copy()
+    mask1 = np.asarray(mask1)
+    if mask2 is None: mask2=mask1.copy()
+    
    
     pass1 = map1.copy()
     pass1.data = pass1.data * mask1
@@ -51,6 +53,21 @@ def get_simple_power(map1,mask1,map2=None,mask2=None):
     w2 = np.mean(mask1*mask2)
     power.powerMap /= w2    
     return power.powerMap
+
+@timeit
+def get_simple_power_enmap(enmap1,mask1=1.,enmap2=None,mask2=None):
+    '''Mask a map (pair) and calculate its power spectrum
+    with only a norm (w2) correction.
+    '''
+    t1 = simple_flipper_template_from_enmap(enmap1.shape,enmap1.wcs)
+    t1.data = enmap1
+    if enmap2 is not None:
+        t2 = simple_flipper_template_from_enmap(enmap2.shape,enmap2.wcs)
+        t2.data = enmap2
+    else:
+        t2 = None
+        
+    return get_simple_power(t1,mask1,t2,mask2)
 
     
 #Take divergence using fourier space gradients
@@ -624,7 +641,8 @@ def simple_flipper_template_from_enmap(shape,wcs):
 
 def simple_flipper_template(Ny,Nx,pixScaleY,pixScaleX):
     class template:
-        pass
+        def copy(self):
+            return copy.deepcopy(self)
     t = template()
     t.Ny = Ny
     t.Nx = Nx
