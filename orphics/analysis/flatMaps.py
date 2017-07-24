@@ -12,6 +12,13 @@ except:
     logging.warning("You seem to be using a version of flipper that does not have the 'flipper.fft' module, a wrapper for fast multi-threaded pyfftw FFTs. Please use the version of flipper maintained by the ACT Collaboration at https://github.com/ACTCollaboration/flipper .")
 
 
+try:
+    from enlib import enmap
+except:
+    import logging
+    logging.warning("Couldn't load enlib. Some functionality may be missing.")
+    
+
 def pixel_window_function(modLMap,thetaMap,pixScaleX,pixScaleY):
     from scipy.special import j0
     #return j0(modLMap*pixScaleX*np.cos(thetaMap)/2.)*j0(modLMap*pixScaleY*np.sin(thetaMap)/2.) # are cos and sin orders correct?
@@ -225,8 +232,23 @@ def getFTAttributesFromLiteMap(templateLM):
     Ny = templateLM.Ny
     pixScaleX = templateLM.pixScaleX 
     pixScaleY = templateLM.pixScaleY
-    
-    
+    return get_ft_attributes(Ny,Nx,pixScaleY,pixScaleX)
+
+
+def get_ft_attributes_enmap(shape,wcs):
+    Ny, Nx = shape[-2:]
+    pixScaleY, pixScaleX = enmap.pixshape(shape,wcs)
+    return get_ft_attributes(Ny,Nx,pixScaleY,pixScaleX)
+
+
+def get_ft_attributes(Ny,Nx,pixScaleY,pixScaleX):
+    '''
+    Given a liteMap, return the fourier frequencies,
+    magnitudes and phases.
+    '''
+
+    from scipy.fftpack import fftfreq
+        
     lx =  2*np.pi  * fftfreq( Nx, d = pixScaleX )
     ly =  2*np.pi  * fftfreq( Ny, d = pixScaleY )
     
@@ -593,3 +615,20 @@ def filter_map(data2d,filter2d,modLMap,lowPass=None,highPass=None):
     if highPass is not None: kMap[modLMap<highPass] = 0.
     return ifft(kMap,axes=[-2,-1],normalize=True).real
 
+
+def simple_flipper_template_from_enmap(shape,wcs):
+    Ny,Nx = shape[-2:]
+    pixScaleY, pixScaleX = enmap.pixshape(shape,wcs)
+    return simple_flipper_template(Ny,Nx,pixScaleY,pixScaleX)
+
+
+def simple_flipper_template(Ny,Nx,pixScaleY,pixScaleX):
+    class template:
+        pass
+    t = template()
+    t.Ny = Ny
+    t.Nx = Nx
+    t.pixScaleY = pixScaleY
+    t.pixScaleX = pixScaleX
+    return t
+    
