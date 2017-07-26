@@ -39,10 +39,10 @@ def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True,crange=Non
     if verbose: print (bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC)
 
     
-def quickPlot2d(array,outPath,**kwargs):
+def quickPlot2d(array,outPath,verbose=True,**kwargs):
     pl = Plotter()
     pl.plot2d(array,**kwargs)
-    pl.done(outPath)
+    pl.done(outPath,verbose=verbose)
 
 
 def getLensParams(Config,section):
@@ -252,11 +252,11 @@ class Plotter:
 
                                 
 
-    def done(self,fileName="output/default.png",**kwargs):
+    def done(self,fileName="output/default.png",verbose=True,**kwargs):
 
         plt.savefig(fileName,bbox_inches='tight',**kwargs)
 
-        print (bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC)
+        if verbose: print (bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC)
         plt.close()
 
 

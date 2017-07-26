@@ -30,7 +30,7 @@ def pixwin(l, pixsize):
     pixsize = pixsize  * np.pi / (60. * 180)
     return np.sinc(l * pixsize / (2. * np.pi))**2
 
-@timeit
+#@timeit
 def get_simple_power(map1,mask1=1.,map2=None,mask2=None):
     '''Mask a map (pair) and calculate its power spectrum
     with only a norm (w2) correction.
@@ -54,7 +54,7 @@ def get_simple_power(map1,mask1=1.,map2=None,mask2=None):
     power.powerMap /= w2    
     return power.powerMap
 
-@timeit
+#@timeit
 def get_simple_power_enmap(enmap1,mask1=1.,enmap2=None,mask2=None):
     '''Mask a map (pair) and calculate its power spectrum
     with only a norm (w2) correction.
@@ -86,7 +86,7 @@ def takeGrad(stamp,lyMap,lxMap):
     return ifft(lyMap*f*1j,axes=[-2,-1],normalize=True).real,ifft(lxMap*f*1j,axes=[-2,-1],normalize=True).real
 
 
-@timeit
+#@timeit
 def interpolateGrid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3,**kwargs):
     '''
     if inGrid is [j,i]
@@ -421,7 +421,7 @@ def taperData(data2d,win):
     lmret.data[:,:] /= w2    
     return data2d
 
-@timeit
+#@timeit
 def cosineWindow(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
     win=np.ones((Ny,Nx))
     
@@ -615,7 +615,7 @@ def convolveBeam(data,modLMap,beamTemplate):
     kMap[:,:] = (kMap[:,:] * beamTemplate[:,:])
     return ifft(kMap,axes=[-2,-1],normalize=True).real
 
-@timeit
+#@timeit
 def smooth(data,modLMap,gauss_sigma_arcmin):
     kMap = fft(data,axes=[-2,-1])
     sigma = np.deg2rad(gauss_sigma_arcmin / 60.)
@@ -624,12 +624,17 @@ def smooth(data,modLMap,gauss_sigma_arcmin):
     return ifft(kMap,axes=[-2,-1],normalize=True).real
 
 
-@timeit
-def filter_map(data2d,filter2d,modLMap,lowPass=None,highPass=None):
+#@timeit
+def filter_map(data2d,filter2d,modLMap,lowPass=None,highPass=None,keep_mean=True):
     kMap = fft(data2d,axes=[-2,-1])
+    if keep_mean:
+        mean_val = kMap[modLMap<1]
+
     kMap[:,:] = np.nan_to_num(kMap[:,:] * filter2d[:,:])
     if lowPass is not None: kMap[modLMap>lowPass] = 0.
     if highPass is not None: kMap[modLMap<highPass] = 0.
+
+    if keep_mean: kMap[modLMap<1] = mean_val
     return ifft(kMap,axes=[-2,-1],normalize=True).real
 
 
