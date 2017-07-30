@@ -199,7 +199,7 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
     return theory
 
 
-def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False):
+def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False):
     '''
 
     The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
@@ -232,15 +232,15 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
         ells = np.arange(2,len(cls)+2,1)
         cls *= 2.*np.pi/ells/(ells+1.)
-        theory.loadCls(ells,cls,pol,lensed=True,interporder="linear",lpad=lpad)
+        theory.loadCls(ells,cls,pol,lensed=True,interporder="linear",lpad=lpad,fill_zero=fill_zero)
 
         if unlensedEqualsLensed:
-            theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad)            
+            theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad,fill_zero=fill_zero)            
         else:
             cls = cmbmat[uSuffix][2:,i]
             ells = np.arange(2,len(cls)+2,1)
             cls *= 2.*np.pi/ells/(ells+1.)
-            theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad)
+            theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad,fill_zero=fill_zero)
 
     try:
         assert pickling
@@ -254,7 +254,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
     clkk = clphi* (2.*np.pi/4.)
     ells = np.arange(2,len(clkk)+2,1)
-    theory.loadGenericCls(ells,clkk,"kk",lpad=lpad)
+    theory.loadGenericCls(ells,clkk,"kk",lpad=lpad,fill_zero=fill_zero)
 
 
     return theory
@@ -283,8 +283,12 @@ class TheorySpectra:
         self._gCl = {}
 
 
-    def loadGenericCls(self,ells,Cls,keyName,lpad=9000):
-        self._gCl[keyName] = interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=0.)
+    def loadGenericCls(self,ells,Cls,keyName,lpad=9000,fill_zero=True):
+        if not(fill_zero):
+            fillval = Cls[ell<lpad][-1]
+        else:
+            fillval = 0.
+        self._gCl[keyName] = interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=fillval)
         
 
     def gCl(self,keyName,ell):
@@ -293,7 +297,7 @@ class TheorySpectra:
         except:
             return self._gCl[keyName[::-1]](ell)
         
-    def loadCls(self,ell,Cl,XYType="TT",lensed=False,interporder="linear",lpad=9000):
+    def loadCls(self,ell,Cl,XYType="TT",lensed=False,interporder="linear",lpad=9000,fill_zero=True):
 
         # Implement ellnorm
 
@@ -302,8 +306,12 @@ class TheorySpectra:
 
 
             
-        #print bcolors.OKBLUE+"Interpolating", XYType, "spectrum to", interporder, "order..."+bcolors.ENDC
-        f=interp1d(ell[ell<lpad],Cl[ell<lpad],kind=interporder,bounds_error=False,fill_value=0.)
+        if not(fill_zero):
+            fillval = Cl[ell<lpad][-1]
+        else:
+            fillval = 0.
+            
+        f=interp1d(ell[ell<lpad],Cl[ell<lpad],kind=interporder,bounds_error=False,fill_value=fillval)
         if lensed:
             self._lCl[XYType]=f
         else:
