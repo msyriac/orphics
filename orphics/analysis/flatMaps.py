@@ -220,7 +220,9 @@ def getRealAttributes(templateLM):
     Ny = templateLM.Ny
     pixScaleX = templateLM.pixScaleX 
     pixScaleY = templateLM.pixScaleY
+    return get_real_attributes(Ny,Nx,pixScaleY,pixScaleX)
     
+def get_real_attributes(Ny,Nx,pixScaleY,pixScaleX):
     
     xx =  (np.arange(Nx)-Nx/2.+0.5)*pixScaleX
     yy =  (np.arange(Ny)-Ny/2.+0.5)*pixScaleY
