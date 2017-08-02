@@ -285,10 +285,14 @@ class TheorySpectra:
 
     def loadGenericCls(self,ells,Cls,keyName,lpad=9000,fill_zero=True):
         if not(fill_zero):
-            fillval = Cls[ell<lpad][-1]
+            fillval = Cls[ells<lpad][-1]
+            self._gCl[keyName] = lambda x: np.piecewise(x, [x<=lpad,x>lpad], [lambda y: interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=0.)(y),lambda y: fillval*(lpad/y)**4.])
+
         else:
-            fillval = 0.
-        self._gCl[keyName] = interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=fillval)
+            fillval = 0.            
+            self._gCl[keyName] = interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=fillval)
+        
+
         
 
     def gCl(self,keyName,ell):
@@ -305,13 +309,21 @@ class TheorySpectra:
         validateMapType(mapXYType)
 
 
-            
         if not(fill_zero):
             fillval = Cl[ell<lpad][-1]
+            f = lambda x: np.piecewise(x, [x<=lpad,x>lpad], [lambda y: interp1d(ell[ell<lpad],Cl[ell<lpad],bounds_error=False,fill_value=0.)(y),lambda y: fillval*(lpad/y)**4.])
+
         else:
-            fillval = 0.
+            fillval = 0.            
+            f = interp1d(ell[ell<lpad],Cl[ell<lpad],bounds_error=False,fill_value=fillval)
+                    
+        # if not(fill_zero):
+        #     fillval = Cl[ell<lpad][-1]
+        # else:
+        #     fillval = 0.
             
-        f=interp1d(ell[ell<lpad],Cl[ell<lpad],kind=interporder,bounds_error=False,fill_value=fillval)
+        # f=interp1d(ell[ell<lpad],Cl[ell<lpad],kind=interporder,bounds_error=False,fill_value=fillval)
+        
         if lensed:
             self._lCl[XYType]=f
         else:

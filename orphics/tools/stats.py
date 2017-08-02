@@ -194,12 +194,12 @@ def loadBinFile(binfile,delimiter='\t',returnBinner=True):
 
 
 class bin2D(object):
-    @timeit
+    #@timeit
     def __init__(self, modRMap, bin_edges):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
         self.digitized = np.digitize(np.ndarray.flatten(modRMap), bin_edges,right=True)
         self.bin_edges = bin_edges
-    @timeit
+    #@timeit
     def bin(self,data2d):
         data = np.ndarray.flatten(data2d)
         return self.centers,np.array([np.nanmean(data[self.digitized == i]) for i in range(1, len(self.bin_edges))])
