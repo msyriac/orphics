@@ -8,6 +8,23 @@ import traceback
 import contextlib
 import sys
 
+def read_ignore_error(file_loc):
+    vals = []
+    with open(file_loc) as f:
+        for line in f:
+            try:
+                val = float(line.strip())
+                vals.append(val)
+            except:
+                print ("Ignoring line ", line.strip())
+    return np.array(vals)
+
+def list_to_fits_table(arr,col_names,file_name):
+
+    from astropy.table import Table
+    t = Table(arr,names=col_names)
+    t.write(file_name,format="fits")
+
 class DummyFile(object):
     def write(self, x): pass
 
