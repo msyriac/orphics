@@ -87,20 +87,26 @@ def gauss_beam(ell,fwhm):
     tht_fwhm = np.deg2rad(fwhm / 60.)
     return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
     
-def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,TCMB=1.):
+def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless,TCMB=2.7255e6):
     '''Beam deconvolved noise in whatever units rms_noise is in.
     e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.    
     '''
-    if lknee>1.e-3:
-        atmFactor = (lknee/ell)**(-alpha)
-        #atmFactor = (ell/lknee)**(alpha)
-    else:
-        atmFactor = 0.
+    atmFactor = atm_factor(ell,lknee,alpha)
     rms = rms_noise * (1./60.)*(np.pi/180.)
     tht_fwhm = np.deg2rad(fwhm / 60.)
-    ans = (atmFactor+1.) * (rms**2.) * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
+    
+    nfact = white_noise_with_atm_func(ell,uk_arcmin,lknee,alpha,dimensionless,TCMB)
+    
+    ans = nfact * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
     return ans/TCMB**2.
 
+
+def atm_factor(ell,lknee,alpha):
+    if lknee>1.e-3:
+        atmFactor = (lknee/ell)**(-alpha)
+    else:
+        atmFactor = 0.
+    return atmFactor
 
 def pad_1d_power(ell,Cl,ellmax):
     if ell[-1]<ellmax:
@@ -109,17 +115,24 @@ def pad_1d_power(ell,Cl,ellmax):
         Cl = np.append(np.asarray(Cl),np.asarray([0.]*len(appendArr)))
     return ell,Cl
 
+
+def white_noise_with_atm_func(ell,uk_arcmin,lknee,alpha,dimensionless,TCMB=2.7255e6):
+    atmFactor = atm_factor(ell,lknee,alpha)
+    noiseWhite = (uk_arcmin*np.pi / (180. * 60))**2.  
+    dfact = (1./TCMB**2.) if dimensionless else 1.
+    return (atmFactor+1.)*noiseWhite*dfact
+
 def noise_pad_infinity(Nlfunc,ellmin,ellmax):
     return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: Nlfunc(y), lambda y: np.inf])
 
-def get_noise_func(beamArcmin,noiseMukArcmin,ellmin=-np.inf,ellmax=np.inf,TCMB=2.7255e6,lknee=0.,alpha=0.):
-    if lknee>1.e-3:
-        atmFactor = lambda ell: (lknee/ell)**(-alpha)
-    else:
-        atmFactor = lambda ell: 0.
-    Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
-    noiseWhite = (np.pi / (180. * 60))**2.  * noiseMukArcmin**2. / TCMB**2.
-    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: (atmFactor(y)+1.) * noiseWhite*np.exp((np.asarray(y)**2.)*Sigma*Sigma), lambda y: np.inf])
+def fwhm_arcmin_to_sigma_radians(fwhm):
+    return fwhm *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
+
+def get_noise_func(beamArcmin,noiseMukArcmin,dimensionless,ellmin=-np.inf,ellmax=np.inf,TCMB=2.7255e6,lknee=0.,alpha=0.):
+    Sigma = fwhm_arcmin_to_sigma_radians(beamArcmin)
+    Nlfunc = lambda y: white_noise_with_atm(y,noiseMukArcmin,lknee,alpha,dimensionless=dimensionless,TCMB=TCMB)
+    #lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: white_noise_with_atm(y,noiseMukArcmin,lknee,alpha,dimensionless=dimensionless,TCMB=TCMB)*np.exp((np.asarray(y)**2.)*Sigma*Sigma), lambda y: np.inf])
+    return noise_pad_infinity(Nlfunc,ellmin,ellmax)
 
 def total_1d_power(ell,Cl,ellmax,beamArcmin,noiseMukArcmin,TCMB=2.7255e6,deconvolve=False):
     if ell[-1]<ellmax:
