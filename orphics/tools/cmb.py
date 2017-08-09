@@ -87,7 +87,7 @@ def gauss_beam(ell,fwhm):
     tht_fwhm = np.deg2rad(fwhm / 60.)
     return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
     
-def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless,TCMB=2.7255e6):
+def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless=False,TCMB=2.7255e6):
     '''Beam deconvolved noise in whatever units rms_noise is in.
     e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.    
     '''

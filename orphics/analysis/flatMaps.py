@@ -4,6 +4,7 @@ from scipy.interpolate import splrep,splev
 from scipy.fftpack import fftshift
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 from orphics.tools.stats import timeit
+import orphics.tools.cmb as cmb
 import flipper.fftTools as ft
 try:
     from flipper.fft import fft,ifft
@@ -23,8 +24,9 @@ class PatchArray(object):
     def __init__(self,shape,wcs,skip_real=False):
         self.shape = shape
         self.wcs = wcs
-        self.modlmap = enmap.modlmap(shape,wcs)
         if not(skip_real): self.modrmap = enmap.modrmap(shape,wcs)
+        self.lxmap,self.lymap,self.modlmap,self.angmap,self.lx,self.ly = get_ft_attributes_enmap(shape,wcs)
+        self.pix_ells = np.arange(0.,self.modlmap.max(),1.)
 
     def _fill_beam(self,beam_func):
         self.lbeam = beam_func(self.modlmap)
@@ -53,12 +55,31 @@ class PatchArray(object):
             if noise_uK_arcmin_P is None: noise_uK_arcmin_P = np.sqrt(2.)*noise_uK_arcmin_T
             self.nP = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_P,lknee_P,alpha_P,
                                       map_dimensionless,TCMB)
+
+        TCMBt = TCMB if dimensionless else 1.
+        ps_noise = np.zeros((3,3,self.pix_ells.size))
+        ps_noise[0,0] = pix_ells*0.+(noise_uK_arcmin_T*np.pi/180./60./TCMBt)**2.
+        ps_noise[1,1] = pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
+        ps_noise[2,2] = pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
+        self.noisecov = ps_noise
+        self.is_2d = False
             
     def add_noise_2d(self,nT,nP=None):
         self.nT = nT
         if nP is None: nP = 2.*nT
         self.nP = nP
 
+        ps_noise = np.zeros((3,3,self.modlmap.shape[0],self.modlmap.shape[1]))
+        ps_noise[0,0] = nT
+        ps_noise[1,1] = nP
+        ps_noise[2,2] = nP
+        self.noisecov = ps_noise
+        self.is_2d = True
+
+
+    def get_noise_sim(seed):
+        return enmap.rand_map(self.shape,self.wcs,self.noisecov,scalar=True,seed=seed,power2d=self.is_2d_noise,pixel_units=False)
+    
     
 def pixel_window_function(modLMap,thetaMap,pixScaleX,pixScaleY):
     from scipy.special import j0
