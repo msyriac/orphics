@@ -19,6 +19,47 @@ except:
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
     
 
+class PatchArray(object):
+    def __init__(self,shape,wcs,skip_real=False):
+        self.shape = shape
+        self.wcs = wcs
+        self.modlmap = enmap.modlmap(shape,wcs)
+        if not(skip_real): self.modrmap = enmap.modrmap(shape,wcs)
+
+    def _fill_beam(self,beam_func):
+        self.lbeam = beam_func(self.modlmap)
+        self.lbeam[self.modlmap<2] = 1.
+        
+    def add_gaussian_beam(self,fwhm):
+        bfunc = lambda x : cmb.gauss_beam(x,fwhm)
+        self._fill_beam(bfunc)
+        
+    def add_1d_beam(self,ells,bls,fill_value="extrapolate"):
+        bfunc = interp1d(ells,bls,fill_value=fill_value)
+        self._fill_beam(bfunc)
+
+    def add_2d_beam(self,beam_2d):
+        self.lbeam = beam_2d
+
+    def add_white_noise_with_atm(self,noise_uK_arcmin_T,noise_uK_arcmin_P=None,lknee_T=0.,alpha_T=0.,lknee_P=0.,
+                        alpha_P=0.,map_dimensionless=False,TCMB=2.7255e6):
+
+        self.nT = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_T,lknee_T,alpha_T,
+                                      map_dimensionless,TCMB)
+
+        if noise_uK_arcmin_P is None and is_close(lknee_T,lknee_P) and is_close(alpha_T,alpha_P):
+            self.nP = 2.*self.nT.copy()
+        else:
+            if noise_uK_arcmin_P is None: noise_uK_arcmin_P = np.sqrt(2.)*noise_uK_arcmin_T
+            self.nP = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_P,lknee_P,alpha_P,
+                                      map_dimensionless,TCMB)
+            
+    def add_noise_2d(self,nT,nP=None):
+        self.nT = nT
+        if nP is None: nP = 2.*nT
+        self.nP = nP
+
+    
 def pixel_window_function(modLMap,thetaMap,pixScaleX,pixScaleY):
     from scipy.special import j0
     #return j0(modLMap*pixScaleX*np.cos(thetaMap)/2.)*j0(modLMap*pixScaleY*np.sin(thetaMap)/2.) # are cos and sin orders correct?
