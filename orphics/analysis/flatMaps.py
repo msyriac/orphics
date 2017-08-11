@@ -21,19 +21,58 @@ except:
     
 
 class PatchArray(object):
-    def __init__(self,shape,wcs,skip_real=False):
+    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,cosmology=None,skip_real=False):
         self.shape = shape
         self.wcs = wcs
         if not(skip_real): self.modrmap = enmap.modrmap(shape,wcs)
         self.lxmap,self.lymap,self.modlmap,self.angmap,self.lx,self.ly = get_ft_attributes_enmap(shape,wcs)
         self.pix_ells = np.arange(0.,self.modlmap.max(),1.)
 
+        self.dimensionless = dimensionless
+        self.TCMB = TCMB
+
+        if cosmology is not None:
+            self.add_cosmology(cosmology)
+
+    def add_cosmology(self,cc):
+        self.cc = cc
+        self.psl = cmb.enmap_power_from_orphics_theory(self.cc.theory,self.cc.lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB)
+        self.psu = cmb.enmap_power_from_orphics_theory(self.cc.theory,self.cc.lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB)
+        self.fine_ells = np.arange(0,self.cc.lmax,1)
+        self.pclkk = self.cc.theory.gCl("kk",self.fine_ells)
+        self.clkk = self.pclkk.copy()
+        self.pclkk.resize((1,1,self.pclkk.size))
+        
+    def add_nfw_cluster(self):
+        raise NotImplementedError
+
+    def get_unlensed_cmb(self,seed=10):
+        return enmap.rand_map(self.shape,self.wcs,self.psu,seed=seed)
+        
+    def get_kappa(self,ktype="grf",vary=False):
+        if ktype=="cluster_nfw":
+            raise NotImplementedError
+        elif ktype=="cluster_battaglia":
+            raise NotImplementedError
+        elif ktype=="grf":
+            if vary:
+                raise NotImplementedError
+            else:
+                kappa_map = enmap.rand_map(self.shape[-2:],self.wcs,cov=self.pclkk,scalar=True)
+                return kappa_map
+        else:
+            raise ValueError
+
+
     def _fill_beam(self,beam_func):
         self.lbeam = beam_func(self.modlmap)
         self.lbeam[self.modlmap<2] = 1.
         
     def add_gaussian_beam(self,fwhm):
-        bfunc = lambda x : cmb.gauss_beam(x,fwhm)
+        if fwhm<1.e-5:
+            bfunc = lambda x: x*0.+1.
+        else:
+            bfunc = lambda x : cmb.gauss_beam(x,fwhm)
         self._fill_beam(bfunc)
         
     def add_1d_beam(self,ells,bls,fill_value="extrapolate"):
@@ -44,11 +83,15 @@ class PatchArray(object):
         self.lbeam = beam_2d
 
     def add_white_noise_with_atm(self,noise_uK_arcmin_T,noise_uK_arcmin_P=None,lknee_T=0.,alpha_T=0.,lknee_P=0.,
-                        alpha_P=0.,map_dimensionless=False,TCMB=2.7255e6):
+                        alpha_P=0.):
 
+        map_dimensionless=self.dimensionless
+        TCMB=self.TCMB
+
+        
         self.nT = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_T,lknee_T,alpha_T,
                                       map_dimensionless,TCMB)
-
+        
         if noise_uK_arcmin_P is None and is_close(lknee_T,lknee_P) and is_close(alpha_T,alpha_P):
             self.nP = 2.*self.nT.copy()
         else:
@@ -56,13 +99,13 @@ class PatchArray(object):
             self.nP = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_P,lknee_P,alpha_P,
                                       map_dimensionless,TCMB)
 
-        TCMBt = TCMB if dimensionless else 1.
+        TCMBt = TCMB if map_dimensionless else 1.
         ps_noise = np.zeros((3,3,self.pix_ells.size))
-        ps_noise[0,0] = pix_ells*0.+(noise_uK_arcmin_T*np.pi/180./60./TCMBt)**2.
-        ps_noise[1,1] = pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
-        ps_noise[2,2] = pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
+        ps_noise[0,0] = self.pix_ells*0.+(noise_uK_arcmin_T*np.pi/180./60./TCMBt)**2.
+        ps_noise[1,1] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
+        ps_noise[2,2] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
         self.noisecov = ps_noise
-        self.is_2d = False
+        self.is_2d_noise = False
             
     def add_noise_2d(self,nT,nP=None):
         self.nT = nT
@@ -74,10 +117,10 @@ class PatchArray(object):
         ps_noise[1,1] = nP
         ps_noise[2,2] = nP
         self.noisecov = ps_noise
-        self.is_2d = True
+        self.is_2d_noise = True
 
 
-    def get_noise_sim(seed):
+    def get_noise_sim(self,seed=None):
         return enmap.rand_map(self.shape,self.wcs,self.noisecov,scalar=True,seed=seed,power2d=self.is_2d_noise,pixel_units=False)
     
     

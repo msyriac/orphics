@@ -72,7 +72,7 @@ class Cosmology(object):
         # self.rho_crit0 = 3. / (8. * pi) * (self.h*100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
         self.rho_crit0H100 = 3. / (8. * pi) * (100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
         self.cmbZ = 1100.
-
+        self.lmax = lmax
 
         if (clTTFixFile is not None) and not(skipCls):
             import numpy as np
