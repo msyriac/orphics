@@ -33,7 +33,7 @@ cltt = cls[:,1]
 fwhm = 18./60.
 rms_noise = 0.1
 
-nls = cmb.noise_func(ells,fwhm,rms_noise)*ells*(ells+1.)/2./np.pi
+nls = cmb.noise_func(ells,fwhm,rms_noise,TCMB=1.)*ells*(ells+1.)/2./np.pi
 
 lcross = ells[nls>cltt][0]
 print lcross
@@ -71,3 +71,5 @@ pl.legendOn(loc='lower left',labsize=10)
 pl._ax.set_ylim(1.e-12,1.e-5)
 pl._ax.set_xlim(10,1e5)
 pl.done("clkk.png")
+
+
