@@ -21,7 +21,9 @@ def unpack_cmb_theory(theory,ells,lensed=False):
 
     return cltt, clee, clte, clbb
 
-def enmap_power_from_orphics_theory(theory,lmax,lensed=False):
+def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,TCMB=2.7255e6):
+    tmul = 1. if dimensionless else TCMB**2.
+    
     fine_ells = np.arange(0,lmax,1)
     cltt, clee, clte, clbb = unpack_cmb_theory(theory,fine_ells,lensed=lensed)
     ps = np.zeros((3,3,fine_ells.size))
@@ -31,7 +33,7 @@ def enmap_power_from_orphics_theory(theory,lmax,lensed=False):
     ps[1,0] = clte
     ps[2,2] = clbb
 
-    return ps
+    return ps*tmul
 
 
 def fit_noise_power(ells,nls,ell_fit=5000.,lknee_guess=2000.,alpha_guess=-4.0):
@@ -87,7 +89,7 @@ def gauss_beam(ell,fwhm):
     tht_fwhm = np.deg2rad(fwhm / 60.)
     return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
     
-def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless,TCMB=2.7255e6):
+def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless=False,TCMB=2.7255e6):
     '''Beam deconvolved noise in whatever units rms_noise is in.
     e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.    
     '''
@@ -95,7 +97,7 @@ def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless,TCMB=2.7255e6)
     rms = rms_noise * (1./60.)*(np.pi/180.)
     tht_fwhm = np.deg2rad(fwhm / 60.)
     
-    nfact = white_noise_with_atm_func(ell,uk_arcmin,lknee,alpha,dimensionless,TCMB)
+    nfact = white_noise_with_atm_func(ell,rms_noise,lknee,alpha,dimensionless,TCMB)
     
     ans = nfact * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
     return ans/TCMB**2.
@@ -118,7 +120,7 @@ def pad_1d_power(ell,Cl,ellmax):
 
 def white_noise_with_atm_func(ell,uk_arcmin,lknee,alpha,dimensionless,TCMB=2.7255e6):
     atmFactor = atm_factor(ell,lknee,alpha)
-    noiseWhite = (uk_arcmin*np.pi / (180. * 60))**2.  
+    noiseWhite = ell*0.+(uk_arcmin*np.pi / (180. * 60))**2.  
     dfact = (1./TCMB**2.) if dimensionless else 1.
     return (atmFactor+1.)*noiseWhite*dfact
 
