@@ -455,7 +455,7 @@ class FisherPlots(object):
                         ax.set_xlabel(paramlabelx, fontsize=32,weight='bold')
 
         
-        labsize = 32
+        labsize = 48
         handles, labels = ax.get_legend_handles_labels()
         legend = fig.legend(handles, labels,prop={'size':labsize},numpoints=1,frameon = 0,loc=loc, bbox_to_anchor = (-0.1,-0.1,1,1),bbox_transform = plt.gcf().transFigure,**kwargs) #
 
