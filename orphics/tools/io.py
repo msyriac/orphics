@@ -195,7 +195,7 @@ class Plotter:
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,labelX=None,labelY=None,scaleX="linear",scaleY="linear",ftsize=24,thk=1,**kwargs):
+    def __init__(self,labelX=None,labelY=None,scaleX="linear",scaleY="linear",ftsize=24,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,**kwargs):
 
         matplotlib.rc('axes', linewidth=thk)
         matplotlib.rc('axes', labelcolor='k')
@@ -204,18 +204,23 @@ class Plotter:
         self._fig=plt.figure(**kwargs)
         self._ax=self._fig.add_subplot(1,1,1)
 
-        ax = self._ax
+        
 
 
 
-        if labelX!=None: ax.set_xlabel(labelX,fontsize=ftsize)
-        if labelY!=None: ax.set_ylabel(labelY,fontsize=ftsize)
+        if labelX!=None: self._ax.set_xlabel(labelX,fontsize=ftsize)
+        if labelY!=None: self._ax.set_ylabel(labelY,fontsize=ftsize)
 
-        ax.set_xscale(scaleX, nonposx='clip') 
-        ax.set_yscale(scaleY, nonposy='clip')
+        self._ax.set_xscale(scaleX, nonposx='clip') 
+        self._ax.set_yscale(scaleY, nonposy='clip')
+
+
+        if labsize is None: labsize=ftsize
+        plt.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)#,size=labsize)
+        plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
+
 
     def legendOn(self,loc='upper left',labsize=18,**kwargs):
-        plt.tick_params(size=labsize,width=self.thk,labelsize = labsize)
 
         handles, labels = self._ax.get_legend_handles_labels()
         legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)
@@ -450,7 +455,7 @@ class FisherPlots(object):
                         ax.set_xlabel(paramlabelx, fontsize=32,weight='bold')
 
         
-        labsize = 32
+        labsize = 48
         handles, labels = ax.get_legend_handles_labels()
         legend = fig.legend(handles, labels,prop={'size':labsize},numpoints=1,frameon = 0,loc=loc, bbox_to_anchor = (-0.1,-0.1,1,1),bbox_transform = plt.gcf().transFigure,**kwargs) #
 

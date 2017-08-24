@@ -97,7 +97,7 @@ def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless=False,TCMB=2.7
     rms = rms_noise * (1./60.)*(np.pi/180.)
     tht_fwhm = np.deg2rad(fwhm / 60.)
     
-    nfact = white_noise_with_atm_func(ell,uk_arcmin,lknee,alpha,dimensionless,TCMB)
+    nfact = white_noise_with_atm_func(ell,rms_noise,lknee,alpha,dimensionless,TCMB)
     
     ans = nfact * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
     return ans/TCMB**2.
