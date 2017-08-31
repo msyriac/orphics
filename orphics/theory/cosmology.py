@@ -111,8 +111,11 @@ class LimberCosmology(Cosmology):
        b) LimberCosmologyObject.kernels[tag]['W'] (the lensing window function)
        c) LimberCosmologyObject.kernels[tag]['window_z'] (only the (chi-chi)/chi part -- or equivalent integral for non-delta-function windows -- of the lensing windo returned as a callable function win(z))
        d) LimberCosmologyObject.kernels[tag]['dndz'] (a callable function of z that gives the normalized redshift distribution of the sources)
+
+
+    pkgrid_override can be a RectBivariateSpline object such that camb.PK.P(z,k,grid=True) returns the same as pkgrid_override(k,z)
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,skipPower=False,fill_zero=True):
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,skipPower=False,fill_zero=True,pkgrid_override=None):
         Cosmology.__init__(self,paramDict,constDict,lmax,clTTFixFile,skipCls,pickling,fill_zero)
 
         
@@ -137,12 +140,23 @@ class LimberCosmology(Cosmology):
         self.nonlinear = nonlinear
         self.skipPower = skipPower
 
-        if not(skipPower): self._initPower()
+        if not(skipPower): self._initPower(pkgrid_override)
 
 
-    def _initPower(self):
+    def _initPower(self,pkgrid_override=None):
         print "initializing power..."
-        self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zs[-1])
+        if pkgrid_override is None:
+            self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zs[-1])
+        else:
+            class Ptemp:
+                def __init__(self,pkgrid):
+                    self.pk = pkgrid
+                def P(self,zs,ks,grid=True):
+                    ks = np.asarray(ks)
+                    zs = np.asarray(zs)                            
+                    return self.pk(ks,zs,grid=grid).T
+            self.PK = Ptemp(pkgrid_override)
+            
         self.precalcFactor = self.Hzs**2. /self.chis/self.chis/self._cSpeedKmPerSec**2.
 
 
