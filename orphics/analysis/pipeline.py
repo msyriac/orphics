@@ -49,36 +49,34 @@ class MPIStats(object):
         """
         if not(label in self.little_stack.keys()):
             self.little_stack[label] = 0.
-            self.little_stack_count[label] = 0
         self.little_stack[label] += arr
-        self.little_stack_count[label] += 1
 
 
-    def get_stacks(self):
+    def get_stacks(self,verbose=True):
         """
         Collect from all MPI cores and calculate stacks.
         """
         if self.rank!=0:
             for k,label in enumerate(self.little_stack.keys()):
                 send_dat = np.array(self.little_stack[label])
-                comm.Send(send_dat, dest=0, tag=self.tag_start*10+k)
+                self.comm.Send(send_dat, dest=0, tag=self.tag_start*10+k)
 
         else:
             self.stacks = {}
             for k,label in enumerate(self.little_stack.keys()):
                 self.stacks[label] = self.little_stack[label]
-                self.counts[label] = self.little_stack_count[label]
-            for core in range(1,numcores):
+            for core in range(1,self.numcores):
+                if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.little_stack.keys()):
                     expected_shape = self.little_stack[label].shape
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
-                    comm.Recv(data_vessel, source=core, tag=self.tag_start*10+k)
+                    self.comm.Recv(data_vessel, source=core, tag=self.tag_start*10+k)
                     self.stacks[label] += data_vessel
 
             N = sum(self.num_each)
             for k,label in enumerate(self.little_stack.keys()):
                 self.stacks[label] /= N
-    def get_stats(self):
+    def get_stats(self,verbose=True):
         """
         Collect from all MPI cores and calculate statistics for
         1d measurements.
@@ -88,17 +86,18 @@ class MPIStats(object):
         if self.rank!=0:
             for k,label in enumerate(self.vectors.keys()):
                 send_dat = np.array(self.vectors[label])
-                comm.Send(send_dat, dest=0, tag=self.tag_start+k)
+                self.comm.Send(send_dat, dest=0, tag=self.tag_start+k)
 
         else:
             self.stats = {}
             for k,label in enumerate(self.vectors.keys()):
                 self.vectors[label] = np.array(self.vectors[label])
-            for core in range(1,numcores):
+            for core in range(1,self.numcores):
+                if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.vectors.keys()):
                     expected_shape = (self.num_each[core],self.vectors[label].shape[1])
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
-                    comm.Recv(data_vessel, source=core, tag=self.tag_start+k)
+                    self.comm.Recv(data_vessel, source=core, tag=self.tag_start+k)
                     self.vectors[label] = np.append(self.vectors[label],data_vessel,axis=0)
 
             for k,label in enumerate(self.vectors.keys()):
