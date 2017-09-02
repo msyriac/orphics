@@ -58,7 +58,7 @@ class MPIStats(object):
         """
         if self.rank!=0:
             for k,label in enumerate(self.little_stack.keys()):
-                send_dat = np.array(self.little_stack[label])
+                send_dat = np.array(self.little_stack[label]).astype(np.float64)
                 self.comm.Send(send_dat, dest=0, tag=self.tag_start*10+k)
 
         else:
@@ -85,7 +85,7 @@ class MPIStats(object):
         
         if self.rank!=0:
             for k,label in enumerate(self.vectors.keys()):
-                send_dat = np.array(self.vectors[label])
+                send_dat = np.array(self.vectors[label]).astype(np.float64)
                 self.comm.Send(send_dat, dest=0, tag=self.tag_start+k)
 
         else:
@@ -102,7 +102,7 @@ class MPIStats(object):
 
             for k,label in enumerate(self.vectors.keys()):
                 self.stats[label] = stats.getStats(self.vectors[label])
-            self.vectors = {}
+            #self.vectors = {}
                 
 def mpi_distribute(num_tasks,avail_cores):
     min_each, rem = divmod(num_tasks,avail_cores)
