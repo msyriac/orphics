@@ -10,6 +10,14 @@ import sys
 
 import sys
 
+def config_from_file(filename):
+    from ConfigParser import SafeConfigParser 
+    Config = SafeConfigParser()
+    Config.optionxform=str
+    Config.read(filename)
+    return Config
+
+
 def query_yes_no(question, default="yes"):
     """Ask a yes/no question via raw_input() and return their answer.
 

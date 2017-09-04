@@ -29,6 +29,7 @@ class MPIStats(object):
         self.numcores = comm.Get_size()    
         self.vectors = {}
         self.little_stack = {}
+        self.little_stack_count = {}
         self.tag_start = tag_start
 
     def add_to_stats(self,label,vector):
@@ -49,7 +50,9 @@ class MPIStats(object):
         """
         if not(label in self.little_stack.keys()):
             self.little_stack[label] = 0.
+            self.little_stack_count[label] = 0
         self.little_stack[label] += arr
+        self.little_stack_count[label] += 1
 
 
     def get_stacks(self,verbose=True):
@@ -57,12 +60,25 @@ class MPIStats(object):
         Collect from all MPI cores and calculate stacks.
         """
         if self.rank!=0:
+
+            for k,label in enumerate(self.little_stack.keys()):
+                self.comm.send(self.little_stack_count[label], dest=0, tag=self.tag_start*300+k)
+            
             for k,label in enumerate(self.little_stack.keys()):
                 send_dat = np.array(self.little_stack[label]).astype(np.float64)
                 self.comm.Send(send_dat, dest=0, tag=self.tag_start*10+k)
 
         else:
             self.stacks = {}
+            self.stack_count = {}
+
+            for k,label in enumerate(self.little_stack.keys()):
+                self.stack_count[label] = self.little_stack_count[label]
+                for core in range(1,self.numcores):
+                    data = self.comm.recv(source=core, tag=self.tag_start*300+k)
+                    self.stack_count[label] += data
+
+            
             for k,label in enumerate(self.little_stack.keys()):
                 self.stacks[label] = self.little_stack[label]
             for core in range(1,self.numcores):
@@ -73,9 +89,10 @@ class MPIStats(object):
                     self.comm.Recv(data_vessel, source=core, tag=self.tag_start*10+k)
                     self.stacks[label] += data_vessel
 
-            N = sum(self.num_each)
-            for k,label in enumerate(self.little_stack.keys()):
-                self.stacks[label] /= N
+                    
+            for k,label in enumerate(self.little_stack.keys()):                
+                self.stacks[label] /= self.stack_count[label]
+                
     def get_stats(self,verbose=True):
         """
         Collect from all MPI cores and calculate statistics for
@@ -85,17 +102,29 @@ class MPIStats(object):
         
         if self.rank!=0:
             for k,label in enumerate(self.vectors.keys()):
+                self.comm.send(np.array(self.vectors[label]).shape[0], dest=0, tag=self.tag_start*200+k)
+
+            for k,label in enumerate(self.vectors.keys()):
                 send_dat = np.array(self.vectors[label]).astype(np.float64)
                 self.comm.Send(send_dat, dest=0, tag=self.tag_start+k)
 
         else:
             self.stats = {}
+            self.numobj = {}
+            for k,label in enumerate(self.vectors.keys()):
+                self.numobj[label] = []
+                self.numobj[label].append(np.array(self.vectors[label]).shape[0])
+                for core in range(1,self.numcores):
+                    data = self.comm.recv(source=core, tag=self.tag_start*200+k)
+                    self.numobj[label].append(data)
+
+            
             for k,label in enumerate(self.vectors.keys()):
                 self.vectors[label] = np.array(self.vectors[label])
             for core in range(1,self.numcores):
                 if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.vectors.keys()):
-                    expected_shape = (self.num_each[core],self.vectors[label].shape[1])
+                    expected_shape = (self.numobj[label][core],self.vectors[label].shape[1])
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
                     self.comm.Recv(data_vessel, source=core, tag=self.tag_start+k)
                     self.vectors[label] = np.append(self.vectors[label],data_vessel,axis=0)
@@ -105,6 +134,7 @@ class MPIStats(object):
             #self.vectors = {}
                 
 def mpi_distribute(num_tasks,avail_cores):
+    assert avail_cores<=num_tasks
     min_each, rem = divmod(num_tasks,avail_cores)
     num_each = np.array([min_each]*avail_cores) # first distribute equally
     if rem>0: num_each[-rem:] += 1  # add the remainder to the last set of cores (so that rank 0 never gets extra jobs)
