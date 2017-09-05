@@ -10,6 +10,13 @@ import sys
 
 import sys
 
+def get_none_or_int(Config,section,name):
+    val = Config.get(section,name)
+    if val.strip().lower()=="none":
+        return None
+    else:
+        return int(val)
+
 def config_from_file(filename):
     from ConfigParser import SafeConfigParser 
     Config = SafeConfigParser()
@@ -182,6 +189,14 @@ def dictFromSection(config,sectionName):
 
 def listFromConfig(Config,section,name):
     return [float(x) for x in Config.get(section,name).split(',')]
+
+
+def get_none_or_int(Config,section,name):
+    val = Config.get(section,name)
+    if val.strip().lower()=="none":
+        return None
+    else:
+        return int(val)
 
 
 def getFileNameString(listOfNames,listOfVals):

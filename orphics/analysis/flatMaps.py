@@ -18,6 +18,16 @@ try:
 except:
     import logging
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
+
+
+def minimum_ell(shape,wcs):
+    """
+    Returns the lowest angular wavenumber of an ndmap
+    rounded down to the nearest integer.
+    """
+    modlmap = enmap.modlmap(shape,wcs)
+    min_ell = modlmap[modlmap>0].min()
+    return int(min_ell)
     
 
 class PatchArray(object):
@@ -136,6 +146,12 @@ def pixwin(l, pixsize):
     # pixsize = 0.5 arcmin for ACT
     pixsize = pixsize  * np.pi / (60. * 180)
     return np.sinc(l * pixsize / (2. * np.pi))**2
+
+
+# def power_from_map_attributes(kmap1,kmap2):
+#     kmap1 = fft(map1,axes=[-2,-1])
+#     area =Nx*Ny*pixScaleX*pixScaleY
+#     return np.real(np.conjugate(kmap1)*kmap2)*area/(Nx*Ny*1.0)**2.
 
 #@timeit
 def get_simple_power(map1,mask1=1.,map2=None,mask2=None):
