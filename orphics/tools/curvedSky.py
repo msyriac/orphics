@@ -1,7 +1,7 @@
 import matplotlib
 import healpy as hp
 import numpy as np
-from .output import bcolors
+from orphics.tools.io import bcolors
 import os
 import ctypes
 import numpy.ctypeslib as npct

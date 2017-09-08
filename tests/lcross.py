@@ -48,12 +48,27 @@ lmax = 60000
 
 #cambRoot = "data/Nov10_highAcc_CDM"
 #cambRoot = "data/highell"
-clist = ["data/highell","data/highell_hf5","data/Nov10_highAcc_CDM"]
-lablist = ['non-linear=3','non-linear=3 hf5','non-linear=1']
-colist = ["C0","C1","C2"]
+#clist = ["data/highell","data/highell_hf5","data/Nov10_highAcc_CDM"]
+#lablist = ['non-linear=3','non-linear=3 hf5','non-linear=1']
+
+clist = ["data/highell_hf5"]
+lablist = ['non-linear=3 hf5']
+
+colist = ["C0"]#,"C1","C2"]
 pl = io.Plotter(scaleY='log',scaleX='log')
 namells,namclkk = np.loadtxt("data/nam_clkk.csv",delimiter=',',unpack=True)
 pl.add(namells,namclkk,marker="o",ls="none",color="C3")
+
+
+cdmfile = "data/May21_matter2lens_WF_CDM_cut_ibarrier_iconc_fCls.csv"
+fdmfile = "data/May21_matter2lens_WF_FDM_1.0_cut_ibarrier_iconc_fCls.csv"
+
+lcdm,ckkcdm = np.loadtxt(cdmfile,unpack=True)
+lfdm,ckkfdm = np.loadtxt(fdmfile,unpack=True)
+
+pl.add(lcdm,ckkcdm,color="C4")
+pl.add(lfdm,ckkfdm,color="C5")
+
 
 for cambRoot,lab,col in zip(clist,lablist,colist):
     theory = cmb.loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax)
@@ -71,5 +86,24 @@ pl.legendOn(loc='lower left',labsize=10)
 pl._ax.set_ylim(1.e-12,1.e-5)
 pl._ax.set_xlim(10,1e5)
 pl.done("clkk.png")
+
+
+
+
+
+assert np.all(np.isclose(lcdm,lfdm))
+
+cond = np.logical_and(lcdm>100,lcdm<50000)
+
+ckkcdm = ckkcdm[cond]
+ckkfdm = ckkfdm[cond]
+
+from scipy.interpolate import interp1d
+nlkk = interp1d(ls,Nls)(lcdm[cond])
+
+ells = lcdm[cond]
+
+fsky = 0.1
+print np.sqrt(np.sum((np.sqrt(fsky*(2.*ells+1.)/2.)*(ckkcdm-ckkfdm)/(ckkcdm+nlkk))**2.))
 
 
