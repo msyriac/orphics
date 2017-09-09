@@ -9,7 +9,7 @@ import logging
 class MPIStats(object):
     """
     A helper container for
-    1) 1d measurements whose statistics needs to be calculated
+    1) 1d measurements whose statistics need to be calculated
     2) 2d cumulative stacks
 
     where different MPI cores may be calculating different number
@@ -75,6 +75,7 @@ class MPIStats(object):
             for k,label in enumerate(self.little_stack.keys()):
                 self.stack_count[label] = self.little_stack_count[label]
                 for core in range(1,self.numcores):
+                    if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                     data = self.comm.recv(source=core, tag=self.tag_start*300+k)
                     self.stack_count[label] += data
 
@@ -115,6 +116,7 @@ class MPIStats(object):
                 self.numobj[label] = []
                 self.numobj[label].append(np.array(self.vectors[label]).shape[0])
                 for core in range(1,self.numcores):
+                    if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                     data = self.comm.recv(source=core, tag=self.tag_start*200+k)
                     self.numobj[label].append(data)
 

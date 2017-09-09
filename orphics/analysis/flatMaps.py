@@ -20,6 +20,16 @@ except:
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
 
 
+class QuickPower(object):
+    def __init__(self,modlmap,bin_edges):
+        import orphics.tools.stats as stats
+        self.binner = stats.bin2D(modlmap,bin_edges)
+    def calc(self,map1,map2=None):
+        p2d = get_simple_power_enmap(map1,enmap2=map2)
+        cents, p1d = self.binner.bin(p2d)
+        return cents, p1d
+    
+
 def minimum_ell(shape,wcs):
     """
     Returns the lowest angular wavenumber of an ndmap
@@ -61,7 +71,7 @@ class PatchArray(object):
     def get_unlensed_cmb(self,seed=10):
         return enmap.rand_map(self.shape,self.wcs,self.psu,seed=seed)
         
-    def get_kappa(self,ktype="grf",vary=False):
+    def get_kappa(self,ktype="grf",vary=False,seed=None):
         if ktype=="cluster_nfw":
             raise NotImplementedError
         elif ktype=="cluster_battaglia":
@@ -70,7 +80,7 @@ class PatchArray(object):
             if vary:
                 raise NotImplementedError
             else:
-                kappa_map = enmap.rand_map(self.shape[-2:],self.wcs,cov=self.pclkk,scalar=True)
+                kappa_map = enmap.rand_map(self.shape[-2:],self.wcs,cov=self.pclkk,scalar=True,seed=seed)
                 return kappa_map
         else:
             raise ValueError
@@ -133,7 +143,7 @@ class PatchArray(object):
 
 
     def get_noise_sim(self,seed=None):
-        return enmap.rand_map(self.shape,self.wcs,self.noisecov,scalar=True,seed=seed,power2d=self.is_2d_noise,pixel_units=False)
+        return enmap.rand_map(self.shape,self.wcs,self.noisecov,scalar=True,seed=seed,pixel_units=False)
     
     
 def pixel_window_function(modLMap,thetaMap,pixScaleX,pixScaleY):
