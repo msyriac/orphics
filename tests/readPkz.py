@@ -40,8 +40,15 @@ zseval = zs
 io.quickPlot2d(Pkz,"pkz.png")
 io.quickPlot2d(pkint(kseval,zseval),"pkzint.png")
 
-#lc = LimberCosmology(lmax=2000,pickling=True,kmax=40.)
 lc = LimberCosmology(lmax=8000,pickling=True,kmax=400.,pkgrid_override=pkint)
+
+from alhazen.shear import dndz
+
+step = 0.01
+zedges = np.arange(0.,3.0+step,step)
+zcents = (zedges[1:]+zedges[:-1])/2.
+dndzs = dndz(zcents)
+
 
 pkz_camb = lc.PK.P(zseval, kseval, grid=True).T
 io.quickPlot2d(pkz_camb,"pkz_camb.png")
@@ -60,8 +67,8 @@ lcdm,ckkcdm = np.loadtxt(cdmfile,unpack=True)
 lfdm,ckkfdm = np.loadtxt(fdmfile,unpack=True)
 
 
-lc.addStepNz("s",0.5,1.5,bias=None,magbias=None,numzIntegral=300)
-lc.addStepNz("g",0.5,1.5,bias=2,magbias=None,numzIntegral=300)
+lc.addNz("s",zedges,dndzs,bias=None,magbias=None,numzIntegral=300)
+lc.addStepNz("g",0.4,0.7,bias=2,magbias=None,numzIntegral=300)
 
 
 ellrange = np.arange(100,8000,1)
@@ -84,14 +91,17 @@ pl.add(ellrange,clsg,color="C4",label="sg")
 pl.add(ellrange,clgk,color="C5",label="gk")
 
 
+
+       
+
 pl.add(lcdm,ckkcdm,ls="none",marker="o",markersize=1,color="C0",alpha=0.1)
 pl.add(lfdm,ckkfdm,ls="none",marker="x",markersize=1,color="C0",alpha=0.1)
 
 
 pkint2 = RectBivariateSpline(ks2,zs2,Pkz2,kx=3,ky=3)
 lc2 = LimberCosmology(lmax=8000,pickling=True,kmax=400.,pkgrid_override=pkint2)
-lc2.addStepNz("s",0.5,1.5,bias=None,magbias=None,numzIntegral=300)
-lc2.addStepNz("g",0.5,1.5,bias=2,magbias=None,numzIntegral=300)
+lc2.addNz("s",zedges,dndzs,bias=None,magbias=None,numzIntegral=300)
+lc2.addStepNz("g",0.4,0.7,bias=2,magbias=None,numzIntegral=300)
 lc2.generateCls(ellrange,autoOnly=False,zmin=0.)
 
 clkk2 = lc2.getCl("cmb","cmb")
@@ -100,6 +110,28 @@ clsk2 = lc2.getCl("cmb","s")
 clsg2 = lc2.getCl("s","g")
 clgk2 = lc2.getCl("cmb","g")
 clgg2 = lc2.getCl("g","g")
+
+
+
+
+from orphics.theory.gaussianCov import LensForecast
+LF = LensForecast()
+LF.loadSS(ellrange,clsg,30.,shapeNoise=0.3)
+pl.add(ellrange,LF.Nls['ss'](ellrange),ls="--")
+lcdm = ellrange
+cond = np.logical_and(lcdm>100,lcdm<5000)
+csscdm = clss[cond]
+cssfdm = clss2[cond]
+nlss = interp1d(ellrange,LF.Nls['ss'](ellrange))(lcdm[cond])
+ells = lcdm[cond]
+fsky = 0.4
+print "S/N: ",np.sqrt(np.sum((np.sqrt(fsky*(2.*ells+1.)/2.)*(csscdm-cssfdm)/(csscdm+nlss))**2.))
+
+
+lcdm,ckkcdm = np.loadtxt(cdmfile,unpack=True)
+lfdm,ckkfdm = np.loadtxt(fdmfile,unpack=True)
+
+
 
 pl.add(ellrange,clkk2,color="C0",ls="--")
 pl.add(ellrange,clss2,color="C1",ls="--")
@@ -129,5 +161,6 @@ pl.add(ellrange,perdiff(cltestfdm,cltestcdm),label="NamTest",ls="--",color="C0")
 
 pl.legendOn(labsize=10)
 pl.done("diff.png")
+
 
 

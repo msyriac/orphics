@@ -239,7 +239,12 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         print "Loaded cached Cls from ", clfile
     except:
         cmbmat = results.get_cmb_power_spectra(pars)
-        if pickling: pickle.dump(cmbmat,open("output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
+        if pickling:
+            import os
+            directory = "output/"
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            pickle.dump(cmbmat,open("output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
 
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
@@ -265,7 +270,12 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
     except:
         lensArr = results.get_lens_potential_cls(lmax=kellmax)
         clphi = lensArr[2:,0]
-        if pickling: np.savetxt("output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt",clphi)
+        if pickling:
+            import os
+            directory = "output/"
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            np.savetxt("output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt",clphi)
 
     clkk = clphi* (2.*np.pi/4.)
     ells = np.arange(2,len(clkk)+2,1)

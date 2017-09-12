@@ -56,7 +56,7 @@ class LensForecast:
         else:             
             self.shapeNoise = shapeNoise
         self.ngalBackground = ngal
-        self.Nls['ss'] = lambda x: self.shapeNoise*self.shapeNoise/(2.*self.ngalBackground*1.18e7)
+        self.Nls['ss'] = lambda x: x*0.+self.shapeNoise*self.shapeNoise/(2.*self.ngalBackground*1.18e7)
 
 
         self.theory.loadGenericCls(ellsCls,Cls,'ss')
