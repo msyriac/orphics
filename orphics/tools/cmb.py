@@ -21,8 +21,12 @@ def unpack_cmb_theory(theory,ells,lensed=False):
 
     return cltt, clee, clte, clbb
 
-def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,TCMB=2.7255e6):
-    tmul = 1. if dimensionless else TCMB**2.
+def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,orphics_dimensionless=True,TCMB=2.7255e6):
+    if orphics_dimensionless and dimensionless: tmul = 1.
+    if orphics_dimensionless and not(dimensionless): tmul = TCMB**2.
+    if not(orphics_dimensionless) and not(dimensionless): tmul = 1.
+    if not(orphics_dimensionless) and dimensionless: tmul = 1./TCMB**2.
+    
     
     fine_ells = np.arange(0,lmax,1)
     cltt, clee, clte, clbb = unpack_cmb_theory(theory,fine_ells,lensed=lensed)
@@ -149,7 +153,41 @@ def total_1d_power(ell,Cl,ellmax,beamArcmin,noiseMukArcmin,TCMB=2.7255e6,deconvo
     if deconvolve: Cl /= beamFac
     return ell, Cl
 
-def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000):
+
+def load_theory_spectra_from_enlib(file_root,TCMB = 2.7255e6,lpad=9000):
+    
+    theory = TheorySpectra()
+    uFile = file_root+"_lensinput.dat"
+    lFile = file_root+"_lensed.dat"
+
+    ell, ucltt, uclee, uclbb, uclte, cldd = np.loadtxt(uFile,unpack=True,usecols=[0,1,2,3,4,5])
+    mult = 2.*np.pi/ell/(ell+1.)/TCMB**2.
+    ucltt *= mult
+    uclee *= mult
+    uclte *= mult
+    uclbb *= mult
+    clkk = 2.*np.pi*cldd/4.
+    theory.loadCls(ell,ucltt,'TT',lensed=False,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,uclte,'TE',lensed=False,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,uclee,'EE',lensed=False,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,uclbb,'BB',lensed=False,interporder="linear",lpad=lpad)
+    theory.loadGenericCls(ell,clkk,"kk",lpad=lpad)
+
+    ell, lcltt, lclee, lclbb, lclte = np.loadtxt(lFile,unpack=True,usecols=[0,1,2,3,4])
+    mult = 2.*np.pi/ell/(ell+1.)/TCMB**2.
+    lcltt *= mult
+    lclee *= mult
+    lclte *= mult
+    lclbb *= mult
+    theory.loadCls(ell,lcltt,'TT',lensed=True,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,lclte,'TE',lensed=True,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,lclee,'EE',lensed=True,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,lclbb,'BB',lensed=True,interporder="linear",lpad=lpad)
+
+    return theory
+    
+
+def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
     '''
     Given a CAMB path+output_root, reads CMB and lensing Cls into 
     an orphics.theory.gaussianCov.TheorySpectra object.
@@ -161,7 +199,7 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
 
  
     '''
-    
+    if not(get_dimensionless): TCMB = 1.
     if useTotal:
         uSuffix = "_totCls.dat"
         lSuffix = "_lensedtotCls.dat"
@@ -185,8 +223,13 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
     theory.loadCls(ell,lclee,'EE',lensed=True,interporder="linear",lpad=lpad)
     theory.loadCls(ell,lclbb,'BB',lensed=True,interporder="linear",lpad=lpad)
 
-    elldd, cldd = np.loadtxt(cambRoot+"_lenspotentialCls.dat",unpack=True,usecols=[0,5])
-    clkk = 2.*np.pi*cldd/4. #/ell/(ell+1.)
+    try:
+        elldd, cldd = np.loadtxt(cambRoot+"_lenspotentialCls.dat",unpack=True,usecols=[0,5])
+        clkk = 2.*np.pi*cldd/4.
+    except:
+        elldd, cldd = np.loadtxt(cambRoot+"_scalCls.dat",unpack=True,usecols=[0,4])
+        clkk = cldd*(elldd+1.)**2./elldd**2./4./TCMB**2.
+        
     theory.loadGenericCls(elldd,clkk,"kk",lpad=lpad)
 
 
@@ -205,10 +248,10 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
         clte *= mult
         clbb = clee*0.
 
-        theory.loadCls(ell,cltt,'TT',lensed=False,interporder="linear",lpad=9000)
-        theory.loadCls(ell,clte,'TE',lensed=False,interporder="linear",lpad=9000)
-        theory.loadCls(ell,clee,'EE',lensed=False,interporder="linear",lpad=9000)
-        theory.loadCls(ell,clbb,'BB',lensed=False,interporder="linear",lpad=9000)
+        theory.loadCls(ell,cltt,'TT',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,clte,'TE',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,clee,'EE',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,clbb,'BB',lensed=False,interporder="linear",lpad=lpad)
 
 
     return theory

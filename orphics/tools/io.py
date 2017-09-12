@@ -10,6 +10,21 @@ import sys
 
 import sys
 
+def get_none_or_int(Config,section,name):
+    val = Config.get(section,name)
+    if val.strip().lower()=="none":
+        return None
+    else:
+        return int(val)
+
+def config_from_file(filename):
+    from ConfigParser import SafeConfigParser 
+    Config = SafeConfigParser()
+    Config.optionxform=str
+    Config.read(filename)
+    return Config
+
+
 def query_yes_no(question, default="yes"):
     """Ask a yes/no question via raw_input() and return their answer.
 
@@ -176,6 +191,14 @@ def listFromConfig(Config,section,name):
     return [float(x) for x in Config.get(section,name).split(',')]
 
 
+def get_none_or_int(Config,section,name):
+    val = Config.get(section,name)
+    if val.strip().lower()=="none":
+        return None
+    else:
+        return int(val)
+
+
 def getFileNameString(listOfNames,listOfVals):
     fullstr = ""
     for name,val in zip(listOfNames,listOfVals):
@@ -225,7 +248,7 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-class Plotter:
+class Plotter(object):
     '''
     Fast, easy, and pretty publication-quality plots
     '''
@@ -255,7 +278,7 @@ class Plotter:
         plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
 
 
-    def legendOn(self,loc='upper left',labsize=18,**kwargs):
+    def legendOn(self,loc='upper left',labsize=10,**kwargs):
 
         handles, labels = self._ax.get_legend_handles_labels()
         legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)
@@ -307,7 +330,11 @@ class Plotter:
 
             
 
-                                
+    def hline(self,y=0.,ls="--",alpha=0.5,color="k",**kwargs):
+        self._ax.axhline(y=y,ls=ls,alpha=alpha,color=color,**kwargs)
+        
+    def vline(self,x=0.,ls="--",alpha=0.5,color="k",**kwargs):
+        self._ax.axhline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
 
     def done(self,fileName="output/default.png",verbose=True,**kwargs):
 

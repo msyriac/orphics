@@ -18,10 +18,30 @@ try:
 except:
     import logging
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
+
+
+class QuickPower(object):
+    def __init__(self,modlmap,bin_edges):
+        import orphics.tools.stats as stats
+        self.binner = stats.bin2D(modlmap,bin_edges)
+    def calc(self,map1,map2=None):
+        p2d = get_simple_power_enmap(map1,enmap2=map2)
+        cents, p1d = self.binner.bin(p2d)
+        return cents, p1d
+    
+
+def minimum_ell(shape,wcs):
+    """
+    Returns the lowest angular wavenumber of an ndmap
+    rounded down to the nearest integer.
+    """
+    modlmap = enmap.modlmap(shape,wcs)
+    min_ell = modlmap[modlmap>0].min()
+    return int(min_ell)
     
 
 class PatchArray(object):
-    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,cosmology=None,skip_real=False):
+    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,theory=None,lmax=None,skip_real=False):
         self.shape = shape
         self.wcs = wcs
         if not(skip_real): self.modrmap = enmap.modrmap(shape,wcs)
@@ -31,15 +51,17 @@ class PatchArray(object):
         self.dimensionless = dimensionless
         self.TCMB = TCMB
 
-        if cosmology is not None:
-            self.add_cosmology(cosmology)
+        if theory is not None:
+            assert lmax is not None
+            self.add_theory(theory,lmax)
 
-    def add_cosmology(self,cc):
-        self.cc = cc
-        self.psl = cmb.enmap_power_from_orphics_theory(self.cc.theory,self.cc.lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB)
-        self.psu = cmb.enmap_power_from_orphics_theory(self.cc.theory,self.cc.lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB)
-        self.fine_ells = np.arange(0,self.cc.lmax,1)
-        self.pclkk = self.cc.theory.gCl("kk",self.fine_ells)
+    def add_theory(self,theory,lmax,orphics_is_dimensionless=True):
+        self.theory = theory
+        self.lmax = lmax
+        self.psl = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
+        self.psu = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
+        self.fine_ells = np.arange(0,lmax,1)
+        self.pclkk = theory.gCl("kk",self.fine_ells)
         self.clkk = self.pclkk.copy()
         self.pclkk.resize((1,1,self.pclkk.size))
         
@@ -49,7 +71,7 @@ class PatchArray(object):
     def get_unlensed_cmb(self,seed=10):
         return enmap.rand_map(self.shape,self.wcs,self.psu,seed=seed)
         
-    def get_kappa(self,ktype="grf",vary=False):
+    def get_kappa(self,ktype="grf",vary=False,seed=None):
         if ktype=="cluster_nfw":
             raise NotImplementedError
         elif ktype=="cluster_battaglia":
@@ -58,7 +80,7 @@ class PatchArray(object):
             if vary:
                 raise NotImplementedError
             else:
-                kappa_map = enmap.rand_map(self.shape[-2:],self.wcs,cov=self.pclkk,scalar=True)
+                kappa_map = enmap.rand_map(self.shape[-2:],self.wcs,cov=self.pclkk,scalar=True,seed=seed)
                 return kappa_map
         else:
             raise ValueError
@@ -121,7 +143,7 @@ class PatchArray(object):
 
 
     def get_noise_sim(self,seed=None):
-        return enmap.rand_map(self.shape,self.wcs,self.noisecov,scalar=True,seed=seed,power2d=self.is_2d_noise,pixel_units=False)
+        return enmap.rand_map(self.shape,self.wcs,self.noisecov,scalar=True,seed=seed,pixel_units=False)
     
     
 def pixel_window_function(modLMap,thetaMap,pixScaleX,pixScaleY):
@@ -134,6 +156,12 @@ def pixwin(l, pixsize):
     # pixsize = 0.5 arcmin for ACT
     pixsize = pixsize  * np.pi / (60. * 180)
     return np.sinc(l * pixsize / (2. * np.pi))**2
+
+
+# def power_from_map_attributes(kmap1,kmap2):
+#     kmap1 = fft(map1,axes=[-2,-1])
+#     area =Nx*Ny*pixScaleX*pixScaleY
+#     return np.real(np.conjugate(kmap1)*kmap2)*area/(Nx*Ny*1.0)**2.
 
 #@timeit
 def get_simple_power(map1,mask1=1.,map2=None,mask2=None):
