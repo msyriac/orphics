@@ -16,7 +16,7 @@ class MPIStats(object):
     of 1d measurements or 2d stacks.
     """
     
-    def __init__(self,comm,num_each,tag_start=333):
+    def __init__(self,comm,num_each,root=0,loopover=None,tag_start=333):
         """
         comm - MPI.COMM_WORLD object
         num_each - 1d array or list where the ith element indicates number of tasks assigned to ith core
@@ -31,6 +31,11 @@ class MPIStats(object):
         self.little_stack = {}
         self.little_stack_count = {}
         self.tag_start = tag_start
+        self.root = root
+        if loopover is None:
+            self.loopover = range(root+1,self.numcores)
+        else:
+            self.loopover = loopover
 
     def add_to_stats(self,label,vector):
         """
@@ -59,22 +64,22 @@ class MPIStats(object):
         """
         Collect from all MPI cores and calculate stacks.
         """
-        if self.rank!=0:
+        if self.rank in self.loopover:
 
             for k,label in enumerate(self.little_stack.keys()):
-                self.comm.send(self.little_stack_count[label], dest=0, tag=self.tag_start*300+k)
+                self.comm.send(self.little_stack_count[label], dest=self.root, tag=self.tag_start*300+k)
             
             for k,label in enumerate(self.little_stack.keys()):
                 send_dat = np.array(self.little_stack[label]).astype(np.float64)
-                self.comm.Send(send_dat, dest=0, tag=self.tag_start*10+k)
+                self.comm.Send(send_dat, dest=self.root, tag=self.tag_start*10+k)
 
-        else:
+        elif self.rank==self.root:
             self.stacks = {}
             self.stack_count = {}
 
             for k,label in enumerate(self.little_stack.keys()):
                 self.stack_count[label] = self.little_stack_count[label]
-                for core in range(1,self.numcores):
+                for core in self.loopover: #range(1,self.numcores):
                     if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                     data = self.comm.recv(source=core, tag=self.tag_start*300+k)
                     self.stack_count[label] += data
@@ -82,7 +87,7 @@ class MPIStats(object):
             
             for k,label in enumerate(self.little_stack.keys()):
                 self.stacks[label] = self.little_stack[label]
-            for core in range(1,self.numcores):
+            for core in self.loopover: #range(1,self.numcores):
                 if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.little_stack.keys()):
                     expected_shape = self.little_stack[label].shape
@@ -101,13 +106,13 @@ class MPIStats(object):
         """
         import orphics.tools.stats as stats
         
-        if self.rank!=0:
+        if self.rank in self.loopover:
             for k,label in enumerate(self.vectors.keys()):
-                self.comm.send(np.array(self.vectors[label]).shape[0], dest=0, tag=self.tag_start*200+k)
+                self.comm.send(np.array(self.vectors[label]).shape[0], dest=self.root, tag=self.tag_start*200+k)
 
             for k,label in enumerate(self.vectors.keys()):
                 send_dat = np.array(self.vectors[label]).astype(np.float64)
-                self.comm.Send(send_dat, dest=0, tag=self.tag_start+k)
+                self.comm.Send(send_dat, dest=self.root, tag=self.tag_start+k)
 
         else:
             self.stats = {}
@@ -115,7 +120,7 @@ class MPIStats(object):
             for k,label in enumerate(self.vectors.keys()):
                 self.numobj[label] = []
                 self.numobj[label].append(np.array(self.vectors[label]).shape[0])
-                for core in range(1,self.numcores):
+                for core in self.loopover: #range(1,self.numcores):
                     if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                     data = self.comm.recv(source=core, tag=self.tag_start*200+k)
                     self.numobj[label].append(data)
@@ -123,7 +128,7 @@ class MPIStats(object):
             
             for k,label in enumerate(self.vectors.keys()):
                 self.vectors[label] = np.array(self.vectors[label])
-            for core in range(1,self.numcores):
+            for core in self.loopover: #range(1,self.numcores):
                 if verbose: print ("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.vectors.keys()):
                     expected_shape = (self.numobj[label][core],self.vectors[label].shape[1])

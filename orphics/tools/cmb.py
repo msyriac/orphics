@@ -21,8 +21,12 @@ def unpack_cmb_theory(theory,ells,lensed=False):
 
     return cltt, clee, clte, clbb
 
-def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,TCMB=2.7255e6):
-    tmul = 1. if dimensionless else TCMB**2.
+def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,orphics_dimensionless=True,TCMB=2.7255e6):
+    if orphics_dimensionless and dimensionless: tmul = 1.
+    if orphics_dimensionless and not(dimensionless): tmul = TCMB**2.
+    if not(orphics_dimensionless) and not(dimensionless): tmul = 1.
+    if not(orphics_dimensionless) and dimensionless: tmul = 1./TCMB**2.
+    
     
     fine_ells = np.arange(0,lmax,1)
     cltt, clee, clte, clbb = unpack_cmb_theory(theory,fine_ells,lensed=lensed)
@@ -183,7 +187,7 @@ def load_theory_spectra_from_enlib(file_root,TCMB = 2.7255e6,lpad=9000):
     return theory
     
 
-def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000):
+def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
     '''
     Given a CAMB path+output_root, reads CMB and lensing Cls into 
     an orphics.theory.gaussianCov.TheorySpectra object.
@@ -195,7 +199,7 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
 
  
     '''
-    
+    if not(get_dimensionless): TCMB = 1.
     if useTotal:
         uSuffix = "_totCls.dat"
         lSuffix = "_lensedtotCls.dat"

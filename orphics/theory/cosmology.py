@@ -15,12 +15,12 @@ defaultConstants['MSUN_CGS'] = 1.98900e+33
 defaultConstants['MPC2CM'] = 3.085678e+24
 
 defaultCosmology = {}
-defaultCosmology['omch2'] = 0.1194
-defaultCosmology['ombh2'] = 0.022
+defaultCosmology['omch2'] = 0.12470
+defaultCosmology['ombh2'] = 0.02230
 defaultCosmology['H0'] = 67.0
 defaultCosmology['ns'] = 0.96
 defaultCosmology['As'] = 2.2e-9
-defaultCosmology['mnu'] = 0.06
+defaultCosmology['mnu'] = 0.0
 defaultCosmology['w0'] = -1.0
 
 

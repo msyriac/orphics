@@ -55,11 +55,11 @@ class PatchArray(object):
             assert lmax is not None
             self.add_theory(theory,lmax)
 
-    def add_theory(self,theory,lmax):
+    def add_theory(self,theory,lmax,orphics_is_dimensionless=True):
         self.theory = theory
         self.lmax = lmax
-        self.psl = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB)
-        self.psu = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB)
+        self.psl = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
+        self.psu = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
         self.fine_ells = np.arange(0,lmax,1)
         self.pclkk = theory.gCl("kk",self.fine_ells)
         self.clkk = self.pclkk.copy()
