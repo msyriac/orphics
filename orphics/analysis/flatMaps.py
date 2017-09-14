@@ -64,12 +64,14 @@ class PatchArray(object):
         self.pclkk = theory.gCl("kk",self.fine_ells)
         self.clkk = self.pclkk.copy()
         self.pclkk.resize((1,1,self.pclkk.size))
+        self.ugenerator = enmap.MapGen(self.shape,self.wcs,self.psu)
         
     def add_nfw_cluster(self):
         raise NotImplementedError
 
-    def get_unlensed_cmb(self,seed=10):
-        return enmap.rand_map(self.shape,self.wcs,self.psu,seed=seed)
+    def get_unlensed_cmb(self,seed=10,scalar=False):
+        return self.ugenerator.get_map(seed=seed,scalar=scalar)
+        #return enmap.rand_map(self.shape,self.wcs,self.psu,seed=seed)
         
     def get_kappa(self,ktype="grf",vary=False,seed=None):
         if ktype=="cluster_nfw":
@@ -114,7 +116,7 @@ class PatchArray(object):
         self.nT = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_T,lknee_T,alpha_T,
                                       map_dimensionless,TCMB)
         
-        if noise_uK_arcmin_P is None and is_close(lknee_T,lknee_P) and is_close(alpha_T,alpha_P):
+        if noise_uK_arcmin_P is None and np.isclose(lknee_T,lknee_P) and np.isclose(alpha_T,alpha_P):
             self.nP = 2.*self.nT.copy()
         else:
             if noise_uK_arcmin_P is None: noise_uK_arcmin_P = np.sqrt(2.)*noise_uK_arcmin_T
@@ -128,6 +130,8 @@ class PatchArray(object):
         ps_noise[2,2] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
         self.noisecov = ps_noise
         self.is_2d_noise = False
+        self.ngenerator = enmap.MapGen(self.shape,self.wcs,self.noisecov)
+
             
     def add_noise_2d(self,nT,nP=None):
         self.nT = nT
@@ -140,10 +144,11 @@ class PatchArray(object):
         ps_noise[2,2] = nP
         self.noisecov = ps_noise
         self.is_2d_noise = True
+        self.ngenerator = enmap.MapGen(self.shape,self.wcs,self.noisecov)
 
 
-    def get_noise_sim(self,seed=None):
-        return enmap.rand_map(self.shape,self.wcs,self.noisecov,scalar=True,seed=seed,pixel_units=False)
+    def get_noise_sim(self,seed=None,scalar=False):
+        return self.ngenerator.get_map(seed=seed,scalar=scalar)
     
     
 def pixel_window_function(modLMap,thetaMap,pixScaleX,pixScaleY):
