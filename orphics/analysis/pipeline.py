@@ -77,7 +77,7 @@ class SpectrumVerification(object):
             if ("unlensed" in key) or ("delensed" in key):
                 spec_key = "u"+spec
             else:
-                if (spec in cmb_specs) and self.pol:
+                if (spec in cmb_specs):
                     spec_key = "l"+spec
                 else:
                     spec_key = spec
@@ -90,6 +90,8 @@ class SpectrumVerification(object):
 
             pl.addErr(cents,st['mean']*scalefac,yerr=st['errmean']*scalefac,marker="x",ls="none",label=key)
 
+        if xlim is not None: pl._ax.set_xlim(xlim[0],xlim[1])
+        if ylim is not None: pl._ax.set_ylim(ylim[0],ylim[1])
         pl.legendOn(labsize=10)
         pl.done(out_dir)
             
@@ -113,7 +115,7 @@ class SpectrumVerification(object):
             if ("unlensed" in key) or ("delensed" in key):
                 spec_key = "u"+spec
             else:
-                if (spec in cmb_specs) and self.pol:
+                if (spec in cmb_specs):
                     spec_key = "l"+spec
                 else:
                     spec_key = spec
@@ -137,6 +139,8 @@ class SpectrumVerification(object):
             pl.addErr(cents,rdiff,yerr=rerr,marker="x",ls="none",label=key)
 
         pl.legendOn(labsize=10)
+        if xlim is not None: pl._ax.set_xlim(xlim[0],xlim[1])
+        if ylim is not None: pl._ax.set_ylim(ylim[0],ylim[1])
         pl.hline()
         pl.done(out_dir)
             
