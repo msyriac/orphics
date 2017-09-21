@@ -74,7 +74,7 @@ for cambRoot,lab,col in zip(clist,lablist,colist):
     theory = cmb.loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax)
 
 
-    ls,Nls,ellbb,dlbb,efficiency,cc = lensNoise(Config,expName,lensName,beamOverride=None,noiseTOverride=None,lkneeTOverride=None,lkneePOverride=None,alphaTOverride=None,alphaPOverride=None,gradCut=2000,deg=2.,px=0.1,theoryOverride=theory,bigell=lmax)
+    ls,Nls,ellbb,dlbb,efficiency,cc = lensNoise(Config,expName,lensName,beamOverride=None,noiseTOverride=None,lkneeTOverride=None,lkneePOverride=None,alphaTOverride=None,alphaPOverride=None,gradCut=2000,deg=2.,px=0.1,theoryOverride=theory,bigell=lmax,lensedEqualsUnlensed=False)
 
     ells = np.arange(2,lmax,1)
     clkk = theory.gCl("kk",ells)
@@ -82,6 +82,11 @@ for cambRoot,lab,col in zip(clist,lablist,colist):
 
     pl.add(ells,clkk,label=lab,ls="-",color=col)
     pl.add(ls,Nls,label=lab+" Nl",ls="--",color=col)
+
+
+ls,Nlslimit,ellbb,dlbb,efficiency,cc = lensNoise(Config,expName,lensName,beamOverride=None,noiseTOverride=None,lkneeTOverride=None,lkneePOverride=None,alphaTOverride=None,alphaPOverride=None,gradCut=2000,deg=2.,px=0.1,theoryOverride=theory,bigell=lmax,lensedEqualsUnlensed=True)
+pl.add(ls,Nlslimit,label=lab+" Nl",ls="--",color=col)
+    
 pl.legendOn(loc='lower left',labsize=10)
 pl._ax.set_ylim(1.e-12,1.e-5)
 pl._ax.set_xlim(10,1e5)

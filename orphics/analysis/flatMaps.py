@@ -179,9 +179,6 @@ def get_simple_power(map1,mask1=1.,map2=None,mask2=None):
    
     pass1 = map1.copy()
     pass1.data = pass1.data * mask1
-    #from orphics.tools.io import quickPlot2d
-    #quickPlot2d(pass1.data,"temp.png")
-    #sys.exit()
     if map2 is not None:
         pass2 = map2.copy()
         pass2.data = pass2.data * mask2

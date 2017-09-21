@@ -257,7 +257,7 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
     return theory
 
 
-def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False):
+def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True):
     '''
 
     The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
@@ -267,7 +267,13 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
  
     '''
+
     
+    if get_dimensionless:
+        tmul = 1.
+    else:
+        tmul = TCMB**2.
+        
     if useTotal:
         uSuffix = "unlensed_total"
         lSuffix = "total"
@@ -294,7 +300,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         cls =cmbmat[lSuffix][2:,i]
 
         ells = np.arange(2,len(cls)+2,1)
-        cls *= 2.*np.pi/ells/(ells+1.)
+        cls *= 2.*np.pi/ells/(ells+1.)*tmul
         theory.loadCls(ells,cls,pol,lensed=True,interporder="linear",lpad=lpad,fill_zero=fill_zero)
 
         if unlensedEqualsLensed:
@@ -302,7 +308,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         else:
             cls = cmbmat[uSuffix][2:,i]
             ells = np.arange(2,len(cls)+2,1)
-            cls *= 2.*np.pi/ells/(ells+1.)
+            cls *= 2.*np.pi/ells/(ells+1.)*tmul
             theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad,fill_zero=fill_zero)
 
     try:
@@ -364,6 +370,17 @@ class TheorySpectra:
         
 
     def gCl(self,keyName,ell):
+
+        if len(keyName)==3:
+            # assume uTT, lTT, etc.
+            ultype = keyName[0].lower()
+            if ultype=="u":
+                return self.uCl(keyName[1:],ell)
+            elif ultype=="l":
+                return self.lCl(keyName[1:],ell)
+            else:
+                raise ValueError
+        
         try:
             return self._gCl[keyName](ell)
         except:
