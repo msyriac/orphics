@@ -56,7 +56,7 @@ class SpectrumVerification(object):
         self.cents = cents
         return lteb,lteb2
 
-    def plot(self,spec,keys,out_dir,scaleY='log',scaleX='log',scale_spectrum=True):
+    def plot(self,spec,keys,out_dir,scaleY='log',scaleX='log',scale_spectrum=True,xlim=None,ylim=None):
 
         pl = io.Plotter(scaleY=scaleY,scaleX=scaleX)
         if scale_spectrum:
@@ -67,7 +67,7 @@ class SpectrumVerification(object):
         done_spec = []
 
         suffspec = ""
-        if spec in cmb_specs:
+        if (spec in cmb_specs) and self.pol:
             suffspec = spec
         
         for key in keys:
@@ -77,7 +77,7 @@ class SpectrumVerification(object):
             if ("unlensed" in key) or ("delensed" in key):
                 spec_key = "u"+spec
             else:
-                if spec in cmb_specs:
+                if (spec in cmb_specs) and self.pol:
                     spec_key = "l"+spec
                 else:
                     spec_key = spec
@@ -96,14 +96,14 @@ class SpectrumVerification(object):
         
 
             
-    def plot_diff(self,spec,keys,out_dir,scaleY='linear',scaleX='linear'):
+    def plot_diff(self,spec,keys,out_dir,scaleY='linear',scaleX='linear',xlim=None,ylim=None):
 
         pl = io.Plotter(scaleY=scaleY,scaleX=scaleX)
         cmb_specs = ['TT','EE','BB','TE','ET','EB','BE','TB','BT']
         done_spec = []
 
         suffspec = ""
-        if spec in cmb_specs:
+        if (spec in cmb_specs) and self.pol:
             suffspec = spec
         
         for key in keys:
@@ -113,7 +113,7 @@ class SpectrumVerification(object):
             if ("unlensed" in key) or ("delensed" in key):
                 spec_key = "u"+spec
             else:
-                if spec in cmb_specs:
+                if (spec in cmb_specs) and self.pol:
                     spec_key = "l"+spec
                 else:
                     spec_key = spec
