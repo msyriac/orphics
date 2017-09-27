@@ -56,14 +56,16 @@ class SpectrumVerification(object):
         self.cents = cents
         return lteb,lteb2
 
-    def plot(self,spec,keys,out_dir,scaleY='log',scaleX='log',scale_spectrum=True,xlim=None,ylim=None):
+    def plot(self,spec,keys,out_dir=None,scaleY='log',scaleX='log',scale_spectrum=True,xlim=None,ylim=None,skip_uzero=True,pl=None,skip_labels=True):
 
-        pl = io.Plotter(scaleY=scaleY,scaleX=scaleX)
+        
+        if pl is None: pl = io.Plotter(scaleY=scaleY,scaleX=scaleX)
         if scale_spectrum:
             scalefac = self.cents**2.
         else:
             scalefac = 1.
         cmb_specs = ['TT','EE','BB','TE','ET','EB','BE','TB','BT']
+        uspecs = ['BB','EB','BE','TB','BT']
         done_spec = []
 
         suffspec = ""
@@ -71,6 +73,8 @@ class SpectrumVerification(object):
             suffspec = spec
         
         for key in keys:
+
+            if ("unlensed" in key) and (spec in uspecs) and skip_uzero: continue
 
             st = self.mpibox.stats[key+suffspec]
             
@@ -92,15 +96,15 @@ class SpectrumVerification(object):
 
         if xlim is not None: pl._ax.set_xlim(xlim[0],xlim[1])
         if ylim is not None: pl._ax.set_ylim(ylim[0],ylim[1])
-        pl.legendOn(labsize=10)
-        pl.done(out_dir)
+        if not(skip_labels): pl.legendOn(labsize=10)
+        if pl is None: pl.done(out_dir)
             
         
 
             
-    def plot_diff(self,spec,keys,out_dir,scaleY='linear',scaleX='linear',xlim=None,ylim=None):
+    def plot_diff(self,spec,keys,out_dir=None,scaleY='linear',scaleX='linear',xlim=None,ylim=None,pl=None,skip_labels=True,ratio=True):
 
-        pl = io.Plotter(scaleY=scaleY,scaleX=scaleX)
+        if pl is None: pl = io.Plotter(scaleY=scaleY,scaleX=scaleX)
         cmb_specs = ['TT','EE','BB','TE','ET','EB','BE','TB','BT']
         done_spec = []
 
@@ -132,17 +136,19 @@ class SpectrumVerification(object):
                 th1dnow = th1d_unlensed
             else:
                 th1dnow = th1d
+
                 
-            rdiff = (st['mean']-th1dnow)/th1dnow
-            rerr = st['errmean']/th1dnow
+            rdiff = (st['mean']-th1dnow)
+            rerr = st['errmean']
+            div = th1dnow if ratio else 1.
 
-            pl.addErr(cents,rdiff,yerr=rerr,marker="x",ls="none",label=key)
+            pl.addErr(cents,rdiff/div,yerr=rerr/div,marker="x",ls="none",label=key)
 
-        pl.legendOn(labsize=10)
+        if not(skip_labels): pl.legendOn(labsize=10)
         if xlim is not None: pl._ax.set_xlim(xlim[0],xlim[1])
         if ylim is not None: pl._ax.set_ylim(ylim[0],ylim[1])
         pl.hline()
-        pl.done(out_dir)
+        if pl is None: pl.done(out_dir)
             
         
 

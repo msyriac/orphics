@@ -109,7 +109,7 @@ def fit_noise_power(ells,nls,ell_fit=5000.,lknee_guess=2000.,alpha_guess=-4.0):
     from scipy.optimize import curve_fit as cfit
     
     noise_guess = np.sqrt(np.nanmean(nls[ells>ell_fit]))*(180.*60./np.pi)
-    nlfitfunc = lambda ell,l,a: noise_func(ell,0.,noise_guess,l,a)#*cmb.gauss_beam(ells,fwhm)**2.
+    nlfitfunc = lambda ell,l,a: noise_func(ell,0.,noise_guess,l,a,dimensionless=False)
     popt,pcov = cfit(nlfitfunc,ells,nls,p0=[lknee_guess,alpha_guess])
     lknee_fit,alpha_fit = popt
     return noise_guess,lknee_fit,alpha_fit
@@ -163,7 +163,7 @@ def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless=False,TCMB=2.7
     nfact = white_noise_with_atm_func(ell,rms_noise,lknee,alpha,dimensionless,TCMB)
     
     ans = nfact * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
-    return ans/TCMB**2.
+    return ans
 
 
 def atm_factor(ell,lknee,alpha):
@@ -482,12 +482,20 @@ class TheorySpectra:
         if mapXYType=="ET": mapXYType="TE"
         ell = np.array(ell)
 
-        if lensed:    
-            retlist = np.array(self._lCl[mapXYType](ell))
-            return retlist
-        else:
-            retlist = np.array(self._uCl[mapXYType](ell))
-            return retlist
+        try:
+            if lensed:    
+                retlist = np.array(self._lCl[mapXYType](ell))
+                return retlist
+            else:
+                retlist = np.array(self._uCl[mapXYType](ell))
+                return retlist
+
+        except:
+            zspecs = ['EB','TB']
+            if (XYType in zspecs) or (XYType[::-1] in zspecs):
+                return ell*0.
+            else:
+                raise
 
     def uCl(self,XYType,ell):
         return self._Cl(XYType,ell,lensed=False)

@@ -14,7 +14,7 @@ except:
 
 
 try:
-    from enlib import enmap
+    from enlib import enmap, lensing
 except:
     import logging
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
@@ -41,51 +41,64 @@ def minimum_ell(shape,wcs):
     
 
 class PatchArray(object):
-    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,theory=None,lmax=None,skip_real=False):
+    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,cc=None,theory=None,lmax=None,skip_real=False):
         self.shape = shape
         self.wcs = wcs
         if not(skip_real): self.modrmap = enmap.modrmap(shape,wcs)
         self.lxmap,self.lymap,self.modlmap,self.angmap,self.lx,self.ly = get_ft_attributes_enmap(shape,wcs)
         self.pix_ells = np.arange(0.,self.modlmap.max(),1.)
-
+        self.posmap = enmap.posmap(self.shape,self.wcs)
         self.dimensionless = dimensionless
         self.TCMB = TCMB
 
-        if theory is not None:
-            assert lmax is not None
-            self.add_theory(theory,lmax)
+        if (theory is not None) or (cc is not None):
+            self.add_theory(cc,theory,lmax)
 
-    def add_theory(self,theory,lmax,orphics_is_dimensionless=True):
-        self.theory = theory
-        self.lmax = lmax
-        self.psl = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
-        self.psu = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
-        self.fine_ells = np.arange(0,lmax,1)
-        self.pclkk = theory.gCl("kk",self.fine_ells)
-        self.clkk = self.pclkk.copy()
-        self.pclkk.resize((1,1,self.pclkk.size))
-        self.ugenerator = enmap.MapGen(self.shape,self.wcs,self.psu)
-        
-    def add_nfw_cluster(self):
-        raise NotImplementedError
-
-    def get_unlensed_cmb(self,seed=10,scalar=False):
-        return self.ugenerator.get_map(seed=seed,scalar=scalar)
-        #return enmap.rand_map(self.shape,self.wcs,self.psu,seed=seed)
-        
-    def get_kappa(self,ktype="grf",vary=False,seed=None):
-        if ktype=="cluster_nfw":
-            raise NotImplementedError
-        elif ktype=="cluster_battaglia":
-            raise NotImplementedError
-        elif ktype=="grf":
-            if vary:
-                raise NotImplementedError
-            else:
-                kappa_map = enmap.rand_map(self.shape[-2:],self.wcs,cov=self.pclkk,scalar=True,seed=seed)
-                return kappa_map
+    def add_theory(self,cc=None,theory=None,lmax=None,orphics_is_dimensionless=True):
+        if cc is not None:
+            self.cc = cc
+            self.theory = cc.theory
+            self.lmax = cc.lmax
+            # assert theory is None
+            # assert lmax is None
+            theory = self.theory
+            lmax = self.lmax
         else:
-            raise ValueError
+            assert theory is not None
+            assert lmax is not None
+            self.theory = theory
+            self.lmax = lmax
+            
+        #psl = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
+        psu = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
+        self.fine_ells = np.arange(0,lmax,1)
+        pclkk = theory.gCl("kk",self.fine_ells)
+        self.clkk = pclkk.copy()
+        pclkk = pclkk.reshape((1,1,pclkk.size))
+        #self.pclkk.resize((1,self.pclkk.size))
+        self.ugenerator = enmap.MapGen(self.shape,self.wcs,psu)
+        self.kgenerator = enmap.MapGen(self.shape[-2:],self.wcs,pclkk)
+
+
+    def update_kappa(self,kappa):
+        # Converts kappa map to pixel displacements
+        import alhazen.lensTools as lt
+        fphi = lt.kappa_to_fphi(kappa,self.modlmap)
+        grad_phi = enmap.gradf(enmap.ndmap(fphi,self.wcs))
+        pos = self.posmap + grad_phi
+	self._displace_pix = enmap.sky2pix(self.shape,self.wcs,pos, safe=False)
+
+    def get_lensed(self, unlensed, order=3, mode="spline", border="cyclic"):
+        return lensing.displace_map(unlensed, self._displace_pix, order=order, mode=mode, border=border)
+
+
+    def get_unlensed_cmb(self,seed=None,scalar=False):
+        return self.ugenerator.get_map(seed=seed,scalar=scalar)
+        
+    def get_grf_kappa(self,seed=None,skip_update=False):
+        kappa = self.kgenerator.get_map(seed=seed,scalar=True)
+        if not(skip_update): self.update_kappa(kappa)
+        return kappa
 
 
     def _fill_beam(self,beam_func):
@@ -128,9 +141,9 @@ class PatchArray(object):
         ps_noise[0,0] = self.pix_ells*0.+(noise_uK_arcmin_T*np.pi/180./60./TCMBt)**2.
         ps_noise[1,1] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
         ps_noise[2,2] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
-        self.noisecov = ps_noise
+        noisecov = ps_noise
         self.is_2d_noise = False
-        self.ngenerator = enmap.MapGen(self.shape,self.wcs,self.noisecov)
+        self.ngenerator = enmap.MapGen(self.shape,self.wcs,noisecov)
 
             
     def add_noise_2d(self,nT,nP=None):
@@ -142,9 +155,9 @@ class PatchArray(object):
         ps_noise[0,0] = nT
         ps_noise[1,1] = nP
         ps_noise[2,2] = nP
-        self.noisecov = ps_noise
+        noisecov = ps_noise
         self.is_2d_noise = True
-        self.ngenerator = enmap.MapGen(self.shape,self.wcs,self.noisecov)
+        self.ngenerator = enmap.MapGen(self.shape,self.wcs,noisecov)
 
 
     def get_noise_sim(self,seed=None,scalar=False):
