@@ -246,7 +246,7 @@ class MPIStats(object):
         if self.rank in self.loopover:
 
             for k,label in enumerate(self.little_stack.keys()):
-                self.comm.send(self.little_stack_count[label], dest=self.root, tag=self.tag_start*300+k)
+                self.comm.send(self.little_stack_count[label], dest=self.root, tag=self.tag_start*3000+k)
             
             for k,label in enumerate(self.little_stack.keys()):
                 send_dat = np.array(self.little_stack[label]).astype(np.float64)
@@ -260,7 +260,7 @@ class MPIStats(object):
                 self.stack_count[label] = self.little_stack_count[label]
                 for core in self.loopover: #range(1,self.numcores):
                     if verbose: print ("Waiting for core ", core , " / ", self.numcores)
-                    data = self.comm.recv(source=core, tag=self.tag_start*300+k)
+                    data = self.comm.recv(source=core, tag=self.tag_start*3000+k)
                     self.stack_count[label] += data
 
             
@@ -287,7 +287,7 @@ class MPIStats(object):
         
         if self.rank in self.loopover:
             for k,label in enumerate(self.vectors.keys()):
-                self.comm.send(np.array(self.vectors[label]).shape[0], dest=self.root, tag=self.tag_start*200+k)
+                self.comm.send(np.array(self.vectors[label]).shape[0], dest=self.root, tag=self.tag_start*2000+k)
 
             for k,label in enumerate(self.vectors.keys()):
                 send_dat = np.array(self.vectors[label]).astype(np.float64)
@@ -301,7 +301,7 @@ class MPIStats(object):
                 self.numobj[label].append(np.array(self.vectors[label]).shape[0])
                 for core in self.loopover: #range(1,self.numcores):
                     if verbose: print ("Waiting for core ", core , " / ", self.numcores)
-                    data = self.comm.recv(source=core, tag=self.tag_start*200+k)
+                    data = self.comm.recv(source=core, tag=self.tag_start*2000+k)
                     self.numobj[label].append(data)
 
             

@@ -106,8 +106,8 @@ def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True,crange=Non
     if verbose: print (bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC)
 
     
-def quickPlot2d(array,outPath,verbose=True,**kwargs):
-    pl = Plotter()
+def quickPlot2d(array,outPath,verbose=True,ftsize=24,**kwargs):
+    pl = Plotter(ftsize=ftsize)
     pl.plot2d(array,**kwargs)
     pl.done(outPath,verbose=verbose)
 
