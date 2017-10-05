@@ -52,7 +52,6 @@ def getAmplitudeLikelihood(mean,covmat,amplitudeRange,theory):
 
     Likelihood = lambda x: np.exp(-0.5*fchisq(mean,siginv,theory,amp=x))
     Likes = np.array([Likelihood(x) for x in amplitudeRange])
-    print Likes
     Likes = Likes / np.trapz(Likes,amplitudeRange,np.diff(amplitudeRange)) #(Likes.sum()*width) #normalize
     return Likes
 

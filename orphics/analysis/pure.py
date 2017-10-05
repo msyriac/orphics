@@ -4,6 +4,7 @@ flipperPol adapted to enlib
 """
 
 import numpy as np
+from enlib.fft import fft
 
 
 
@@ -29,13 +30,9 @@ def initializeDerivativesWindowfuntions(window,px):
 
 
 
-def TQUtoPureTEB(T_map,Q_map,U_map,modLMap,angLMap,windowDict=None,window=None,method='pure'):
+def TQUtoPureTEB(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure'):
 
-    if windowDict is None:
-        assert window is not None
-        window=liteMapPol.initializeDerivativesWindowfuntions(window)
-    else:
-        window = windowDict
+    window = windowDict
 
     win =window['Win']
     dWin_dx=window['dWin_dx']
@@ -44,42 +41,41 @@ def TQUtoPureTEB(T_map,Q_map,U_map,modLMap,angLMap,windowDict=None,window=None,m
     d2Win_dy2=window['d2Win_dy2']
     d2Win_dxdy=window['d2Win_dxdy']
 
-
     T_temp=T_map.copy()*win
-    fT=fft(T_temp)
+    fT=fft(T_temp,axes=[-2,-1])
     
     Q_temp=Q_map.copy()*win
-    fQ=fft(Q_temp)
+    fQ=fft(Q_temp,axes=[-2,-1])
     
     U_temp=U_map.copy()*win
-    fU=fft(U_temp)
+    fU=fft(U_temp,axes=[-2,-1])
     
     fE=fT.copy()
     fB=fT.copy()
     
-    fE.kMap[:]=fQ[:]*np.cos(2.*angLMap)+fU[:]*np.sin(2.*angLMap)
-    fB.kMap[:]=-fQ[:]*np.sin(2.*angLMap)+fU[:]*np.cos(2.*angLMap)
+    fE=fQ[:]*np.cos(2.*angLMap)+fU[:]*np.sin(2.*angLMap)
+    fB=-fQ[:]*np.sin(2.*angLMap)+fU[:]*np.cos(2.*angLMap)
     
     if method=='standard':
         return fT, fE, fB
     
     Q_temp=Q_map.copy()*dWin_dx
-    QWx=fft(Q_temp)
+    QWx=fft(Q_temp,axes=[-2,-1])
     
     Q_temp=Q_map.copy()*dWin_dy
-    QWy=fft(Q_temp)
+    QWy=fft(Q_temp,axes=[-2,-1])
     
     U_temp=U_map.copy()*dWin_dx
-    UWx=fft(U_temp)
+    UWx=fft(U_temp,axes=[-2,-1])
     
     U_temp=U_map.copy()*dWin_dy
-    UWy=fft(U_temp)
+    UWy=fft(U_temp,axes=[-2,-1])
     
     U_temp=2.*Q_map*d2Win_dxdy-U_map*(d2Win_dx2-d2Win_dy2)
-    QU_B=fft(U_temp)
+    QU_B=fft(U_temp,axes=[-2,-1])
  
     U_temp=-Q_map*(d2Win_dx2-d2Win_dy2)-2.*U_map*d2Win_dxdy
-    QU_E=fft(U_temp)
+    QU_E=fft(U_temp,axes=[-2,-1])
     
     modLMap=modLMap+2
 

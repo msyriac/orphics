@@ -10,6 +10,10 @@ import sys
 
 import sys
 
+def save_cols(filename,tuple_of_vectors,**kwargs):
+    save_mat = np.vstack(tuple_of_vectors).T
+    np.savetxt(filename,save_mat,**kwargs)
+
 def get_none_or_int(Config,section,name):
     val = Config.get(section,name)
     if val.strip().lower()=="none":

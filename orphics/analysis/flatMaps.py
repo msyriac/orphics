@@ -20,6 +20,14 @@ except:
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
 
 
+def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
+    Ny,Nx = shape[-2:]
+    if weight is None: weight = np.ones(shape[-2:])
+    taper = cosineWindow(Ny,Nx,lenApodY=int(taper_percent*min(Ny,Nx)/100.),lenApodX=int(taper_percent*min(Ny,Nx)/100.),padY=int(pad_percent*min(Ny,Nx)/100.),padX=int(pad_percent*min(Ny,Nx)/100.))*weight
+    w2 = np.mean(taper**2.)
+    return taper,w2
+
+    
 class QuickPower(object):
     def __init__(self,modlmap,bin_edges):
         import orphics.tools.stats as stats
@@ -41,7 +49,7 @@ def minimum_ell(shape,wcs):
     
 
 class PatchArray(object):
-    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,cc=None,theory=None,lmax=None,skip_real=False):
+    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,cc=None,theory=None,lmax=None,skip_real=False,orphics_is_dimensionless=True):
         self.shape = shape
         self.wcs = wcs
         if not(skip_real): self.modrmap = enmap.modrmap(shape,wcs)
@@ -52,7 +60,7 @@ class PatchArray(object):
         self.TCMB = TCMB
 
         if (theory is not None) or (cc is not None):
-            self.add_theory(cc,theory,lmax)
+            self.add_theory(cc,theory,lmax,orphics_is_dimensionless)
 
     def add_theory(self,cc=None,theory=None,lmax=None,orphics_is_dimensionless=True):
         if cc is not None:
@@ -61,8 +69,8 @@ class PatchArray(object):
             self.lmax = cc.lmax
             # assert theory is None
             # assert lmax is None
-            theory = self.theory
-            lmax = self.lmax
+            if theory is None: theory = self.theory
+            if lmax is None: lmax = self.lmax
         else:
             assert theory is not None
             assert lmax is not None
