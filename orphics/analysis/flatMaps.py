@@ -20,6 +20,13 @@ except:
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
 
 
+def healpix_to_enmap(hp_map,shape,wcs,hp_coords="GALACTIC",interpolate=True):
+    imap = enmap.empty(shape,wcs)
+    lite_map = enmap.to_flipper(imap)
+    lite_map.loadDataFromHealpixMap(hp_map, interpolate = interplate, hpCoords = hp_coords)
+    return enmap.ndmap(lite_map.data.copy(),wcs)
+    
+    
 def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
     Ny,Nx = shape[-2:]
     if weight is None: weight = np.ones(shape[-2:])

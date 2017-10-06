@@ -1,6 +1,85 @@
 from __future__ import print_function
 import numpy as np
+from enlib import enmap, coordinates
 
+class CatMapper(object):
+
+    def __init__(self,shape,wcs,ras_deg,decs_deg):
+        coords = np.vstack((decs_deg,ras_deg))*np.pi/180.
+        self.shape = shape
+        self.wcs = wcs
+        self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
+
+    def get_map(self,weights=None):
+        Ny,Nx = self.shape
+        return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
+
+class BOSSMapper(CatMapper):
+
+    def __init__(self,shape,wcs,boss_fits,zmin=None,zmax=None):
+        from astropy.io import fits
+        f = fits.open(cat_fits)
+        self.cat = f[1]
+        ras = self.cat.data['RA']
+        decs = self.cat.data['DEC']
+        CatMapper.__init__(self,shape,wcs,ras,decs)
+
+    
+class HSCMapper(CatMapper):
+
+    def __init__(self,shape,wcs,cat_fits,pz_fits=None,zmin=None,zmax=None,mask_threshold=4.):
+        from astropy.io import fits
+        f = fits.open(cat_fits)
+        self.cat = f[1]
+        ras = self.cat.data['ira']
+        decs = self.cat.data['idec']
+        self.wts = self.cat.data['ishape_hsm_regauss_derived_weight']
+        if pz_fits is not None:
+            raise NotImplementedError
+
+        CatMapper.__init__(self,shape,wcs,ras,decs)
+        self.hsc_wts = self.get_map(weights=self.wts)
+        self.hsc_cts = self.get_map()
+        self.mean_wt = np.nan_to_num(self.hsc_wts/self.hsc_cts)
+        self.update_mask(mask_threshold)
+
+    def update_mask(self,mask_threshold):
+        mask = np.zeros(self.shape)
+        mask[self.mean_wt>mask_threshold] = 1
+        self.mask = mask
+        cts = self.hsc_cts.copy()
+        cts[mask<0.9] = np.nan
+        self.ngals = np.nansum(cts)
+        area_sqdeg = enmap.area(self.shape,self.wcs)*(180./np.pi)**2.
+        self.frac = mask.sum()*1./mask.size
+        self.area_sqdeg = self.frac*area_sqdeg
+        self.ngal_per_arcminsq  = self.ngals/(self.area_sqdeg*60.*60.)
+
+
+        
+    def get_shear(self,do_m=True,do_c=True):
+        rms = self.cat.data['ishape_hsm_regauss_derived_rms_e']
+        m = self.cat.data['ishape_hsm_regauss_derived_bias_m']
+        e1 = self.cat.data['ishape_hsm_regauss_e1']
+        e2 = self.cat.data['ishape_hsm_regauss_e2']
+        c1 = self.cat.data['ishape_hsm_regauss_derived_bias_c1']
+        c2 = self.cat.data['ishape_hsm_regauss_derived_bias_c2']
+
+        hsc_wts = self.hsc_wts
+        wts = self.wts
+        hsc_resp = 1.-np.nan_to_num(self.get_map(weights=(wts*(rms**2.))) / hsc_wts)
+        hsc_m = np.nan_to_num(self.get_map(weights=(wts*(m))) / hsc_wts) if do_m else hsc_wts*0.
+
+        hsc_e1 = self.get_map(weights=e1*wts)
+        hsc_e2 = self.get_map(weights=e2*wts)
+
+        hsc_c1 = np.nan_to_num(self.get_map(weights=c1*wts)/hsc_wts) if do_c else hsc_wts*0.
+        hsc_c2 = np.nan_to_num(self.get_map(weights=c2*wts)/hsc_wts) if do_c else hsc_wts*0.
+
+        g1map = np.nan_to_num(hsc_e1/2./hsc_resp/(1.+hsc_m)/hsc_wts) - np.nan_to_num(hsc_c1/(1.+hsc_m))
+        g2map = np.nan_to_num(hsc_e2/2./hsc_resp/(1.+hsc_m)/hsc_wts) - np.nan_to_num(hsc_c2/(1.+hsc_m))
+
+        return g1map,g2map
 
 def split_samples(in_samples,split_points):
     """ Calculate statistics on splits of a sample of data.
