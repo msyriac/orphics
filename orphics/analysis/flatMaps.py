@@ -20,11 +20,54 @@ except:
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
 
 
-def healpix_to_enmap(hp_map,shape,wcs,hp_coords="GALACTIC",interpolate=True):
-    imap = enmap.empty(shape,wcs)
-    lite_map = enmap.to_flipper(imap)
-    lite_map.loadDataFromHealpixMap(hp_map, interpolate = interpolate, hpCoords = hp_coords)
-    return enmap.ndmap(lite_map.data.copy(),wcs)
+    
+def healpix_to_enmap(hp_map,shape,wcs,hp_coords="galactic",interpolate=True):
+    import healpy as hp
+    from astropy.coordinates import SkyCoord
+    import astropy.units as u
+
+
+    eq_coords = ['fk5','j2000','equatorial']
+    gal_coords = ['galactic']
+    imap = enmap.zeros(shape,wcs)
+    Ny,Nx = shape
+    
+    inds = np.indices([Nx,Ny])
+    x = inds[0].ravel()
+    y = inds[1].ravel()
+
+    # Not as slow as you'd expect
+    posmap = enmap.pix2sky(shape,wcs,np.vstack((y,x)))*180./np.pi
+    
+    ph = posmap[1,:]
+    th = posmap[0,:]
+
+    if hp_coords.lower() not in eq_coords:
+        # This is still the slowest part. If there are faster coord transform libraries, let me know!
+        assert hp_coords.lower() in gal_coords
+        gc = SkyCoord(ra=ph*u.degree, dec=th*u.degree, frame='fk5')
+        gc = gc.transform_to('galactic')
+        phOut = gc.l.deg
+        thOut = gc.b.deg
+    else:
+        thOut = th
+        phOut = ph
+
+    phOut *= np.pi/180
+    thOut = 90. - thOut #polar angle is 0 at north pole
+    thOut *= np.pi/180
+    
+    # Not as slow as you'd expect
+    if interpolate:
+        imap[y,x] = hp.get_interp_val(hp_map, thOut, phOut)
+    else:
+        ind = hp.ang2pix( hp.get_nside(hp_map), thOut, phOut )
+        imap[:] = 0.
+        imap[[y,x]]=hp_map[ind]
+
+
+    
+    return enmap.ndmap(imap,wcs)
     
     
 def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):

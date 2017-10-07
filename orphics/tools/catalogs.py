@@ -9,28 +9,68 @@ class CatMapper(object):
         self.shape = shape
         self.wcs = wcs
         self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
+        self.counts = self.get_map()
 
     def get_map(self,weights=None):
         Ny,Nx = self.shape
         return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
 
+    def _counts(self):
+        cts = self.counts.copy()
+        cts[self.mask<0.9] = np.nan
+        self.ngals = np.nansum(cts)
+        self.nmean = np.nanmean(cts)
+        area_sqdeg = enmap.area(self.shape,self.wcs)*(180./np.pi)**2.
+        self.frac = self.mask.sum()*1./self.mask.size
+        self.area_sqdeg = self.frac*area_sqdeg
+        self.ngal_per_arcminsq  = self.ngals/(self.area_sqdeg*60.*60.)
+
+    def get_delta(self):
+        return (self.counts/self.nmean-1.)
+    
+
+
 class BOSSMapper(CatMapper):
 
-    def __init__(self,shape,wcs,boss_fits,zmin=None,zmax=None):
+    def __init__(self,shape,wcs,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None):
         from astropy.io import fits
-        f = fits.open(cat_fits)
-        self.cat = f[1]
-        ras = self.cat.data['RA']
-        decs = self.cat.data['DEC']
-        CatMapper.__init__(self,shape,wcs,ras,decs)
 
+        ras = []
+        decs = []
+        for boss_file in boss_files:
+            f = fits.open(boss_file)
+            cat = f[1].copy()
+            ras += cat.data['RA'].tolist()
+            decs += cat.data['DEC'].tolist()
+            f.close()
+            
+        CatMapper.__init__(self,shape,wcs,ras,decs)
+        if random_files is not None:
+            self.rand_map = 0.
+            for random_file in random_files:
+                f = fits.open(random_file)
+                cat = f[1].copy()
+                ras = cat.data['RA']
+                decs = cat.data['DEC']
+                rcat = CatMapper(shape,wcs,ras,decs)
+                self.rand_map += rcat.get_map()
+                f.close()
+            self.update_mask(rand_sigma_arcmin,rand_threshold)
+
+    def update_mask(self,rand_sigma_arcmin=2.,rand_threshold=1e-3):
+        smap = enmap.smooth_gauss(self.rand_map,rand_sigma_arcmin*np.pi/180./60.)
+        self.mask = np.zeros(self.shape)
+        self.mask[smap>rand_threshold] = 1
+        self._counts()
+            
     
 class HSCMapper(CatMapper):
 
     def __init__(self,shape,wcs,cat_fits,pz_fits=None,zmin=None,zmax=None,mask_threshold=4.):
         from astropy.io import fits
         f = fits.open(cat_fits)
-        self.cat = f[1]
+        self.cat = f[1].copy()
+        f.close()
         ras = self.cat.data['ira']
         decs = self.cat.data['idec']
         self.wts = self.cat.data['ishape_hsm_regauss_derived_weight']
@@ -39,22 +79,14 @@ class HSCMapper(CatMapper):
 
         CatMapper.__init__(self,shape,wcs,ras,decs)
         self.hsc_wts = self.get_map(weights=self.wts)
-        self.hsc_cts = self.get_map()
-        self.mean_wt = np.nan_to_num(self.hsc_wts/self.hsc_cts)
+        self.mean_wt = np.nan_to_num(self.hsc_wts/self.counts)
         self.update_mask(mask_threshold)
 
     def update_mask(self,mask_threshold):
         mask = np.zeros(self.shape)
         mask[self.mean_wt>mask_threshold] = 1
         self.mask = mask
-        cts = self.hsc_cts.copy()
-        cts[mask<0.9] = np.nan
-        self.ngals = np.nansum(cts)
-        area_sqdeg = enmap.area(self.shape,self.wcs)*(180./np.pi)**2.
-        self.frac = mask.sum()*1./mask.size
-        self.area_sqdeg = self.frac*area_sqdeg
-        self.ngal_per_arcminsq  = self.ngals/(self.area_sqdeg*60.*60.)
-
+        self._counts()
 
         
     def get_shear(self,do_m=True,do_c=True):
