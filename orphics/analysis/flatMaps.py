@@ -23,7 +23,7 @@ except:
 def healpix_to_enmap(hp_map,shape,wcs,hp_coords="GALACTIC",interpolate=True):
     imap = enmap.empty(shape,wcs)
     lite_map = enmap.to_flipper(imap)
-    lite_map.loadDataFromHealpixMap(hp_map, interpolate = interplate, hpCoords = hp_coords)
+    lite_map.loadDataFromHealpixMap(hp_map, interpolate = interpolate, hpCoords = hp_coords)
     return enmap.ndmap(lite_map.data.copy(),wcs)
     
     
