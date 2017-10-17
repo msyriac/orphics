@@ -213,14 +213,18 @@ def total_1d_power(ell,Cl,ellmax,beamArcmin,noiseMukArcmin,TCMB=2.7255e6,deconvo
     return ell, Cl
 
 
-def load_theory_spectra_from_enlib(file_root,TCMB = 2.7255e6,lpad=9000):
-    
+def load_theory_spectra_from_enlib(file_root,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
+    if get_dimensionless:
+        tmul = TCMB**2.
+    else:
+        tmul = 1.
+
     theory = TheorySpectra()
     uFile = file_root+"_lensinput.dat"
     lFile = file_root+"_lensed.dat"
 
     ell, ucltt, uclee, uclbb, uclte, cldd = np.loadtxt(uFile,unpack=True,usecols=[0,1,2,3,4,5])
-    mult = 2.*np.pi/ell/(ell+1.)/TCMB**2.
+    mult = 2.*np.pi/ell/(ell+1.)/tmul
     ucltt *= mult
     uclee *= mult
     uclte *= mult
@@ -233,7 +237,7 @@ def load_theory_spectra_from_enlib(file_root,TCMB = 2.7255e6,lpad=9000):
     theory.loadGenericCls(ell,clkk,"kk",lpad=lpad)
 
     ell, lcltt, lclee, lclbb, lclte = np.loadtxt(lFile,unpack=True,usecols=[0,1,2,3,4])
-    mult = 2.*np.pi/ell/(ell+1.)/TCMB**2.
+    mult = 2.*np.pi/ell/(ell+1.)/tmul
     lcltt *= mult
     lclee *= mult
     lclte *= mult

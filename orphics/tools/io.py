@@ -6,9 +6,9 @@ import itertools
 import os.path
 import traceback
 import contextlib
-import sys
+import os,sys
 
-import sys
+dout_dir = os.environ['WWW']+"plots/"
 
 def save_cols(filename,tuple_of_vectors,**kwargs):
     save_mat = np.vstack(tuple_of_vectors).T

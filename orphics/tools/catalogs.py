@@ -8,11 +8,14 @@ class CatMapper(object):
         coords = np.vstack((decs_deg,ras_deg))*np.pi/180.
         self.shape = shape
         self.wcs = wcs
+        print( "Calculating pixels...")
         self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
+        print( "Done with pixels...")
         self.counts = self.get_map()
 
     def get_map(self,weights=None):
         Ny,Nx = self.shape
+        print("Calculating histogram...")
         return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
 
     def _counts(self):
@@ -39,7 +42,7 @@ class BOSSMapper(CatMapper):
         decs = []
         for boss_file in boss_files:
             f = fits.open(boss_file)
-            cat = f[1].copy()
+            cat = f[1] #.copy()
             ras += cat.data['RA'].tolist()
             decs += cat.data['DEC'].tolist()
             f.close()
@@ -47,18 +50,32 @@ class BOSSMapper(CatMapper):
         CatMapper.__init__(self,shape,wcs,ras,decs)
         if random_files is not None:
             self.rand_map = 0.
+            #ras = []
+            #decs = []
             for random_file in random_files:
+                print ("Opening fits...")
                 f = fits.open(random_file)
-                cat = f[1].copy()
-                ras = cat.data['RA']
-                decs = cat.data['DEC']
+                print ("Done opening fits...")
+                cat = f[1] #.copy()
+                ras = cat.data['RA'] #.tolist()
+                decs = cat.data['DEC'] #.tolist()
                 rcat = CatMapper(shape,wcs,ras,decs)
-                self.rand_map += rcat.get_map()
+                self.rand_map += rcat.counts
+                del rcat
+                del ras
+                del decs
+                del cat
                 f.close()
             self.update_mask(rand_sigma_arcmin,rand_threshold)
 
     def update_mask(self,rand_sigma_arcmin=2.,rand_threshold=1e-3):
-        smap = enmap.smooth_gauss(self.rand_map,rand_sigma_arcmin*np.pi/180./60.)
+        if rand_sigma_arcmin>1.e-3:
+            print( "Smoothing...")
+            smap = enmap.smooth_gauss(self.rand_map,rand_sigma_arcmin*np.pi/180./60.)
+            print( "Done smoothing...")
+        else:
+            smap = self.rand_map
+            
         self.mask = np.zeros(self.shape)
         self.mask[smap>rand_threshold] = 1
         self._counts()
