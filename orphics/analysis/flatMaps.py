@@ -237,6 +237,16 @@ def takeDiv(vecStampX,vecStampY,lxMap,lyMap):
 
     return ifft((lxMap*fX+lyMap*fY)*1j,axes=[-2,-1],normalize=True).real
 
+#Take curl using fourier space gradients
+def takeCurl(vecStampX,vecStampY,lxMap,lyMap):
+
+    fX = fft(vecStampX,axes=[-2,-1])
+    fY = fft(vecStampY,axes=[-2,-1])
+
+    return ifft((lxMap*fY-lyMap*fX)*1j,axes=[-2,-1],normalize=True).real
+
+
+
 #Take divergence using fourier space gradients
 def takeGrad(stamp,lyMap,lxMap):
 
