@@ -99,17 +99,6 @@ class healpixTools:
         return rMap
 
 
-def fullsky_geometry(res, dims=()):
-    """Build an enmap covering the full sky, with the outermost pixel centers
-    at the poles."""
-    nx,ny = int(2*np.pi/res+0.5), int(np.pi/res+0.5)
-    wcs   = enlib.wcs.WCS(naxis=2)
-    wcs.wcs.crval = [0,0]
-    wcs.wcs.cdelt = [360./nx,180./ny]
-    wcs.wcs.crpix = [nx/2+1,ny/2+1]
-    wcs.wcs.ctype = ["RA---CAR","DEC--CAR"]
-    return dims+(ny+1,nx+0), wcs
-
 def rotateHealpixFromEquToGal(hpmap):
     print "making empty enmap"
     res = 3.0 *np.pi/ 60./180.

@@ -37,9 +37,10 @@ class SpectrumVerification(object):
             self.lbinner = lbinner
 
 
-    def add_power(self,key,imap,imap2=None,norm=1.):
+    def add_power(self,key,imap,imap2=None,norm=1.,twod_stack=False):
         p2d_all,lteb,lteb2 = self.fcalc.power2d(imap,imap2)
         p2d_all = p2d_all/norm
+        if twod_stack: self.mpibox.add_to_stack(key+"_p2d",p2d_all)
         if self.pol:
             clist = ['T','E','B']
             for i,m in enumerate(clist):
