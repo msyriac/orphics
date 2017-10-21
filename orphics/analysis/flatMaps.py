@@ -22,7 +22,6 @@ except:
 
     
     
-    
 def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
     Ny,Nx = shape[-2:]
     if weight is None: weight = np.ones(shape[-2:])

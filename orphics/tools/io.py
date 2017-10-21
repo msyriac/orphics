@@ -10,6 +10,10 @@ import os,sys
 
 dout_dir = os.environ['WWW']+"plots/"
 
+def mkdir(dirpath):
+    if not os.path.exists(dirpath):
+        os.makedirs(dirpath)
+        
 def save_cols(filename,tuple_of_vectors,**kwargs):
     save_mat = np.vstack(tuple_of_vectors).T
     np.savetxt(filename,save_mat,**kwargs)

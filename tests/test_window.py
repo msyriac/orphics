@@ -20,8 +20,8 @@ import enlib.fft as fftfast
 import argparse
 
 # Runtime params that should be moved to command line
-cosmology_section = "cc_sigurd"
-expf_name = "experiment_simple"
+cosmology_section = "cc_erminia"
+expf_name = "experiment_noiseless"
 
 # Parse command line
 parser = argparse.ArgumentParser(description='Verify lensing reconstruction.')
@@ -39,7 +39,7 @@ out_dir = os.environ['WWW']+"plots/distsims_"+region+"_"  # for plots
 print "Reading config..."
 
 # Read config
-iniFile = "input/recon.ini"
+iniFile = "../halofg/input/recon.ini"
 Config = SafeConfigParser()
 Config.optionxform=str
 Config.read(iniFile)
@@ -77,10 +77,10 @@ if rank==0: print "Cosmology..."
 
 # === COSMOLOGY ===
 theory, cc, lmax = aio.theory_from_config(Config,cosmology_section)
-parray_dat.add_theory(theory,lmax)
+parray_dat.add_theory(cc,theory,lmax)
 
     
-taper_percent = 4.0
+taper_percent = 14.0
 pad_percent = 2.0
 Ny,Nx = shape_dat
 taper = fmaps.cosineWindow(Ny,Nx,lenApodY=int(taper_percent*min(Ny,Nx)/100.),lenApodX=int(taper_percent*min(Ny,Nx)/100.),padY=int(pad_percent*min(Ny,Nx)/100.),padX=int(pad_percent*min(Ny,Nx)/100.))
@@ -111,12 +111,12 @@ ccents,iltt = lbinner_dat.bin(iltt2d)
 
 pl = io.Plotter()
 
-pdiff = (ltt-iltt)*100./iltt
+pdiff = (ltt-iltt)/iltt
 
-pl.add(ccents+50,pdiff,marker="o",ls="none",label="lensed")
+pl.add(ccents+50,pdiff,marker="o",ls="-")
 pl.legendOn(labsize=10,loc="lower left")
 pl._ax.axhline(y=0.,ls="--",color="k")
-pl._ax.set_ylim(-20.,20.)
+pl._ax.set_ylim(-0.1,0.1)
 pl.done(out_dir+"testwindow_clttpdiff.png")
 
 
