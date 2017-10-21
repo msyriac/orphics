@@ -20,7 +20,7 @@ class SpectrumVerification(object):
     across map pixelizations.
     """
 
-    def __init__(self,mpibox,theory,shape,wcs,lbinner=None,bin_edges=None,pol=False):
+    def __init__(self,mpibox,theory,shape,wcs,lbinner=None,bin_edges=None,pol=False,iau_convention=False):
 
         self.mpibox = mpibox
         self.theory = theory
@@ -28,7 +28,7 @@ class SpectrumVerification(object):
         self.pol = pol
         self.wcs = wcs
         self.modlmap = enmap.modlmap(shape,wcs)
-        self.fcalc = enmap.FourierCalc(shape,wcs)
+        self.fcalc = enmap.FourierCalc(shape,wcs,iau_convention=iau_convention)
         if lbinner is None:
             assert bin_edges is not None
             import orphics.tools.stats as stats
@@ -37,9 +37,10 @@ class SpectrumVerification(object):
             self.lbinner = lbinner
 
 
-    def add_power(self,key,imap,imap2=None,norm=1.):
+    def add_power(self,key,imap,imap2=None,norm=1.,twod_stack=False):
         p2d_all,lteb,lteb2 = self.fcalc.power2d(imap,imap2)
         p2d_all = p2d_all/norm
+        if twod_stack: self.mpibox.add_to_stack(key+"_p2d",p2d_all)
         if self.pol:
             clist = ['T','E','B']
             for i,m in enumerate(clist):
@@ -102,8 +103,7 @@ class SpectrumVerification(object):
         
 
             
-    def plot_diff(self,spec,keys,out_dir=None,scaleY='linear',scaleX='linear',xlim=None,ylim=None,pl=None,skip_labels=True,ratio=True):
-
+    def plot_diff(self,spec,keys,out_dir=None,scaleY='linear',scaleX='linear',xlim=None,ylim=None,pl=None,skip_labels=True,ratio=True,save_root=None):
         if pl is None: pl = io.Plotter(scaleY=scaleY,scaleX=scaleX)
         cmb_specs = ['TT','EE','BB','TE','ET','EB','BE','TB','BT']
         done_spec = []
@@ -143,13 +143,13 @@ class SpectrumVerification(object):
             div = th1dnow if ratio else 1.
 
             pl.addErr(cents,rdiff/div,yerr=rerr/div,marker="x",ls="none",label=key)
+            if save_root is not None: io.save_cols(save_root+spec+"_"+key+".txt",(cents,rdiff/div,rerr/div))
 
         if not(skip_labels): pl.legendOn(labsize=10)
         if xlim is not None: pl._ax.set_xlim(xlim[0],xlim[1])
         if ylim is not None: pl._ax.set_ylim(ylim[0],ylim[1])
         pl.hline()
         if pl is None: pl.done(out_dir)
-            
         
 
         

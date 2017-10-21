@@ -22,7 +22,6 @@ except:
 
     
     
-    
 def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
     Ny,Nx = shape[-2:]
     if weight is None: weight = np.ones(shape[-2:])
@@ -236,6 +235,16 @@ def takeDiv(vecStampX,vecStampY,lxMap,lyMap):
     fY = fft(vecStampY,axes=[-2,-1])
 
     return ifft((lxMap*fX+lyMap*fY)*1j,axes=[-2,-1],normalize=True).real
+
+#Take curl using fourier space gradients
+def takeCurl(vecStampX,vecStampY,lxMap,lyMap):
+
+    fX = fft(vecStampX,axes=[-2,-1])
+    fY = fft(vecStampY,axes=[-2,-1])
+
+    return ifft((lxMap*fY-lyMap*fX)*1j,axes=[-2,-1],normalize=True).real
+
+
 
 #Take divergence using fourier space gradients
 def takeGrad(stamp,lyMap,lxMap):
