@@ -467,7 +467,7 @@ class FisherPlots(object):
         print (bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
 
 
-    def plotTri(self,section,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,**kwargs):
+    def plotTri(self,section,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,TwoSig=False,**kwargs):
 
         circl = self.circl
         numpars = len(paramList)
@@ -515,18 +515,20 @@ class FisherPlots(object):
                     chisq = np.array([[chi211,chi212],[chi212,chi222]])
                     Lmat = np.linalg.cholesky(chisq)
                     ansout = np.dot(1.52*Lmat,circl)
-
+                    ansout2 = np.dot(2.0*1.52*Lmat,circl)
                     
                     
                     ax = fig.add_subplot(numpars-1,numpars-1,count)
                     plt.tick_params(size=14,width=thk,labelsize = 11)
                     if centerMarker: ax.plot(xval,yval,'xk',mew=thk)
                     ax.plot(ansout[0,:]+xval,ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab)
+                    if TwoSig:
+                        ax.plot(ansout2[0,:]+xval,ansout2[1,:]+yval,linewidth=thk,color=colsave,ls=ls)
                     if (i==0):#(count ==1):
                         ax.set_ylabel(paramlabely, fontsize=32,weight='bold')
                     if (j == (numpars-1)):
                         ax.set_xlabel(paramlabelx, fontsize=32,weight='bold')
-
+                    
         
         labsize = 48
         handles, labels = ax.get_legend_handles_labels()
