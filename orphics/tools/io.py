@@ -8,7 +8,10 @@ import traceback
 import contextlib
 import os,sys
 
-dout_dir = os.environ['WWW']+"plots/"
+try:
+    dout_dir = os.environ['WWW']+"plots/"
+except:
+    dout_dir = "."
 
 def mkdir(dirpath):
     if not os.path.exists(dirpath):
