@@ -523,7 +523,7 @@ class FisherPlots(object):
                     if centerMarker: ax.plot(xval,yval,'xk',mew=thk)
                     ax.plot(ansout[0,:]+xval,ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab)
                     if TwoSig:
-                        ax.plot(ansout2[0,:]+xval,ansout2[1,:]+yval,linewidth=thk,color=colsave,ls=ls)
+                        ax.plot(ansout2[0,:]+xval,ansout2[1,:]+yval,linewidth=thk,color=col,ls=ls)
                     if (i==0):#(count ==1):
                         ax.set_ylabel(paramlabely, fontsize=32,weight='bold')
                     if (j == (numpars-1)):
