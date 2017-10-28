@@ -19,7 +19,6 @@ except:
     import logging
     logging.warning("Couldn't load enlib. Some functionality may be missing.")
 
-
     
     
 def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
