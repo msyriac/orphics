@@ -1,6 +1,14 @@
 import numpy as np
+import os
 
 try:
+    disable_mpi_env = os.environ['DISABLE_MPI']
+    disable_mpi = True if disable_mpi_env.lower().strip() == "true" else False
+except:
+    disable_mpi = False
+
+try:
+    if disable_mpi: raise
     from mpi4py import MPI
 except:
     """

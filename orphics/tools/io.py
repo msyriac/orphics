@@ -6,12 +6,32 @@ import itertools
 import os.path
 import traceback
 import contextlib
-import os,sys
+import os,sys,time,logging
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
 except:
     dout_dir = "."
+
+
+class LoggerWriter:
+    def __init__(self, level):
+        # self.level is really like using log.debug(message)
+        # at least in my case
+        self.level = level
+
+    def write(self, message):
+        # if statement reduces the amount of newlines that are
+        # printed to the logger
+        if message != '\n':
+            self.level(message)
+
+    def flush(self):
+        # create a flush method so things can be flushed when
+        # the system wants to. Not sure if simply 'printing'
+        # sys.stderr is the correct way to do it, but it seemed
+        # to work properly for me.
+        self.level(sys.stderr)
 
 def load_path_config():
     if os.path.exists('input/paths_local.ini'):
@@ -20,8 +40,18 @@ def load_path_config():
         return config_from_file('input/paths.ini')
     else:
         raise IOError
-        
-    
+
+def get_logger(logname)        :
+    logging.basicConfig(filename=logname+str(time.time()*10)+".log",level=logging.DEBUG,format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',datefmt='%m-%d %H:%M',filemode='w')
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
+    logger = logging.getLogger('')
+    sys.stdout = LoggerWriter(logger.debug)
+    sys.stderr = LoggerWriter(logger.warning)
+    return logger    
     
 def mkdir(dirpath):
     if not os.path.exists(dirpath):
@@ -39,6 +69,7 @@ def get_none_or_int(Config,section,name):
         return int(val)
 
 def config_from_file(filename):
+    assert os.path.isfile(filename) 
     from ConfigParser import SafeConfigParser 
     Config = SafeConfigParser()
     Config.optionxform=str
