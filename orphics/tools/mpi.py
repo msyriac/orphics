@@ -22,6 +22,8 @@ except:
             return 0
         def Get_size(self):
             return 1
+        def Barrier(self):
+            pass
 
     class template:
         pass
