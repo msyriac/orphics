@@ -1,5 +1,4 @@
 from __future__ import print_function
-import numpy as np
 import os
 
 try:
@@ -90,6 +89,8 @@ class MPIStats(object):
         """
         Collect from all MPI cores and calculate stacks.
         """
+        import numpy as np
+
         if self.rank in self.loopover:
 
             for k,label in enumerate(self.little_stack.keys()):
@@ -131,7 +132,8 @@ class MPIStats(object):
         1d measurements.
         """
         import orphics.tools.stats as stats
-        
+        import numpy as np
+
         if self.rank in self.loopover:
             for k,label in enumerate(self.vectors.keys()):
                 self.comm.send(np.array(self.vectors[label]).shape[0], dest=self.root, tag=self.tag_start*2000+k)
@@ -167,6 +169,8 @@ class MPIStats(object):
             #self.vectors = {}
                 
 def mpi_distribute(num_tasks,avail_cores):
+    import numpy as np
+
     assert avail_cores<=num_tasks
     min_each, rem = divmod(num_tasks,avail_cores)
     num_each = np.array([min_each]*avail_cores) # first distribute equally

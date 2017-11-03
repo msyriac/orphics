@@ -49,7 +49,7 @@ def get_logger(logname)        :
     console.setFormatter(formatter)
     logging.getLogger('').addHandler(console)
     logger = logging.getLogger('')
-    sys.stdout = LoggerWriter(logger.debug)
+    #sys.stdout = LoggerWriter(logger.debug)
     sys.stderr = LoggerWriter(logger.warning)
     return logger    
     
