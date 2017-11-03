@@ -91,7 +91,7 @@ def flatFitsToHealpix(fitsFile,nside,downgrade=1):
 
 def slowRotatorGtoC(hpMap,nside,verbose=True):
 
-    if verbose: print "Upgrading map..."
+    if verbose: print("Upgrading map...")
     
     nsideUp = nside*2
     
@@ -104,10 +104,10 @@ def slowRotatorGtoC(hpMap,nside,verbose=True):
     libcd.RotateMapGtoC.argtypes = [array_1d_double,array_1d_double,ctypes.c_long]
 
     retMap = hpUp.copy()*0.
-    if verbose: print "Rotating ..."
+    if verbose: print("Rotating ...")
     ret = libcd.RotateMapGtoC(hpUp, retMap, nsideUp)
     
-    if verbose: print "Downgrading map..."
+    if verbose: print("Downgrading map...")
 
     return hp.ud_grade(retMap,nside)
     
@@ -121,7 +121,7 @@ def quickMapView(hpMap,saveLoc=None,min=None,max=None,transform='C',**kwargs):
     if saveLoc==None: saveLoc="output/debug.png"
     matplotlib.pyplot.savefig(saveLoc)
 
-    print bcolors.OKGREEN+"Saved healpix plot to", saveLoc+bcolors.ENDC
+    print((bcolors.OKGREEN+"Saved healpix plot to", saveLoc+bcolors.ENDC))
 
 
 class healpixTools:
@@ -153,7 +153,7 @@ class healpixTools:
 
         npix = hp.nside2npix(nside)
         rMap = hpMap.copy()
-        if verbose: print "Rotating map... "
+        if verbose: print("Rotating map... ")
         for pixIndex in range(len(hpMap)):
     
 
@@ -162,7 +162,7 @@ class healpixTools:
 
 
             if verbose and pixIndex%100000==0:
-                print pixIndex*100./npix
+                print((pixIndex*100./npix))
 
         
 
@@ -170,11 +170,11 @@ class healpixTools:
 
 
 def rotateHealpixFromEquToGal(hpmap):
-    print "making empty enmap"
+    print("making empty enmap")
     res = 3.0 *np.pi/ 60./180.
     shape, wcs = fullsky_geometry(res, (1,))
     map = en.zeros(shape, wcs)
-    print "rotating..."
+    print("rotating...")
     alms = hp.map2alm(hpmap)
     m1 = alm2map(alms,map)
     pos = np.array(hp.pix2ang(np.arange(len(hpmap))))

@@ -22,10 +22,10 @@ for i,zwidth in enumerate(np.arange(0.01,0.1,0.01)):
 
 
 
-print "getting cls.."
+print("getting cls..")
 pl = Plotter(scaleY='log',scaleX='log')
 
-ellrange = range(2,ellmax,1)
+ellrange = list(range(2,ellmax,1))
 myInt.generateCls(ellrange)
 for i,tag in enumerate(sorted(myInt.kernels.keys())):
     if tag=="cmb": continue
@@ -42,6 +42,6 @@ for i,tag in enumerate(sorted(myInt.kernels.keys())):
     pl.add(ellrange,retcl,label=tag,ls=ls,lw=lw)
     rat = (retcl/compcl)
     ratio =   (np.abs(rat[np.logical_and(ellrange>100.,ellrange<2000.)]-1.)).max()*100.
-    print tag, ratio, " %"
+    print((tag, ratio, " %"))
 pl.legendOn(loc='upper right',labsize=10)
 pl.done("output/estcls.png")

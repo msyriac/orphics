@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 from enlib import enmap,utils
 from alhazen.halos import NFWkappa
 from mpi4py import MPI

@@ -42,9 +42,9 @@ lxMapDn,lyMapDn,modLMapDn,thetaMapDn,lxDn,lyDn = fmaps.getFTAttributesFromLiteMa
 
 
 # ft = fftshift(fft(fineTemplate.data,axes=[-2,-1]))
-print fineTemplate.data.shape
+print((fineTemplate.data.shape))
 # print ft.shape
-print coarseTemplate.data.shape
+print((coarseTemplate.data.shape))
 
 
 Ncy,Ncx = coarseTemplate.data.shape
@@ -64,8 +64,8 @@ Nfy,Nfx = fineTemplate.data.shape
 #np.fft.irfft(np.fft.rfft[:n/2+1],n)
 
 
-print Ncy,Ncx
-print Nfy,Nfx
+print((Ncy,Ncx))
+print((Nfy,Nfx))
 
 coarseNew = resample_bin(fineTemplate.data,factors=[float(Ncx)/Nfx,float(Ncy)/Nfy])
 # print coarseNew.shape

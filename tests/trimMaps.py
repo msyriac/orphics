@@ -26,15 +26,15 @@ kappaPath = lambda x: simRoot + "phiMaps_" + str(x).zfill(5) + "/kappaMap_0.fits
 
 i = int(sys.argv[1])
 
-print i
+print(i)
 
-print "Trimming lensed T"
+print("Trimming lensed T")
 downWriteMap(lensedTPath(i))
-print "Trimming lensed Q"
+print("Trimming lensed Q")
 downWriteMap(lensedQPath(i))
-print "Trimming lensed U"
+print("Trimming lensed U")
 downWriteMap(lensedUPath(i))
-print "Trimming lensed kappa"
+print("Trimming lensed kappa")
 downWriteMap(kappaPath(i))
 
 

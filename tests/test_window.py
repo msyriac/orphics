@@ -14,7 +14,7 @@ with io.nostdout():
         from enlib import enmap, lensing, resample
 from alhazen.quadraticEstimator import Estimator
 import alhazen.lensTools as lt
-from ConfigParser import SafeConfigParser 
+from configparser import SafeConfigParser 
 from szar.counts import ClusterCosmology
 import enlib.fft as fftfast
 import argparse
@@ -36,7 +36,7 @@ rank = 0
 out_dir = os.environ['WWW']+"plots/distsims_"+region+"_"  # for plots
 
 
-print "Reading config..."
+print("Reading config...")
 
 # Read config
 iniFile = "../halofg/input/recon.ini"
@@ -44,13 +44,13 @@ Config = SafeConfigParser()
 Config.optionxform=str
 Config.read(iniFile)
 
-print "Params..."
+print("Params...")
 
 pol = False
 shape_dat, wcs_dat = aio.enmap_from_config_section(Config,analysis_section,pol=pol)
 analysis_resolution =  np.min(enmap.extent(shape_dat,wcs_dat)/shape_dat[-2:])*60.*180./np.pi
 min_ell = fmaps.minimum_ell(shape_dat,wcs_dat)
-if rank==0: print "Ell bounds..."
+if rank==0: print("Ell bounds...")
 
 lb = aio.ellbounds_from_config(Config,"reconstruction_sigurd",min_ell)
 tellmin = lb['tellminY']
@@ -60,20 +60,20 @@ pellmax = lb['pellmaxY']
 kellmin = lb['kellmin']
 kellmax = lb['kellmax']
 
-if rank==0: print "Patches data..."
+if rank==0: print("Patches data...")
 
 parray_dat = aio.patch_array_from_config(Config,expf_name,shape_dat,wcs_dat,dimensionless=True)
 
-if rank==0: print "Attributes..."
+if rank==0: print("Attributes...")
 
 lxmap_dat,lymap_dat,modlmap_dat,angmap_dat,lx_dat,ly_dat = fmaps.get_ft_attributes_enmap(shape_dat,wcs_dat)
 
-if rank==0: print "Binners..."
+if rank==0: print("Binners...")
 
 lbin_edges = np.arange(kellmin,kellmax,200)
 lbinner_dat = stats.bin2D(modlmap_dat,lbin_edges)
 
-if rank==0: print "Cosmology..."
+if rank==0: print("Cosmology...")
 
 # === COSMOLOGY ===
 theory, cc, lmax = aio.theory_from_config(Config,cosmology_section)
@@ -89,7 +89,7 @@ w3 = np.mean(taper**3.)
 w4 = np.mean(taper**4.)
 if rank==0:
     io.quickPlot2d(taper,out_dir+"taper.png")
-    print "w2 : " , w2
+    print(("w2 : " , w2))
 
 px_dat = analysis_resolution
 
@@ -97,7 +97,7 @@ px_dat = analysis_resolution
 Nsims = 10
 avg = 0.
 for i in range(Nsims):
-    print i
+    print(i)
     cmb = parray_dat.get_unlensed_cmb(seed=i)
     ltt2d = fmaps.get_simple_power_enmap(cmb*taper)
     ccents,ltt = lbinner_dat.bin(ltt2d)/w2

@@ -26,7 +26,7 @@ bin_edges = np.arange(100,4000,10)
 
 theory = loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,lpad=9000)
 lmap = lm.makeEmptyCEATemplate(raSizeDeg=arc/60., decSizeDeg=arc/60.,pixScaleXarcmin=px,pixScaleYarcmin=px)
-print lmap.data.shape
+print((lmap.data.shape))
 myNls = NlGenerator(lmap,theory,bin_edges,gradCut=gradCut)
 
 

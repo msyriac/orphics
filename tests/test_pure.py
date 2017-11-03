@@ -55,7 +55,7 @@ plot_powers(cmb,suffix="periodic",w2=1.)
 taper,w2 = fmaps.get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None)
 plot_powers(cmb*taper,suffix="tapered",w2=w2)    
 
-print "Pure..."
+print("Pure...")
 windict = pure.initializeDerivativesWindowfuntions(taper,px*np.pi/180./60.)
 lxMap,lyMap,modLMap,angLMap,lx,ly = fmaps.get_ft_attributes_enmap(shape,wcs)
 fT, fE, fB = pure.TQUtoPureTEB(cmb[0],cmb[1],cmb[2],modlmap,angLMap,windowDict=windict,method='pure')

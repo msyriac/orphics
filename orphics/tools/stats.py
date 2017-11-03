@@ -46,7 +46,7 @@ def getAmplitudeLikelihood(mean,covmat,amplitudeRange,theory):
     else:
         siginv = np.linalg.pinv(covmat)
 
-    print siginv
+    print(siginv)
     #width = amplitudeRange[1]-amplitudeRange[0]
     
 
@@ -63,8 +63,8 @@ def timeit(method):
         result = method(*args, **kw)
         te = time.time()
 
-        print '%r %2.2f sec' % \
-              (method.__name__,te-ts)
+        print(('%r %2.2f sec' % \
+              (method.__name__,te-ts)))
         return result
 
     return timed
@@ -119,7 +119,7 @@ def getStats(listOfBinned):
     
 def bootstrapData(profs,Bmax=100000):
     # profs is a list of 1d arrays you want to bootstrap over
-    print "Bootstrapping..."
+    print("Bootstrapping...")
     newprofs = []
     for i in range(Bmax):
         
@@ -181,7 +181,7 @@ def loadBinFile(binfile,delimiter='\t',returnBinner=True):
     try:
         center = mat[:,2]
     except:
-        print "coreStats.py:loadBinFile says \"Third column absent in binfile. Using mean of left and right edges.\""
+        print("coreStats.py:loadBinFile says \"Third column absent in binfile. Using mean of left and right edges.\"")
         center = (left+right)/2.
 
     if returnBinner:
@@ -235,7 +235,7 @@ class ClBox:
 
         if not(binned):
             Cls[0:self.numNans]=np.nan
-            Clbinned = self.binner.binned(range(len(Cls)),Cls)
+            Clbinned = self.binner.binned(list(range(len(Cls))),Cls)
             self.datas[key]['unbinned'] = Cls
         else:
             Clbinned = Cls    
@@ -299,7 +299,7 @@ class ClBox:
             bf,err = self.datas[keyTheory]['amp']
             printC('{0:.2f}'.format(bf)+"+-"+'{:04.2f}'.format(err),color='p')
             
-            for key,val in stats.iteritems():
+            for key,val in list(stats.items()):
                 printC(key,color='b')
                 printC('{0:.2f}'.format(val),color='p')
             printC("="*len(keyTheory),color='y')
@@ -458,14 +458,14 @@ class ClBox:
 
 
         
-        if keys is None: keys = self.datas.keys()
+        if keys is None: keys = list(self.datas.keys())
         for key in keys:
 
             dat = self.datas[key]
 
             if dat['covmat'] is None:
                 #This is a theory curve
-                ells = np.array(range(len(dat['unbinned'])))
+                ells = np.array(list(range(len(dat['unbinned']))))
                 if dat['isFit']:
                     ls="--"
                     lw=1
@@ -483,11 +483,11 @@ class ClBox:
                   
             else:
                 errs = np.sqrt(np.diagonal(dat['covmat']))
-                print dat['label']
+                print((dat['label']))
                 pl.addErr(binCenters[:len(dat['binned'])],mult[:len(dat['binned'])]*dat['binned'],mult[:len(dat['binned'])]*errs,label=dat['label'],marker='o',elinewidth=2,markersize=10,mew=2,)
 
 
-        [i.set_linewidth(2.0) for i in pl._ax.spines.itervalues()]
+        [i.set_linewidth(2.0) for i in list(pl._ax.spines.values())]
         pl._ax.tick_params(which='major',width=2)
         pl._ax.tick_params(which='minor',width=2)
         pl._ax.axhline(y=0.,ls='--')

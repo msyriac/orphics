@@ -9,7 +9,7 @@ import sys
 import os
 import time
 
-import ConfigParser
+import configparser
 import json
 
 import ctypes
@@ -85,7 +85,7 @@ class fitsMapFromCat(object):
 
         for key in self.lMaps:
             self.lMaps[key].writeFits(outputRoot+key+".fits",overWrite=True)
-            print "Saved ",outputRoot+key+".fits ",self.lMaps[key].data.sum()/(self.lMaps[key].area*60.*60.)," count / arcmin^2"
+            print(("Saved ",outputRoot+key+".fits ",self.lMaps[key].data.sum()/(self.lMaps[key].area*60.*60.)," count / arcmin^2"))
 
         
 
@@ -142,7 +142,7 @@ class healpixFromCat(object):
 
         for key in self.hp:
             hp.write_map(outputRoot+key+".fits",self.hp[key])
-            print "Saved ", outputRoot+key+".fits",self.hp[key].sum()/(0.2*42000.*60.*60.)
+            print(("Saved ", outputRoot+key+".fits",self.hp[key].sum()/(0.2*42000.*60.*60.)))
 
         
 
@@ -196,12 +196,12 @@ def main(argv):
         
     # get ini file from command line and load parameters
     if argv==[]:
-        print "Using default ini..."
+        print("Using default ini...")
         iniPath = "input/cat.ini"
     else:
         iniFile = argv[0]
         iniPath = rootPath + iniFile
-    Config = ConfigParser.SafeConfigParser()
+    Config = configparser.SafeConfigParser()
     Config.read(iniPath)
 
     mapType = Config.get('general','type')
@@ -240,12 +240,12 @@ def main(argv):
     try:        
         magRanges = json.loads(Config.get('general','mag_ranges'))
     except ValueError:
-        print "No magnitude cut specified / unreadable magnitude cuts. No mag cuts will be made."
+        print("No magnitude cut specified / unreadable magnitude cuts. No mag cuts will be made.")
         magRanges = [None]
     try:        
         zRanges = json.loads(Config.get('general','z_ranges'))
     except ValueError:
-        print "No z cut specified / unreadable z cuts. No z cuts will be made."
+        print("No z cut specified / unreadable z cuts. No z cuts will be made.")
         zRanges = [None]
     
             
@@ -279,7 +279,7 @@ def main(argv):
         try:
             czs, cwts = np.loadtxt(Config.get('general','cfhtlens_weights'),delimiter=' ',unpack = True)
             fcwts = interp1d(czs,cwts,bounds_error=False,fill_value=1.)
-            print "Using cfht weights from file ", Config.get('general','cfhtlens_weights')
+            print(("Using cfht weights from file ", Config.get('general','cfhtlens_weights')))
         except:
             pass
 
@@ -367,7 +367,7 @@ def main(argv):
                 if i<=skipNum: continue # verify
                 if line.lstrip()[0] == skip_char: continue
                 if i>maxNum: break
-                if i%50000==0: print i
+                if i%50000==0: print(i)
 
                 try:
                     cols = line.split(delim.decode('string_escape'))
@@ -393,7 +393,7 @@ def main(argv):
                 if not(isHp):
                     if mapSets.fieldName==None: continue
 
-                for cutName,myCut in myCuts.iteritems():
+                for cutName,myCut in list(myCuts.items()):
 
                     if not(myCut(mag,z)): continue
 
@@ -472,9 +472,9 @@ def main(argv):
     # sys.exit()
     stop_time=time.time()
     N = Config.getint('debug','estimate_rows')
-    print i
+    print(i)
     avg_time = (stop_time-start_time)/i
-    print avg_time * N / 60. , " minutes expected."
+    print((avg_time * N / 60. , " minutes expected."))
                         
     mapSets.writeMaps(outputRoot+mapType+"_")
 

@@ -125,7 +125,7 @@ cssfdm = clss2[cond]
 nlss = interp1d(ellrange,LF.Nls['ss'](ellrange))(lcdm[cond])
 ells = lcdm[cond]
 fsky = 0.4
-print "S/N: ",np.sqrt(np.sum((np.sqrt(fsky*(2.*ells+1.)/2.)*(csscdm-cssfdm)/(csscdm+nlss))**2.))
+print(("S/N: ",np.sqrt(np.sum((np.sqrt(fsky*(2.*ells+1.)/2.)*(csscdm-cssfdm)/(csscdm+nlss))**2.))))
 
 
 lcdm,ckkcdm = np.loadtxt(cdmfile,unpack=True)

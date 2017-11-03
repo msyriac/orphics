@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -70,7 +70,7 @@ def get_none_or_int(Config,section,name):
 
 def config_from_file(filename):
     assert os.path.isfile(filename) 
-    from ConfigParser import SafeConfigParser 
+    from configparser import SafeConfigParser 
     Config = SafeConfigParser()
     Config.optionxform=str
     Config.read(filename)
@@ -100,7 +100,7 @@ def query_yes_no(question, default="yes"):
 
     while True:
         sys.stdout.write(question + prompt)
-        choice = raw_input().lower()
+        choice = input().lower()
         if default is not None and choice == '':
             return valid[default]
         elif choice in valid:
@@ -118,7 +118,7 @@ def read_ignore_error(file_loc):
                 val = float(line.strip())
                 vals.append(val)
             except:
-                print ("Ignoring line ", line.strip())
+                print("Ignoring line ", line.strip())
     return np.array(vals)
 
 def list_to_fits_table(arr,col_names,file_name):
@@ -155,7 +155,7 @@ def highResPlot2d(array,outPath,down=None,verbose=True,overwrite=True,crange=Non
         downmap = enmap.enmap(array)[None]
     img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
     img.save(outPath)
-    if verbose: print (bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC)
+    if verbose: print(bcolors.OKGREEN+"Saved high-res plot to", outPath+bcolors.ENDC)
 
     
 def quickPlot2d(array,outPath,verbose=True,ftsize=24,**kwargs):
@@ -229,14 +229,14 @@ def getListFromConfigSection(Config,section_name,key_root,start_index=0):
 
 def dictOfListsFromSection(config,sectionName):
     del config._sections[sectionName]['__name__']
-    return dict([a, listFromConfig(config,sectionName,a)] for a, x in config._sections[sectionName].iteritems())
+    return dict([a, listFromConfig(config,sectionName,a)] for a, x in list(config._sections[sectionName].items()))
 
 def dictFromSection(config,sectionName):
     try:
         del config._sections[sectionName]['__name__']
     except:
         pass
-    return dict([a, listFromConfig(config,sectionName,a)[0]] for a, x in config._sections[sectionName].iteritems())
+    return dict([a, listFromConfig(config,sectionName,a)[0]] for a, x in list(config._sections[sectionName].items()))
 
 
 def listFromConfig(Config,section,name):
@@ -283,7 +283,7 @@ def printC(string,color=None,bold=False,uline=False):
 
     
 
-    print (x+string+bcolors.ENDC)
+    print(x+string+bcolors.ENDC)
 
 
 class bcolors:
@@ -392,7 +392,7 @@ class Plotter(object):
 
         plt.savefig(fileName,bbox_inches='tight',**kwargs)
 
-        if verbose: print (bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC)
+        if verbose: print(bcolors.OKGREEN+"Saved plot to", fileName+bcolors.ENDC)
         plt.close()
 
 
@@ -505,7 +505,7 @@ class FisherPlots(object):
 
     def done(self,saveFile):
         plt.savefig(saveFile, bbox_inches='tight',format='png')
-        print (bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
+        print(bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
 
 
     def plotTri(self,section,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,TwoSig=False,**kwargs):
@@ -522,8 +522,8 @@ class FisherPlots(object):
         for setName,col,ls,lab in zip(setNames,cols,lss,labels):
             gaussOnly, fisher = self.fishers[section][setName]
             Finv = np.linalg.inv(fisher)
-            for i in xrange(0,numpars):
-                for j in xrange(i+1,numpars):
+            for i in range(0,numpars):
+                for j in range(i+1,numpars):
                     count = 1+(j-1)*(numpars-1) + i
 
                     paramX = paramList[i]
@@ -576,4 +576,4 @@ class FisherPlots(object):
         legend = fig.legend(handles, labels,prop={'size':labsize},numpoints=1,frameon = 0,loc=loc, bbox_to_anchor = (-0.1,-0.1,1,1),bbox_transform = plt.gcf().transFigure,**kwargs) #
 
         plt.savefig(saveFile, bbox_inches='tight',format='png')
-        print (bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
+        print(bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)

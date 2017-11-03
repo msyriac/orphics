@@ -34,7 +34,7 @@ ells = np.arange(2,ellmax,1)
 
 
 from scipy.stats import norm
-print "making dndz"
+print("making dndz")
 zmin = 0.
 zmax = 5.0
 zstep = 0.1
@@ -48,9 +48,9 @@ cdndz = cdndz[1:]
 myInt.addNz('g',czedges,cdndz,bias=2.0,magbias=0.42)#,diagnostic=[0.8,1.2,10])
 
 
-print "getting cls.."
+print("getting cls..")
 
-ellrange = range(2,ellmax,1)
+ellrange = list(range(2,ellmax,1))
 myInt.generateCls(ellrange)
 retclkks = myInt.getCl("cmb","cmb")
 retclkss = myInt.getCl("cmb","s")
@@ -61,7 +61,7 @@ retclggs = myInt.getCl("g","g")
 retclgks = myInt.getCl("g","cmb")
 elapsedTime = time.time() - startTime
 
-print "Estimation took ", elapsedTime , " seconds."
+print(("Estimation took ", elapsedTime , " seconds."))
 
     
 
@@ -115,9 +115,9 @@ ratks = intmmks/LF.theory.gCl("ks",ells)
 ratkg = intmmkg/LF.theory.gCl("kg",ells)
 
 for ellcut in [2,100,200,300,500]:
-    print "kk",ellcut,(np.abs(ratkk[ells>ellcut]-1.)).max()*100., " %"
-    print "ks",ellcut,(np.abs(ratks[ells>ellcut]-1.)).max()*100., " %"
-    print "kg",ellcut,(np.abs(ratkg[ells>ellcut]-1.)).max()*100., " %"
+    print(("kk",ellcut,(np.abs(ratkk[ells>ellcut]-1.)).max()*100., " %"))
+    print(("ks",ellcut,(np.abs(ratks[ells>ellcut]-1.)).max()*100., " %"))
+    print(("kg",ellcut,(np.abs(ratkg[ells>ellcut]-1.)).max()*100., " %"))
 
 
 

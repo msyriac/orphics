@@ -14,7 +14,7 @@ TCMB = 2.7255e6
 wn = cmb.white_noise_with_atm_func(ells,uk_arcmin,lknee=0,alpha=0,dimensionless=True,TCMB=TCMB)
 
 ellwhere = 1000.
-print wn[np.logical_and(ells>998,ells<1002)]*ellwhere*(ellwhere+1.)/2./np.pi*TCMB**2.
+print((wn[np.logical_and(ells>998,ells<1002)]*ellwhere*(ellwhere+1.)/2./np.pi*TCMB**2.))
 
 
 pl = io.Plotter(scaleY='log',scaleX='log')

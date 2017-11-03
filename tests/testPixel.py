@@ -25,8 +25,8 @@ pixScaleX,pixScaleY = px_rad,px_rad
 size_deg_y = Ny*px_arc/60.
 size_deg_x = Nx*px_arc/60.
 area = size_deg_y*size_deg_x
-print "Size deg. " , size_deg_y,"x",size_deg_x
-print "Area deg.sq. " , area
+print(("Size deg. " , size_deg_y,"x",size_deg_x))
+print(("Area deg.sq. " , area))
 
 templateLM = template()
 templateLM.Ny, templateLM.Nx = Ny,Nx

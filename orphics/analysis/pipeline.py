@@ -1,10 +1,10 @@
-from __future__ import print_function
+
 import numpy as np
 import sys
 from enlib import enmap,powspec
 from orphics.tools.stats import timeit
 import orphics.tools.io as io
-import commands
+import subprocess
 import logging
 
 class SpectrumVerification(object):

@@ -5,19 +5,14 @@ from scipy.fftpack import fftshift
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 from orphics.tools.stats import timeit
 import orphics.tools.cmb as cmb
-import flipper.fftTools as ft
+from enlib.fft import fft,ifft
+
+from enlib import enmap
 try:
-    from flipper.fft import fft,ifft
+    from enlib import lensing
 except:
     import logging
-    logging.warning("You seem to be using a version of flipper that does not have the 'flipper.fft' module, a wrapper for fast multi-threaded pyfftw FFTs. Please use the version of flipper maintained by the ACT Collaboration at https://github.com/ACTCollaboration/flipper .")
-
-
-try:
-    from enlib import enmap, lensing
-except:
-    import logging
-    logging.warning("Couldn't load enlib. Some functionality may be missing.")
+    logging.warning("Couldn't load enlib.lensing. Some functionality may be missing.")
 
 class MapRotator(object):
     def __init__(self,shape_source,wcs_source,shape_target,wcs_target):
@@ -38,8 +33,8 @@ class MapRotatorEquator(MapRotator):
             recommended_pix = self.source_pix*np.cos(max_dec)
 
             if verbose:
-                print "INFO: Maximum declination in southern patch : ",max_dec*180./np.pi, " deg."
-                print "INFO: Recommended pixel size for northern patch : ",recommended_pix, " arcmin"
+                print(("INFO: Maximum declination in southern patch : ",max_dec*180./np.pi, " deg."))
+                print(("INFO: Recommended pixel size for northern patch : ",recommended_pix, " arcmin"))
 
         else:
             recommended_pix = pix_target_override_arcmin
@@ -51,7 +46,7 @@ class MapRotatorEquator(MapRotator):
         self.target_pix = recommended_pix
         self.wcs_target = wcs_target
         if verbose:
-            print "INFO: Source pixel : ",self.source_pix, " arcmin"
+            print(("INFO: Source pixel : ",self.source_pix, " arcmin"))
         
         if downsample:
             dpix = downsample_pix_arcmin if downsample_pix_arcmin is not None else self.source_pix
@@ -202,7 +197,7 @@ class PatchArray(object):
         fphi = lt.kappa_to_fphi(kappa,self.modlmap)
         grad_phi = enmap.gradf(enmap.ndmap(fphi,self.wcs))
         pos = self.posmap + grad_phi
-	self._displace_pix = enmap.sky2pix(self.shape,self.wcs,pos, safe=False)
+        self._displace_pix = enmap.sky2pix(self.shape,self.wcs,pos, safe=False)
 
     def get_lensed(self, unlensed, order=3, mode="spline", border="cyclic"):
         return lensing.displace_map(unlensed, self._displace_pix, order=order, mode=mode, border=border)
@@ -323,15 +318,28 @@ def get_simple_power_enmap(enmap1,mask1=1.,enmap2=None,mask2=None):
     '''Mask a map (pair) and calculate its power spectrum
     with only a norm (w2) correction.
     '''
-    t1 = simple_flipper_template_from_enmap(enmap1.shape,enmap1.wcs)
-    t1.data = enmap1
-    if enmap2 is not None:
-        t2 = simple_flipper_template_from_enmap(enmap2.shape,enmap2.wcs)
-        t2.data = enmap2
-    else:
-        t2 = None
+
+    fc = enmap.FourierCalc(enmap1.shape,enmap1.wcs)
+    imap1 = enmap1*mask1
+    if enmap2 is None: enmap2 = imap1.copy()
+    if mask2 is None: mask2 = np.array(mask1).copy()
+    w2 = np.mean(mask1*mask2)
+    p2d, _ , _ = fc.power2d(enmap1*mask1, emap2=enmap2*mask2)
+    p2d /= w2
+
+    
+    
+    # t1 = simple_flipper_template_from_enmap(enmap1.shape,enmap1.wcs)
+    # t1.data = enmap1
+    # if enmap2 is not None:
+    #     t2 = simple_flipper_template_from_enmap(enmap2.shape,enmap2.wcs)
+    #     t2.data = enmap2
+    # else:
+    #     t2 = None
         
-    return get_simple_power(t1,mask1,t2,mask2)
+    # return get_simple_power(t1,mask1,t2,mask2)
+    return p2d
+
 
     
 #Take divergence using fourier space gradients
@@ -546,7 +554,8 @@ def get_ft_attributes(Ny,Nx,pixScaleY,pixScaleX):
     ly =  2*np.pi  * fftfreq( Ny, d = pixScaleY )
     
     ix = np.mod(np.arange(Nx*Ny),Nx)
-    iy = np.arange(Nx*Ny)/Nx
+    iy = np.arange(Nx*Ny)//Nx
+    #iy = np.arange(Nx*Ny)/Nx
     
     modLMap = np.zeros([Ny,Nx])
     modLMap[iy,ix] = np.sqrt(lx[ix]**2 + ly[iy]**2)
@@ -566,7 +575,7 @@ def get_ft_attributes(Ny,Nx,pixScaleY,pixScaleX):
 
 
 def makeTemplate(l,Fl,modLMap,k=1,debug=False):
-    """                                                                                                                                    
+    """                                                                                                                                            
     Given 1d function Fl of l, creates the 2d version                                                                                   
     of Fl on 2d k-space defined by ftMap                                                                                                   
     """
@@ -585,9 +594,9 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
         from ..tools.output import Plotter
         from scipy.interpolate import interp1d
         _func = interp1d(l,Fl,kind=k,bounds_error=False,fill_value = 0)
-        print np.sort(lmapunravel)[1]
-        print lmapunravel.min(),template1d[lmapunravel==lmapunravel.min()]
-        print modLMap.ravel().min(),_func(modLMap.ravel()==modLMap.ravel().min())
+        print((np.sort(lmapunravel)[1]))
+        print((lmapunravel.min(),template1d[lmapunravel==lmapunravel.min()]))
+        print((modLMap.ravel().min(),_func(modLMap.ravel()==modLMap.ravel().min())))
         pl = Plotter()
         pl.add(lmapunravel,template1d*(lmapunravel+1.)**2.,label="splev unravel",ls="-",marker="o")
         pl.add(modLMap.ravel(),_func(modLMap.ravel())*(modLMap.ravel()+1.)**2.,label="interp1d unravel",ls="none",marker="x")
@@ -735,9 +744,9 @@ def cosineWindow(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
 def initializeCosineWindow(templateLiteMap,lenApodY=30,lenApodX=None,pad=0):
 
     if lenApodX is None: lenApodY=lenApodY
-    print "WARNING: This function is deprecated and will be removed. \
-    Please replace with the much faster flatMaps.cosineWindow function."
-	
+    print("WARNING: This function is deprecated and will be removed. \
+    Please replace with the much faster flatMaps.cosineWindow function.")
+        
     Nx=templateLiteMap.Nx
     Ny=templateLiteMap.Ny
     win=templateLiteMap.copy()
@@ -779,21 +788,21 @@ def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,ras
     width_stamp_degrees = width_stamp_arcminute /60.
     Np = np.int(width_stamp_arcminute/pix_scale+0.5)
     pad = np.int(Np/2+0.5)
-    print ("Expected width in pixels = ", Np)
+    print(("Expected width in pixels = ", Np))
 
     lmap = lite_map
     stack=0
     N=0
 
     if ras is not None:
-        looprange = range(0,len(ras))
+        looprange = list(range(0,len(ras)))
         assert n_random_points is None
         random = False
     else:
         assert n_random_points is not None
         assert len(ra_range)==2
         assert len(dec_range)==2
-        looprange = range(0,n_random_points)
+        looprange = list(range(0,n_random_points))
         random = True
         
     for i in looprange:
@@ -836,9 +845,9 @@ def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,ras
     return stack, cents, recons
 
 def initializeCosineWindowData(Ny,Nx,lenApod=30,pad=0):
-    print "WARNING: This function is deprecated and will be removed. \
-    Please replace with the much faster flatMaps.cosineWindow function."
-	
+    print("WARNING: This function is deprecated and will be removed. \
+    Please replace with the much faster flatMaps.cosineWindow function.")
+        
     win=np.ones((Ny,Nx))
 
     winX=win.copy()
