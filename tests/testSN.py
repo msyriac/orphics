@@ -37,4 +37,4 @@ specType = "kk"
 # get S/N and error bar in each bin
 sn,errs = LF.sn(ellBinEdges,fsky,specType)
 
-print sn
+print(sn)

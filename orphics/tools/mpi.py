@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 import numpy as np
 import os
 
@@ -59,7 +59,7 @@ class MPIStats(object):
         self.tag_start = tag_start
         self.root = root
         if loopover is None:
-            self.loopover = range(root+1,self.numcores)
+            self.loopover = list(range(root+1,self.numcores))
         else:
             self.loopover = loopover
 
@@ -69,7 +69,7 @@ class MPIStats(object):
         Create a new one if it doesn't already exist.
         """
         
-        if not(label in self.vectors.keys()): self.vectors[label] = []
+        if not(label in list(self.vectors.keys())): self.vectors[label] = []
         self.vectors[label].append(vector)
 
 
@@ -79,7 +79,7 @@ class MPIStats(object):
         Add arr to a cumulative stack named "label". Could be 2d arrays.
         Create a new one if it doesn't already exist.
         """
-        if not(label in self.little_stack.keys()):
+        if not(label in list(self.little_stack.keys())):
             self.little_stack[label] = 0.
             self.little_stack_count[label] = 0
         self.little_stack[label] += arr
@@ -106,7 +106,7 @@ class MPIStats(object):
             for k,label in enumerate(self.little_stack.keys()):
                 self.stack_count[label] = self.little_stack_count[label]
                 for core in self.loopover: #range(1,self.numcores):
-                    if verbose: print ("Waiting for core ", core , " / ", self.numcores)
+                    if verbose: print(("Waiting for core ", core , " / ", self.numcores))
                     data = self.comm.recv(source=core, tag=self.tag_start*3000+k)
                     self.stack_count[label] += data
 
@@ -114,7 +114,7 @@ class MPIStats(object):
             for k,label in enumerate(self.little_stack.keys()):
                 self.stacks[label] = self.little_stack[label]
             for core in self.loopover: #range(1,self.numcores):
-                if verbose: print ("Waiting for core ", core , " / ", self.numcores)
+                if verbose: print(("Waiting for core ", core , " / ", self.numcores))
                 for k,label in enumerate(self.little_stack.keys()):
                     expected_shape = self.little_stack[label].shape
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
@@ -147,7 +147,7 @@ class MPIStats(object):
                 self.numobj[label] = []
                 self.numobj[label].append(np.array(self.vectors[label]).shape[0])
                 for core in self.loopover: #range(1,self.numcores):
-                    if verbose: print ("Waiting for core ", core , " / ", self.numcores)
+                    if verbose: print(("Waiting for core ", core , " / ", self.numcores))
                     data = self.comm.recv(source=core, tag=self.tag_start*2000+k)
                     self.numobj[label].append(data)
 
@@ -155,7 +155,7 @@ class MPIStats(object):
             for k,label in enumerate(self.vectors.keys()):
                 self.vectors[label] = np.array(self.vectors[label])
             for core in self.loopover: #range(1,self.numcores):
-                if verbose: print ("Waiting for core ", core , " / ", self.numcores)
+                if verbose: print(("Waiting for core ", core , " / ", self.numcores))
                 for k,label in enumerate(self.vectors.keys()):
                     expected_shape = (self.numobj[label][core],self.vectors[label].shape[1])
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
@@ -172,7 +172,7 @@ def mpi_distribute(num_tasks,avail_cores):
     num_each = np.array([min_each]*avail_cores) # first distribute equally
     if rem>0: num_each[-rem:] += 1  # add the remainder to the last set of cores (so that rank 0 never gets extra jobs)
 
-    task_range = range(num_tasks) # the full range of tasks
+    task_range = list(range(num_tasks)) # the full range of tasks
     cumul = np.cumsum(num_each).tolist() # the end indices for each task
     task_dist = [task_range[x:y] for x,y in zip([0]+cumul[:-1],cumul)] # a list containing the tasks for each core
     return num_each,task_dist

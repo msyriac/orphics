@@ -1,5 +1,5 @@
 import numpy as np
-from ConfigParser import SafeConfigParser 
+from configparser import SafeConfigParser 
 from pyfisher.lensInterface import lensNoise
 import orphics.theory.gaussianCov as gcov
 from orphics.theory.cosmology import Cosmology
@@ -46,4 +46,4 @@ specType = "kk"
 
 sn,errs = LF.sn(ellBinEdges,fsky,specType)
 
-print sn
+print(sn)

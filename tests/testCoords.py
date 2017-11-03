@@ -12,12 +12,12 @@ hdu = pyfits.open("/gpfs01/astro/www/msyriac/forTeva/ACTPol_BOSS-N_BJF.fits")
 catalog  = hdu[1].data
 ras = hdu[1].data['RADeg']
 decs = hdu[1].data['decDeg']
-print catalog.columns
+print((catalog.columns))
 
 sys.exit()
 
-print ras.min()
-print ras.max()
+print((ras.min()))
+print((ras.max()))
 #sys.exit()
 
 
@@ -27,8 +27,8 @@ decs = decs[ras>160]
 ras = ras[ras<233]
 decs = decs[ras<233]
 
-print len(ras)
-print len(decs)
+print((len(ras)))
+print((len(decs)))
 
 c = 0
 pad = 20
@@ -40,14 +40,14 @@ for ra,dec in zip(ras,decs):
     #ix,iy = lmap.skyToPix(ra,dec)
 
     if ix>pad and iy>pad and ix<Nx-pad and iy<Ny-pad and ra>160 and ra<233:
-        print ix,iy
+        print((ix,iy))
         c += 1
         ixs.append(ix)
         iys.append(iy)
 
 
 
-print c
+print(c)
 
 #sys.exit()
 

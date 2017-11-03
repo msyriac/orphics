@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 import numpy as np
 import orphics.tools.io as io
 import matplotlib.pyplot as plt
@@ -29,7 +29,7 @@ prange = np.linspace(a,b,100)
 pl = io.Plotter(labelX="richness $x$",labelY="$P(X<x)$")
 pl.add(prange,cdf(prange))
 pl.done("cdf.png")
-print ("Norm: ", np.trapz(prob(prange),prange))
+print(("Norm: ", np.trapz(prob(prange),prange)))
 
 
 # sample using the inverse transform sampling method
@@ -59,15 +59,15 @@ in_split_pts = [a]+pn+[b] # the bin edges we start with
 # calculate the S/N in each bin
 sns,means,Ns = split_samples(samples,in_split_pts)
 print ("=== Percentile splitting ===")
-print ("S/N: ", sns)
-print ("Avg. richness: ", means)
-print ("N:", Ns)
+print(("S/N: ", sns))
+print(("Avg. richness: ", means))
+print(("N:", Ns))
 
 
  
 # === OPTIMIZATION ====        
 split_pts = optimize_splits(samples,in_split_pts)
-print ("Recommended splitting : ", split_pts)
+print(("Recommended splitting : ", split_pts))
 # =====================
 
 for split_pt in split_pts:
@@ -87,6 +87,6 @@ plt.savefig("prob.png")
 # calculate the S/N in optimized binning
 sns,means,Ns = split_samples(samples,split_pts)
 print ("=== Optimized splitting ===")
-print ("S/N: ", sns)
-print ("Avg. richness: ", means)
-print ("N:", Ns)
+print(("S/N: ", sns))
+print(("Avg. richness: ", means))
+print(("N:", Ns))

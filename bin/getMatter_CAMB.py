@@ -1,6 +1,6 @@
 import numpy as np
 import sys,os
-import ConfigParser
+import configparser
 import itertools
 import os.path
 from orphics.theory.cambCall import cambInterface
@@ -56,7 +56,7 @@ def getMatterCamb(out_pre,spec,templateIni,params,zpts,zmin,zmax,cambRoot,Accura
 def main(argv):
     verbose=True
     nameMap={'H0':'hubble','YHe':'helium_fraction','nnu':'massless_neutrinos','s_pivot':'pivot_scalar','t_pivot':'pivot_tensor','As':'scalar_amp(1)','ns':'scalar_spectral_index(1)','tau':'re_optical_depth','num_massive_neutrinos':'massive_neutrinos','TCMB':'temp_cmb','lmax':'l_max_scalar','kmax':'k_eta_max_scalar'}
-    inv_nameMap = {v: k for k, v in nameMap.items()}
+    inv_nameMap = {v: k for k, v in list(nameMap.items())}
 
     try:
         iniFile = argv[0]
@@ -64,7 +64,7 @@ def main(argv):
         iniFile = "input/getMatter_axionCAMB.ini"
         
     # Read Config
-    Config = ConfigParser.SafeConfigParser()
+    Config = configparser.SafeConfigParser()
     Config.optionxform = str
     Config.read(iniFile)
     
@@ -111,6 +111,6 @@ def main(argv):
     #print fparams
     Pk = getMatterCamb(out_pre,spec,templateIni,fparams,AccuracyBoost=AccuracyBoost,zpts=int(zpts),zmin=zmin,zmax=zmax,cambRoot=cambRoot)
 
-    print Pk
+    print(Pk)
 if (__name__ == "__main__"):
     main(sys.argv[1:])

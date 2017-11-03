@@ -5,7 +5,7 @@ import sys
 import subprocess
 
 import atexit
-import cPickle as pickle
+import pickle as pickle
 import traceback
 from functools import wraps
 import numpy as np
@@ -30,15 +30,15 @@ class cambInterface:
         self.outName = outName
         self.option = option
         if option == 0:
-            print 'Using original CAMB'
+            print('Using original CAMB')
         elif option == 1:
-            print 'Using CAMB sources'
+            print('Using CAMB sources')
         
     def setParam(self,paramName,newVal):
         self._replace(self._template,paramName,subst=paramName+"="+str(newVal))
 
     def call(self,suppress=True):
-        print self._template
+        print((self._template))
         if suppress:
             with open(os.devnull, "w") as f:
                 subprocess.call([self._callpath+"/camb",self._template],stdout=f,cwd=self._callpath)
@@ -84,7 +84,7 @@ class cambInterface:
                 clcmbeval = _map(ells,clcmb,ellevalcmb)[:N].reshape((N,1))
                 clvecs.append(clcmbeval)
                 
-                if i==1: print clcmbeval[:10]
+                if i==1: print((clcmbeval[:10]))
             
             clkkeval = clkkeval[:N]
             clkteval = clkteval[:N]
@@ -153,7 +153,7 @@ class cambInterface:
                                                                                    
                     
         if not(flag):
-            print "ERROR: pattern ", pattern, " not found."
+            print(("ERROR: pattern ", pattern, " not found."))
             
             #sys.exit(1)
         close(fh)

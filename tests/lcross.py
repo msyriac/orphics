@@ -2,7 +2,7 @@ import orphics.tools.cmb as cmb
 import orphics.tools.io as io
 import numpy as np
 from pyfisher.lensInterface import lensNoise
-from ConfigParser import SafeConfigParser 
+from configparser import SafeConfigParser 
 import argparse
 
 
@@ -24,7 +24,7 @@ Config.read(iniFile)
 #cls = np.loadtxt("data/Nov10_highAcc_CDM_lensedCls.dat")
 cls = np.loadtxt("data/highell_lensedCls.dat")
 
-print cls.shape
+print((cls.shape))
 
 
 ells = np.arange(0,cls.shape[0])
@@ -36,7 +36,7 @@ rms_noise = 0.1
 nls = cmb.noise_func(ells,fwhm,rms_noise,TCMB=1.)*ells*(ells+1.)/2./np.pi
 
 lcross = ells[nls>cltt][0]
-print lcross
+print(lcross)
 
 pl = io.Plotter(scaleY='log',scaleX='log')
 pl.add(ells,cltt)
@@ -109,6 +109,6 @@ nlkk = interp1d(ls,Nls)(lcdm[cond])
 ells = lcdm[cond]
 
 fsky = 0.1
-print np.sqrt(np.sum((np.sqrt(fsky*(2.*ells+1.)/2.)*(ckkcdm-ckkfdm)/(ckkcdm+nlkk))**2.))
+print((np.sqrt(np.sum((np.sqrt(fsky*(2.*ells+1.)/2.)*(ckkcdm-ckkfdm)/(ckkcdm+nlkk))**2.))))
 
 

@@ -3,7 +3,7 @@ from orphics.tools.io import bcolors
 import numpy as np
 from scipy.interpolate import interp1d
 import time
-import cPickle as pickle
+import pickle as pickle
 
 def get_lensed_cls(theory,ells,clkk,lmax):
     import camb.correlations as corr
@@ -348,7 +348,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         assert pickling
         clfile = "output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl"
         cmbmat = pickle.load(open(clfile,'rb'))
-        print "Loaded cached Cls from ", clfile
+        print(("Loaded cached Cls from ", clfile))
     except:
         cmbmat = results.get_cmb_power_spectra(pars)
         if pickling:
@@ -378,7 +378,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         assert pickling
         clfile = "output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt"
         clphi = np.loadtxt(clfile)
-        print "Loaded cached Cls from ", clfile
+        print(("Loaded cached Cls from ", clfile))
     except:
         lensArr = results.get_lens_potential_cls(lmax=kellmax)
         clphi = lensArr[2:,0]

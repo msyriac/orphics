@@ -16,7 +16,7 @@ def loadBinFile(binfile,delimiter='\t',returnBinner=True):
     try:
         center = mat[:,2]
     except:
-        print "coreStats.py:loadBinFile says \"Third column absent in binfile. Using mean of left and right edges.\""
+        print("coreStats.py:loadBinFile says \"Third column absent in binfile. Using mean of left and right edges.\"")
         center = (left+right)/2.
 
     if returnBinner:
@@ -52,10 +52,10 @@ class smartCls:
             
         elif leng>1. and min(maybe_ells)>1. and max(maybe_ells)<20000.:
             self.ells = maybe_ells
-            if self.verbose: print "Found an ell column. Using it."
+            if self.verbose: print("Found an ell column. Using it.")
         else:
             self.ells = np.arange(2.,i+2.,1.)
-            print "Warning: no ell column detected. Assuming ell range is 2 to ~number of rows."    
+            print("Warning: no ell column detected. Assuming ell range is 2 to ~number of rows.")    
             #print "First column is ells"
 
         #if colnum>-1: return self.getCol(colnum,norm=norm,transpower=[0.,1.])
@@ -75,7 +75,7 @@ class smartCls:
                     m = l*(l+1.)/2./pi
                     
                 else:
-                    print "ERROR: unrecognized norm factor"
+                    print("ERROR: unrecognized norm factor")
                     sys.exit(1)
 
 
@@ -114,7 +114,7 @@ def makeTemplate(l,Fl,mod,Nx,Ny,debug=False):
 
     
     if debug:
-        print kk
+        print(kk)
         myFig = Plotter("$l$","$F_l$",scaleX="log",scaleY="log")
         #myFig.add(l,Fl)
         myFig.add(ll,kk)
@@ -177,7 +177,7 @@ def loadCls(fileName, colnum, lpad, lmax, factorout="none"):
     elif factorout=="l3":
         uCellR=np.array([c*2./(l**3.) for c,l in zip(uCell,ell)])
     else:
-        print bcolors.FAIL+"ERROR: Unrecognized argument ", factorout," for factorout."+bcolors.ENDC
+        print((bcolors.FAIL+"ERROR: Unrecognized argument ", factorout," for factorout."+bcolors.ENDC))
         sys.exit()
 
 
@@ -185,7 +185,7 @@ def loadCls(fileName, colnum, lpad, lmax, factorout="none"):
     lFi.close()
 
     k=int(ell.max())
-    apell = range(k+1,lmax)
+    apell = list(range(k+1,lmax))
     lastval = uCellR[-1]
 
 
@@ -249,7 +249,7 @@ def loadBinFile(binfile,delimiter='\t',returnBinner=True):
     try:
         center = mat[:,2]
     except:
-        print "coreStats.py:loadBinFile says \"Third column absent in binfile. Using mean of left and right edges.\""
+        print("coreStats.py:loadBinFile says \"Third column absent in binfile. Using mean of left and right edges.\"")
         center = (left+right)/2.
 
     if returnBinner:

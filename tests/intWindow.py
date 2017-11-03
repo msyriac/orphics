@@ -14,4 +14,4 @@ x.addDeltaNz("jiagalaxy",zsource=2.0)
 
 import numpy as np        
 
-print -np.trapz(x.kernels['jiagalaxy']['W'],x.zs)
+print((-np.trapz(x.kernels['jiagalaxy']['W'],x.zs)))

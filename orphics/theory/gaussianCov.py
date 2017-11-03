@@ -50,7 +50,7 @@ class LensForecast:
 
     def loadSS(self,ellsCls,Cls,ngal,shapeNoise=0.3):
         if shapeNoise==None or shapeNoise<1.e-9:
-            print "No/negligible shape noise given. Using default = 0.3."
+            print("No/negligible shape noise given. Using default = 0.3.")
             self.shapeNoise=0.3
 
         else:             

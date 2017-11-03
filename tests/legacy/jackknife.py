@@ -67,7 +67,7 @@ def getTaperedMap(lkk,clkk,templateMapLoc = "../DerivGen/data/order5_lensedCMB_T
             if j==Neach-1: ty1 -= buffery
             
             
-            print tx0,tx1,ty0,ty1
+            print((tx0,tx1,ty0,ty1))
             smap = templateMap.selectSubMap(tx0,tx1,ty0,ty1, safe = False)
             #print smap.info()
             
@@ -121,12 +121,12 @@ estcls = []
 for i in range(N):
 
     kappaMap,taperMap = getTaperedMap(lkk,clkk)
-    print kappaMap.data.shape
-    print kappaMap.info()
+    print((kappaMap.data.shape))
+    print((kappaMap.info()))
     sys.exit()
     lower, upper, center, bin_means = getBinnedPower(kappaMap,tempBinfile,taperMap)
     estcls.append(bin_means)
-    print i
+    print(i)
 
 clmeans, covMean, cov, errMean,err,corrcoef = getStats(estcls,N)
 

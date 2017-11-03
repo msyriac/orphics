@@ -34,9 +34,9 @@ myInt.addStepNz('cmbStep2',myInt.zstar-2.,myInt.zstar-1.)
 
 
 
-print "getting cls.."
+print("getting cls..")
 
-ellrange = range(2,ellmax,1)
+ellrange = list(range(2,ellmax,1))
 myInt.generateCls(ellrange)
 truthCl = myInt.getCl("cmb","cmb")
 estCl1 = myInt.getCl("cmbDelta","cmbDelta")
@@ -44,7 +44,7 @@ estCl2 = myInt.getCl("cmbStep1","cmbStep1")
 estCl3 = myInt.getCl("cmbStep2","cmbStep2")
 elapsedTime = time.time() - startTime
 
-print "Estimation took ", elapsedTime , " seconds."
+print(("Estimation took ", elapsedTime , " seconds."))
 
     
 
@@ -73,5 +73,5 @@ for clNow,lab in zip([truthCl,estCl1,estCl2,estCl3],["truth","delta","step 40", 
     intmm = interp1d(ellrange,clNow,bounds_error=False,fill_value=0.)(ells)
 
     rat = intmm/LF.theory.gCl("kk",ells)
-    print lab,(np.abs(rat[np.logical_and(ells>500.,ells<2000.)]-1.)).max()*100., " %"
+    print((lab,(np.abs(rat[np.logical_and(ells>500.,ells<2000.)]-1.)).max()*100., " %"))
     

@@ -81,7 +81,7 @@ class Cosmology(object):
             self.clttfunc = interp1d(ells,cltts,bounds_error=False,fill_value=0.)
 
         elif not(skipCls):
-            print "Generating theory Cls..."
+            print("Generating theory Cls...")
             self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
             self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
             theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless)
@@ -144,7 +144,7 @@ class LimberCosmology(Cosmology):
 
 
     def _initPower(self,pkgrid_override=None):
-        print "initializing power..."
+        print("initializing power...")
         if pkgrid_override is None:
             self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zs[-1])
         else:
@@ -172,9 +172,9 @@ class LimberCosmology(Cosmology):
 
         retList = {}
         if autoOnly:
-            listKeys = zip(self.kernels.keys(),self.kernels.keys())
+            listKeys = list(zip(list(self.kernels.keys()),list(self.kernels.keys())))
         else:
-            listKeys = list(itertools.combinations_with_replacement(self.kernels.keys(),2))
+            listKeys = list(itertools.combinations_with_replacement(list(self.kernels.keys()),2))
             
         for key1,key2 in listKeys:
             retList[key1+","+key2] = []
@@ -204,7 +204,7 @@ class LimberCosmology(Cosmology):
         except KeyError:
             return self.Clmatrix[key2+","+key1]
         except:
-            print "Key combination not found"
+            print("Key combination not found")
             raise
             
             
@@ -243,7 +243,7 @@ class LimberCosmology(Cosmology):
     
     def addDeltaNz(self,tag,zsource,bias=None,magbias=None):
 
-        assert not(tag in self.kernels.keys()), "Tag already exists."
+        assert not(tag in list(self.kernels.keys())), "Tag already exists."
         assert tag!="cmb", "cmb is a tag reserved for cosmic microwave background. Use a different tag."
         
         
@@ -255,7 +255,7 @@ class LimberCosmology(Cosmology):
           
             
     def addStepNz(self,tag,zmin,zmax,bias=None,magbias=None,numzIntegral=300):
-        assert not(tag in self.kernels.keys()), "Tag already exists."
+        assert not(tag in list(self.kernels.keys())), "Tag already exists."
         assert tag!="cmb", "cmb is a tag reserved for cosmic microwave background. Use a different tag."
         
         self.kernels[tag] = {}
@@ -274,7 +274,7 @@ class LimberCosmology(Cosmology):
         If magbias provided, applies it as magnification bias assuming it is 's' in Eq 7 of Omuri Holder. Bias must be provided too.
         '''
 
-        assert not(tag in self.kernels.keys()), "Tag already exists."
+        assert not(tag in list(self.kernels.keys())), "Tag already exists."
         assert tag!="cmb", "cmb is a tag reserved for cosmic microwave background. Use a different tag."
         
             
@@ -289,7 +289,7 @@ class LimberCosmology(Cosmology):
         self._generateWindow(tag,bias,magbias,numzIntegral)
 
     def _generateWindow(self,tag,bias,magbias,numzIntegral):
-        print "Initializing galaxy window for ", tag , " ..."
+        print(("Initializing galaxy window for ", tag , " ..."))
         if bias==None:
 
             retvals = self._lensWindow(self.kernels[tag],numzIntegral)
@@ -307,8 +307,8 @@ class LimberCosmology(Cosmology):
                 retvals = self._lensWindow(self.kernels[tag],numzIntegral)
                 magcorrection = retvals*1.5*(self.omch2+self.ombh2+self.omnuh2)*100.*100.*(1.+self.zs)*self.chis*(5.*magbias-2.)/self.Hzs**2./self._cSpeedKmPerSec # this needs to be checked again
                 self.kernels[tag]['W'] += magcorrection
-                print "Lensing bias max percent correction in counts ", np.max((np.nan_to_num(magcorrection *100./ self.kernels[tag]['W'])))
-                print "Lensing bias min percent correction in counts ", np.min((np.nan_to_num(magcorrection *100./ self.kernels[tag]['W'])))
+                print(("Lensing bias max percent correction in counts ", np.max((np.nan_to_num(magcorrection *100./ self.kernels[tag]['W'])))))
+                print(("Lensing bias min percent correction in counts ", np.min((np.nan_to_num(magcorrection *100./ self.kernels[tag]['W'])))))
 
 
             
@@ -317,7 +317,7 @@ class LimberCosmology(Cosmology):
 
     def _initWkappaCMB(self):#,numz):
 
-        print "Initializing CMB window.."
+        print("Initializing CMB window..")
         chirange = self.chis
         
         iwcmb =  1.5*(self.omch2+self.ombh2+self.omnuh2)*100.*100.*(1.+self.zs)*self.chis*((self.chistar - self.chis)/self.chistar)/self.Hzs/self._cSpeedKmPerSec

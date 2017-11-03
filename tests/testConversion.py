@@ -15,5 +15,5 @@ cnside = ctypes.c_long(nside)
 pixE = deg2pix.getPixIndexEquatorial(cnside,ctypes.c_double(ra),ctypes.c_double(dec))
 pixG = deg2pix.getPixIndexGalactic(cnside,ctypes.c_double(ra),ctypes.c_double(dec))
 
-print pixE,pixG
+print((pixE,pixG))
 
