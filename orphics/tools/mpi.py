@@ -1,4 +1,3 @@
-
 import numpy as np
 import os
 
@@ -106,7 +105,7 @@ class MPIStats(object):
             for k,label in enumerate(self.little_stack.keys()):
                 self.stack_count[label] = self.little_stack_count[label]
                 for core in self.loopover: #range(1,self.numcores):
-                    if verbose: print(("Waiting for core ", core , " / ", self.numcores))
+                    if verbose: print("Waiting for core ", core , " / ", self.numcores)
                     data = self.comm.recv(source=core, tag=self.tag_start*3000+k)
                     self.stack_count[label] += data
 
@@ -114,7 +113,7 @@ class MPIStats(object):
             for k,label in enumerate(self.little_stack.keys()):
                 self.stacks[label] = self.little_stack[label]
             for core in self.loopover: #range(1,self.numcores):
-                if verbose: print(("Waiting for core ", core , " / ", self.numcores))
+                if verbose: print("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.little_stack.keys()):
                     expected_shape = self.little_stack[label].shape
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
@@ -147,7 +146,7 @@ class MPIStats(object):
                 self.numobj[label] = []
                 self.numobj[label].append(np.array(self.vectors[label]).shape[0])
                 for core in self.loopover: #range(1,self.numcores):
-                    if verbose: print(("Waiting for core ", core , " / ", self.numcores))
+                    if verbose: print("Waiting for core ", core , " / ", self.numcores)
                     data = self.comm.recv(source=core, tag=self.tag_start*2000+k)
                     self.numobj[label].append(data)
 
@@ -155,7 +154,7 @@ class MPIStats(object):
             for k,label in enumerate(self.vectors.keys()):
                 self.vectors[label] = np.array(self.vectors[label])
             for core in self.loopover: #range(1,self.numcores):
-                if verbose: print(("Waiting for core ", core , " / ", self.numcores))
+                if verbose: print("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.vectors.keys()):
                     expected_shape = (self.numobj[label][core],self.vectors[label].shape[1])
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
