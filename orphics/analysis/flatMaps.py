@@ -236,9 +236,10 @@ class PatchArray(object):
         map_dimensionless=self.dimensionless
         TCMB=self.TCMB
 
+
         
         self.nT = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_T,lknee_T,alpha_T,
-                                      map_dimensionless,TCMB)
+                                                map_dimensionless,TCMB)
         
         if noise_uK_arcmin_P is None and np.isclose(lknee_T,lknee_P) and np.isclose(alpha_T,alpha_P):
             self.nP = 2.*self.nT.copy()
