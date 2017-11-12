@@ -1,3 +1,4 @@
+from __future__ import print_function
 import camb
 from math import pi
 from orphics.tools.cmb import loadTheorySpectraFromPycambResults

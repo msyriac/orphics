@@ -6,6 +6,7 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 from orphics.tools.stats import timeit
 import orphics.tools.cmb as cmb
 from enlib.fft import fft,ifft
+import itertools
 
 from enlib import enmap
 try:
@@ -14,6 +15,148 @@ except:
     import logging
     logging.warning("Couldn't load enlib.lensing. Some functionality may be missing.")
 
+
+class HealpixProjector(object):
+    """Project a healpix map to an enmap of chosen shape and wcs. The wcs
+    is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
+    is in galactic coordinates, this can be specified by hp_coords, and a
+    slow conversion is done. No coordinate systems other than equatorial
+    or galactic are currently supported. Only intensity maps are supported.
+    If interpolate is True, bilinear interpolation using 4 nearest neighbours
+    is done.
+    """
+    
+    def __init__(self,shape,wcs,hp_coords="galactic"):
+        """
+	shape -- 2-tuple (Ny,Nx)
+	wcs -- enmap wcs object in equatorial coordinates
+	hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
+        """
+	from astropy.coordinates import SkyCoord
+	import astropy.units as u
+        
+	self.wcs = wcs
+        self.shape = shape
+        Ny,Nx = shape
+
+	inds = np.indices([Nx,Ny])
+	self.x = inds[0].ravel()
+	self.y = inds[1].ravel()
+
+	# Not as slow as you'd expect
+	posmap = enmap.pix2sky(shape,wcs,np.vstack((self.y,self.x)))*180./np.pi
+
+	ph = posmap[1,:]
+	th = posmap[0,:]
+
+        eq_coords = ['fk5','j2000','equatorial']
+	gal_coords = ['galactic']
+        if hp_coords.lower() not in eq_coords:
+            # This is still the slowest part. If there are faster coord transform libraries, let me know!
+	    assert hp_coords.lower() in gal_coords
+	    gc = SkyCoord(ra=ph*u.degree, dec=th*u.degree, frame='fk5')
+	    gc = gc.transform_to('galactic')
+	    self.phOut = gc.l.deg
+	    self.thOut = gc.b.deg
+	else:
+	    self.thOut = th
+	    self.phOut = ph
+
+	self.phOut *= np.pi/180
+	self.thOut = 90. - self.thOut #polar angle is 0 at north pole
+	self.thOut *= np.pi/180
+
+
+    def project(self,hp_map,interpolate=True):
+        """
+	hp_map -- array-like healpix map
+	interpolate -- boolean
+	"""
+	
+	import healpy as hp
+        imap = enmap.zeros(self.shape,self.wcs)
+	
+	# Not as slow as you'd expect
+        if interpolate:
+            imap[self.y,self.x] = hp.get_interp_val(hp_map, self.thOut, self.phOut)
+	else:
+	    ind = hp.ang2pix( hp.get_nside(hp_map), self.thOut, self.phOut )
+	    imap[:] = 0.
+	    imap[[self.y,self.x]]=hp_map[ind]
+		
+		
+		
+        return enmap.ndmap(imap,self.wcs)
+
+    
+def mean_autos(splits,power_func):
+    Nsplits = len(splits)
+    return sum([power_func(split) for split in splits])/Nsplits
+
+def mean_crosses(splits,power_func):
+    Nsplits = len(splits)
+    cross_splits = [y for y in itertools.combinations(splits,2)]
+    
+    Ncrosses = len(cross_splits)
+    assert Ncrosses==(Nsplits*(Nsplits-1)/2)
+    return sum([power_func(split1,split2) for (split1,split2) in cross_splits])/Ncrosses
+
+def noise_from_splits(splits,power_func):
+
+    Nsplits = len(splits)
+    auto = mean_autos(splits,power_func)    
+    cross = mean_crosses(splits,power_func)
+    noise = (auto-cross)/Nsplits
+    
+    return noise,cross
+
+
+class DataMap(object):
+
+    """
+    Given n split CMB maps
+    
+    we want
+
+    2d noise
+    
+
+    """
+    
+    def __init__(self,cmaps,mask,wmap=None,kmask=None,coadd=None,kbeam=None,downsample=None):
+        """
+        cmaps - list of CMB splits
+        wmaps - hit map
+        taper - mask + taper
+        kmask - 2d fourier space mask
+        coadd - coadd of splits, or unsplit map
+        kbeam - 2d fourier space beam+pixwin transform
+        
+        """
+        nsplits = len(cmaps)
+        assert nsplits>1
+
+        shape,wcs = cmaps[0].shape,cmaps[0].wcs
+        assert all(x.shape == cmaps[0].shape for x in cmaps)
+        assert all(x.wcs == cmaps[0].wcs for x in cmaps)
+        
+
+
+    def get_map(self,fourier=False,deconvolve=False):
+        pass
+
+    
+    def noise_2d(self):
+        pass
+
+    
+    
+    def power_from_auto(self,deconvolve=True):
+        pass
+    
+    def power_from_cross(self,deconvolve=True):
+        pass
+    
 class MapRotator(object):
     def __init__(self,shape_source,wcs_source,shape_target,wcs_target):
         self.pix_target = get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target)
