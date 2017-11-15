@@ -7,6 +7,7 @@ from orphics.tools.stats import timeit
 import orphics.tools.cmb as cmb
 from enlib.fft import fft,ifft
 import itertools
+import orphics.tools.io as io
 
 from enlib import enmap
 try:
@@ -16,6 +17,124 @@ except:
     logging.warning("Couldn't load enlib.lensing. Some functionality may be missing.")
 
 
+def kfilter_map(imap,kfilter):
+    return np.real(ifft(fft(imap,axes=[-2,-1])*kfilter,axes=[-2,-1],normalize=True)) 
+
+    
+class NoiseModel(object):
+
+    def __init__(self,splits=None,wmap=None,mask=None,kmask=None,directory=None,spec_smooth_width=2.,skip_beam=True,skip_mask=True,skip_kmask=True,skip_cross=True,iau_convention=False):
+        """
+        shape, wcs for geometry
+        unmasked splits
+        hit counts wmap
+        real-space mask that must include a taper. Can be 3-dimensional if Q/U different from I.
+        k-space kmask
+        """
+
+        if directory is not None:
+            self._load(directory,skip_beam,skip_mask,skip_kmask,skip_cross)
+        else:
+            
+            shape = splits[0].shape
+            wcs = splits[0].wcs
+
+            if wmap is None: wmap = enmap.ones(shape[-2:],wcs)
+            if mask is None: mask = np.ones(shape[-2:])
+            if kmask is None: kmask = np.ones(shape[-2:])
+
+            wmap = enmap.ndmap(wmap,wcs)
+
+            osplits = [split*mask for split in splits]
+            fc = enmap.FourierCalc(shape,wcs,iau_convention)
+            n2d, p2d = noise_from_splits(osplits,fc)
+            w2 = np.mean(mask**2.)
+            n2d *= (1./w2)
+            p2d *= (1./w2)
+
+            n2d = enmap.smooth_spectrum(n2d, kernel="gauss", weight="mode", width=spec_smooth_width)
+            self.spec_smooth_width = spec_smooth_width
+            ncomp = shape[0] if len(shape)>2 else 1
+            
+            self.cross2d = p2d
+            self.cross2d *= kmask
+            n2d *= kmask
+            self.noise2d = n2d.reshape((ncomp,ncomp,shape[-2],shape[-1]))
+            self.mask = mask
+            self.kmask = kmask
+            self.wmap = wmap
+            self.shape = shape
+            self.wcs = wcs
+        self.ngen = enmap.MapGen(self.shape,self.wcs,self.noise2d)
+        #self.noise_modulation = 1./np.sqrt(self.wmap)/np.sqrt(np.mean((1./self.wmap)))
+        wt = 1./np.sqrt(self.wmap)
+        wtw2 = np.mean(1./wt**2.)
+        self.noise_modulation = wt*np.sqrt(wtw2)
+
+
+    def _load(self,directory,skip_beam=True,skip_mask=True,skip_kmask=True,skip_cross=True):
+
+        self.wmap = enmap.read_hdf(directory+"/wmap.hdf")
+        
+        self.wcs = self.wmap.wcs
+        self.noise2d = np.load(directory+"/noise2d.npy")
+        if not(skip_mask): self.mask = enmap.read_hdf(directory+"/mask.hdf")
+        if not(skip_cross): self.cross2d = np.load(directory+"/cross2d.npy")
+        if not(skip_beam): self.kbeam2d = np.load(directory+"/kbeam2d.npy")
+        if not(skip_kmask): self.kmask = np.load(directory+"/kmask.npy")
+        loadnum = np.loadtxt(directory+"/spec_smooth_width.txt")
+        assert loadnum.size==1
+        self.spec_smooth_width = float(loadnum.ravel()[0])
+
+        loadnum = np.loadtxt(directory+"/shape.txt")
+        self.shape = tuple([int(x) for x in loadnum.ravel()])
+
+    def save(self,directory):
+        io.mkdir(directory)
+        
+        
+        enmap.write_hdf(directory+"/wmap.hdf",self.wmap)
+        enmap.write_hdf(directory+"/mask.hdf",self.mask)
+        np.save(directory+"/noise2d.npy",self.noise2d)
+        np.save(directory+"/cross2d.npy",self.cross2d)
+        np.save(directory+"/kmask.npy",self.kmask)
+        try: np.save(directory+"/kbeam2d.npy",self.kbeam2d)
+        except: pass
+        np.savetxt(directory+"/spec_smooth_width.txt",np.array(self.spec_smooth_width).reshape((1,1)))
+        np.savetxt(directory+"/shape.txt",np.array(self.shape))
+
+
+        
+        
+
+    def get_noise_sim(self,seed):
+        return self.ngen.get_map(seed=seed,scalar=True) * self.noise_modulation
+        
+    def add_beam_1d(self,ells,beam_1d_transform):
+        modlmap = enmap.modlmap(self.shape[-2:],self.wcs)
+        self.kbeam2d = interp1d(ells,beam_1d_transform,bounds_error=False,fill_value=0.)(modlmap)
+    def add_beam_2d(self,beam_2d_transform):
+        assert self.shape[-2:]==beam_2d_transform.shape
+        self.kbeam2d = beam_2d_transform
+    
+
+
+
+def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
+    output = np.ones(shape[-2:], dtype = int)
+    if (lmin is not None) or (lmax is not None): modlmap = enmap.modlmap(shape, wcs)
+    if (lxcut is not None) or (lycut is not None): ly, lx = enmap.laxes(shape, wcs, oversample=1)
+    if lmin is not None:
+        output[np.where(modlmap <= lmin)] = 0
+    if lmax is not None:
+        output[np.where(modlmap >= lmax)] = 0
+    if lxcut is not None:
+        output[:,np.where(np.abs(lx) < lxcut)] = 0
+    if lycut is not None:
+        output[np.where(np.abs(ly) < lycut),:] = 0
+    return output
+
+    
 class HealpixProjector(object):
     """Project a healpix map to an enmap of chosen shape and wcs. The wcs
     is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
@@ -89,73 +208,60 @@ class HealpixProjector(object):
         return enmap.ndmap(imap,self.wcs)
 
     
-def mean_autos(splits,power_func):
-    Nsplits = len(splits)
-    return sum([power_func(split) for split in splits])/Nsplits
+# def mean_autos(splits,power_func):
+#     Nsplits = len(splits)
+#     return sum([power_func(split) for split in splits])/Nsplits
 
-def mean_crosses(splits,power_func):
-    Nsplits = len(splits)
-    cross_splits = [y for y in itertools.combinations(splits,2)]
+# def mean_crosses(splits,power_func):
+#     Nsplits = len(splits)
+#     cross_splits = [y for y in itertools.combinations(splits,2)]
     
+#     Ncrosses = len(cross_splits)
+#     assert Ncrosses==(Nsplits*(Nsplits-1)/2)
+#     return sum([power_func(split1,split2) for (split1,split2) in cross_splits])/Ncrosses
+
+# def noise_from_splits(splits,power_func):
+
+#     Nsplits = len(splits)
+#     auto = mean_autos(splits,power_func)    
+#     cross = mean_crosses(splits,power_func)
+#     noise = (auto-cross)/Nsplits
+    
+#     return noise,cross
+
+
+def noise_from_splits(splits,fourier_calc,nthread=0):
+
+    Nsplits = len(splits)
+
+    # Get fourier transforms of I,Q,U
+    ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
+
+    # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
+    kteb_splits = []
+    for ksplit in ksplits:
+        kteb_splits.append( ksplit.copy())
+        kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
+
+    # get auto power of I,Q,U
+    auto = sum([fourier_calc.power2d(kmap=ksplit)[0] for ksplit in ksplits])/Nsplits
+
+    # do cross powers of I,Q,U
+    cross_splits = [y for y in itertools.combinations(ksplits,2)]
     Ncrosses = len(cross_splits)
     assert Ncrosses==(Nsplits*(Nsplits-1)/2)
-    return sum([power_func(split1,split2) for (split1,split2) in cross_splits])/Ncrosses
+    cross = sum([fourier_calc.power2d(kmap=ksplit1,kmap2=ksplit2)[0] for (ksplit1,ksplit2) in cross_splits])/Ncrosses
 
-def noise_from_splits(splits,power_func):
+    # do cross powers of T,E,B
+    cross_teb_splits = [y for y in itertools.combinations(kteb_splits,2)]
+    cross_teb = sum([fourier_calc.power2d(kmap=ksplit1,kmap2=ksplit2)[0] for (ksplit1,ksplit2) in cross_teb_splits])/Ncrosses
 
-    Nsplits = len(splits)
-    auto = mean_autos(splits,power_func)    
-    cross = mean_crosses(splits,power_func)
+    # get noise model for I,Q,U
     noise = (auto-cross)/Nsplits
-    
-    return noise,cross
 
+    # return I,Q,U noise model and T,E,B cross-power
+    return noise,cross_teb
 
-class DataMap(object):
-
-    """
-    Given n split CMB maps
-    
-    we want
-
-    2d noise
-    
-
-    """
-    
-    def __init__(self,cmaps,mask,wmap=None,kmask=None,coadd=None,kbeam=None,downsample=None):
-        """
-        cmaps - list of CMB splits
-        wmaps - hit map
-        taper - mask + taper
-        kmask - 2d fourier space mask
-        coadd - coadd of splits, or unsplit map
-        kbeam - 2d fourier space beam+pixwin transform
-        
-        """
-        nsplits = len(cmaps)
-        assert nsplits>1
-
-        shape,wcs = cmaps[0].shape,cmaps[0].wcs
-        assert all(x.shape == cmaps[0].shape for x in cmaps)
-        assert all(x.wcs == cmaps[0].wcs for x in cmaps)
-        
-
-
-    def get_map(self,fourier=False,deconvolve=False):
-        pass
-
-    
-    def noise_2d(self):
-        pass
-
-    
-    
-    def power_from_auto(self,deconvolve=True):
-        pass
-    
-    def power_from_cross(self,deconvolve=True):
-        pass
     
 class MapRotator(object):
     def __init__(self,shape_source,wcs_source,shape_target,wcs_target):
