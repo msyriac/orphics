@@ -112,16 +112,6 @@ def slowRotatorGtoC(hpMap,nside,verbose=True):
     return hp.ud_grade(retMap,nside)
     
 
-def quickMapView(hpMap,saveLoc=None,min=None,max=None,transform='C',**kwargs):
-    '''
-    Input map in galactic is shown in equatorial
-    '''
-
-    hp.mollview(hpMap,min=min,max=max,coord=transform,**kwargs)
-    if saveLoc==None: saveLoc="output/debug.png"
-    matplotlib.pyplot.savefig(saveLoc)
-
-    print((bcolors.OKGREEN+"Saved healpix plot to", saveLoc+bcolors.ENDC))
 
 
 class healpixTools:

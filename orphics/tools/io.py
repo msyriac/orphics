@@ -14,6 +14,16 @@ try:
 except:
     dout_dir = "."
 
+def quickMapView(hpMap,saveLoc=None,min=None,max=None,transform='C',**kwargs):
+    '''
+    Input map in galactic is shown in equatorial
+    '''
+    import healpy as hp
+    hp.mollview(hpMap,min=min,max=max,coord=transform,**kwargs)
+    if saveLoc==None: saveLoc="output/debug.png"
+    matplotlib.pyplot.savefig(saveLoc)
+
+    print(bcolors.OKGREEN+"Saved healpix plot to", saveLoc+bcolors.ENDC)
 
 def save_dict_to_hdf5(dic, filename):
     """

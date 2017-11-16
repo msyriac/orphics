@@ -1,6 +1,36 @@
-
 import numpy as np
 from enlib import enmap, coordinates
+
+
+class HealpixCatMapper(object):
+
+    def __init__(self,nside,ras_deg,decs_deg):
+        import healpy as hp
+        print( "Calculating pixels...")
+        self.pixs = hp.ang2pix(nside,ras_deg,decs_deg,lonlat=True)
+        print( "Done with pixels...")
+        self.nside = nside
+        self.npix = hp.nside2npix(nside)
+        self.counts = self.get_map()
+
+    def get_map(self,weights=None):
+        print("Calculating histogram...")
+        return np.histogram(self.pixs,bins=self.npix,weights=weights,range=[0,self.npix])[0]
+
+    def _counts(self):
+        cts = self.counts.copy()
+        cts[self.mask<0.9] = np.nan
+        self.ngals = np.nansum(cts)
+        self.nmean = np.nanmean(cts)
+        area_sqdeg = enmap.area(self.shape,self.wcs)*(180./np.pi)**2.
+        self.frac = self.mask.sum()*1./self.mask.size
+        self.area_sqdeg = self.frac*area_sqdeg
+        self.ngal_per_arcminsq  = self.ngals/(self.area_sqdeg*60.*60.)
+
+    def get_delta(self):
+        return (self.counts/self.nmean-1.)
+    
+
 
 class CatMapper(object):
 

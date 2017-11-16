@@ -14,6 +14,8 @@ defaultConstants['TCMB'] = 2.7255
 defaultConstants['G_CGS'] = 6.67259e-08
 defaultConstants['MSUN_CGS'] = 1.98900e+33
 defaultConstants['MPC2CM'] = 3.085678e+24
+defaultConstants['ERRTOL'] = 1e-12
+
 
 defaultCosmology = {}
 defaultCosmology['omch2'] = 0.12470
