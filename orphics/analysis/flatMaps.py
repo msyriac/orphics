@@ -266,8 +266,8 @@ def noise_from_splits(splits,fourier_calc,nthread=0):
 class MapRotator(object):
     def __init__(self,shape_source,wcs_source,shape_target,wcs_target):
         self.pix_target = get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target)
-    def rotate(self,imap):
-        return rotate_map(imap,pix_target=self.pix_target)
+    def rotate(self,imap,**kwargs):
+        return rotate_map(imap,pix_target=self.pix_target,**kwargs)
 
 class MapRotatorEquator(MapRotator):
     def __init__(self,shape_source,wcs_source,patch_width,patch_height,width_multiplier=1.,
@@ -310,8 +310,8 @@ class MapRotatorEquator(MapRotator):
             
         MapRotator.__init__(self,shape_source,wcs_source,shape_target,wcs_target)
 
-    def rotate(self,imap):
-        rotated = MapRotator.rotate(self,imap)
+    def rotate(self,imap,**kwargs):
+        rotated = MapRotator.rotate(self,imap,**kwargs)
 
         if self.downsample:
             from enlib import resample
@@ -362,13 +362,13 @@ def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=F
 
     return pix_new
 
-def rotate_map(imap,shape_target=None,wcs_target=None,pix_target=None):
+def rotate_map(imap,shape_target=None,wcs_target=None,pix_target=None,**kwargs):
     if pix_target is None:
         pix_target = get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target)
     else:
         assert (shape_target is None) and (wcs_target is None), "Both pix_target and shape_target,wcs_target must not be specified."
 
-    rotmap = enmap.at(imap,pix_target,unit="pix")
+    rotmap = enmap.at(imap,pix_target,unit="pix",**kwargs)
     return rotmap
     
     

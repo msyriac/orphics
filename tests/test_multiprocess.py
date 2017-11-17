@@ -5,7 +5,7 @@ from math import ceil
 import multiprocessing
 
 # number of coordinates to transform
-N = 48000013
+N = 96000013
 
 # this should be obtained using multiprocessing.get_cpu_count()
 Njobs = 12
