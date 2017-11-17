@@ -25,8 +25,8 @@ class Stats(object):
             self.comm = fakeMpiComm()
 
             
-        self.rank = comm.Get_rank()
-        self.numcores = comm.Get_size()
+        self.rank = self.comm.Get_rank()
+        self.numcores = self.comm.Get_size()
             
             
         self.vectors = {}

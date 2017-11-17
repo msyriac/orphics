@@ -14,6 +14,15 @@ except:
     dout_dir = "."
 
 
+
+def load_path_config():
+    if os.path.exists('input/paths_local.ini'):
+        return config_from_file('input/paths_local.ini')
+    elif os.path.exists('input/paths.ini'):
+        return config_from_file('input/paths.ini')
+    else:
+        raise IOError
+    
 def save_cols(filename,tuple_of_vectors,**kwargs):
     tuple_of_vectors = np.asarray(tuple_of_vectors)
     save_mat = np.vstack(tuple_of_vectors).T
