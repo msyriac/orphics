@@ -14,6 +14,11 @@ except:
     dout_dir = "."
 
 
+def save_cols(filename,tuple_of_vectors,**kwargs):
+    tuple_of_vectors = np.asarray(tuple_of_vectors)
+    save_mat = np.vstack(tuple_of_vectors).T
+    np.savetxt(filename,save_mat,**kwargs)
+
 def config_from_file(filename):
     assert os.path.isfile(filename) 
     from configparser import SafeConfigParser 
