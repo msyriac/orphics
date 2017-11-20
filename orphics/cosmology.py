@@ -1,7 +1,6 @@
 from __future__ import print_function
 import camb
 from math import pi
-from orphics.tools.cmb import loadTheorySpectraFromPycambResults
 from camb import model, initialpower
 import numpy as np
 
@@ -330,3 +329,199 @@ class LimberCosmology(Cosmology):
                 
                 
 
+def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True):
+    '''
+
+    The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
+    be used with dimensionless noise spectra and dimensionless maps.
+
+    All ell and 2pi factors are also stripped off.
+
+ 
+    '''
+
+    
+    if get_dimensionless:
+        tmul = 1.
+    else:
+        tmul = TCMB**2.
+        
+    if useTotal:
+        uSuffix = "unlensed_total"
+        lSuffix = "total"
+    else:
+        uSuffix = "unlensed_scalar"
+        lSuffix = "lensed_scalar"
+
+    try:
+        assert pickling
+        clfile = "output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl"
+        cmbmat = pickle.load(open(clfile,'rb'))
+        print("Loaded cached Cls from ", clfile)
+    except:
+        cmbmat = results.get_cmb_power_spectra(pars)
+        if pickling:
+            import os
+            directory = "output/"
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            pickle.dump(cmbmat,open("output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
+
+    theory = TheorySpectra()
+    for i,pol in enumerate(['TT','EE','BB','TE']):
+        cls =cmbmat[lSuffix][2:,i]
+
+        ells = np.arange(2,len(cls)+2,1)
+        cls *= 2.*np.pi/ells/(ells+1.)*tmul
+        theory.loadCls(ells,cls,pol,lensed=True,interporder="linear",lpad=lpad,fill_zero=fill_zero)
+
+        if unlensedEqualsLensed:
+            theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad,fill_zero=fill_zero)            
+        else:
+            cls = cmbmat[uSuffix][2:,i]
+            ells = np.arange(2,len(cls)+2,1)
+            cls *= 2.*np.pi/ells/(ells+1.)*tmul
+            theory.loadCls(ells,cls,pol,lensed=False,interporder="linear",lpad=lpad,fill_zero=fill_zero)
+
+    try:
+        assert pickling
+        clfile = "output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt"
+        clphi = np.loadtxt(clfile)
+        print("Loaded cached Cls from ", clfile)
+    except:
+        lensArr = results.get_lens_potential_cls(lmax=kellmax)
+        clphi = lensArr[2:,0]
+        if pickling:
+            import os
+            directory = "output/"
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            np.savetxt("output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt",clphi)
+
+    clkk = clphi* (2.*np.pi/4.)
+    ells = np.arange(2,len(clkk)+2,1)
+    theory.loadGenericCls(ells,clkk,"kk",lpad=lpad,fill_zero=fill_zero)
+
+
+    return theory
+
+
+
+class TheorySpectra:
+    '''
+    Essentially just an interpolator that takes a CAMB-like
+    set of discrete Cls and provides lensed and unlensed Cl functions
+    for use in integrals
+    '''
+    
+
+    def __init__(self):
+
+
+        self._uCl={}
+        self._lCl={}
+        self._gCl = {}
+
+
+    def loadGenericCls(self,ells,Cls,keyName,lpad=9000,fill_zero=True):
+        if not(fill_zero):
+            fillval = Cls[ells<lpad][-1]
+            self._gCl[keyName] = lambda x: np.piecewise(x, [x<=lpad,x>lpad], [lambda y: interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=0.)(y),lambda y: fillval*(lpad/y)**4.])
+
+        else:
+            fillval = 0.            
+            self._gCl[keyName] = interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=fillval)
+        
+
+        
+
+    def gCl(self,keyName,ell):
+
+        if len(keyName)==3:
+            # assume uTT, lTT, etc.
+            ultype = keyName[0].lower()
+            if ultype=="u":
+                return self.uCl(keyName[1:],ell)
+            elif ultype=="l":
+                return self.lCl(keyName[1:],ell)
+            else:
+                raise ValueError
+        
+        try:
+            return self._gCl[keyName](ell)
+        except:
+            return self._gCl[keyName[::-1]](ell)
+        
+    def loadCls(self,ell,Cl,XYType="TT",lensed=False,interporder="linear",lpad=9000,fill_zero=True):
+
+        # Implement ellnorm
+
+        mapXYType = XYType.upper()
+        validateMapType(mapXYType)
+
+
+        if not(fill_zero):
+            fillval = Cl[ell<lpad][-1]
+            f = lambda x: np.piecewise(x, [x<=lpad,x>lpad], [lambda y: interp1d(ell[ell<lpad],Cl[ell<lpad],bounds_error=False,fill_value=0.)(y),lambda y: fillval*(lpad/y)**4.])
+
+        else:
+            fillval = 0.            
+            f = interp1d(ell[ell<lpad],Cl[ell<lpad],bounds_error=False,fill_value=fillval)
+                    
+        # if not(fill_zero):
+        #     fillval = Cl[ell<lpad][-1]
+        # else:
+        #     fillval = 0.
+            
+        # f=interp1d(ell[ell<lpad],Cl[ell<lpad],kind=interporder,bounds_error=False,fill_value=fillval)
+        
+        if lensed:
+            self._lCl[XYType]=f
+        else:
+            self._uCl[XYType]=f
+
+    def _Cl(self,XYType,ell,lensed=False):
+
+            
+        mapXYType = XYType.upper()
+        validateMapType(mapXYType)
+
+        if mapXYType=="ET": mapXYType="TE"
+        ell = np.array(ell)
+
+        try:
+            if lensed:    
+                retlist = np.array(self._lCl[mapXYType](ell))
+                return retlist
+            else:
+                retlist = np.array(self._uCl[mapXYType](ell))
+                return retlist
+
+        except:
+            zspecs = ['EB','TB']
+            if (XYType in zspecs) or (XYType[::-1] in zspecs):
+                return ell*0.
+            else:
+                raise
+
+    def uCl(self,XYType,ell):
+        return self._Cl(XYType,ell,lensed=False)
+    def lCl(self,XYType,ell):
+        return self._Cl(XYType,ell,lensed=True)
+    
+    def __getstate__(self):
+        # Clkk2d is not pickled yet!!!
+        return self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY
+
+
+
+    def __setstate__(self, state):
+        self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY = state
+
+
+def validateMapType(mapXYType):
+    assert not(re.search('[^TEB]', mapXYType)) and (len(mapXYType)==2), \
+      bcolors.FAIL+"\""+mapXYType+"\" is an invalid map type. XY must be a two" + \
+      " letter combination of T, E and B. e.g TT or TE."+bcolors.ENDC
+
+        

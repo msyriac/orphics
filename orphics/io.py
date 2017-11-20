@@ -181,10 +181,13 @@ class Plotter(object):
     def vline(self,x=0.,ls="--",alpha=0.5,color="k",**kwargs):
         self._ax.axhline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
 
-    def done(self,filename=dout_dir+"default.png",verbose=True,**kwargs):
+    def done(self,filename=None,verbose=True,**kwargs):
 
-        plt.savefig(filename,bbox_inches='tight',**kwargs)
+        if filename is not None:
+            plt.savefig(filename,bbox_inches='tight',**kwargs)
+            if verbose: cprint("Saved plot to"+ filename,"g")
+        else:
+            plt.show()
 
-        if verbose: cprint("Saved plot to"+ filename,"g")
         plt.close()
     
