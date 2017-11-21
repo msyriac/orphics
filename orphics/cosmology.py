@@ -7,6 +7,12 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 import itertools
+try:
+    import cPickle as pickle
+except:
+    import pickle
+
+import time, re
 
 defaultConstants = {}
 defaultConstants['TCMB'] = 2.7255
@@ -14,6 +20,8 @@ defaultConstants['G_CGS'] = 6.67259e-08
 defaultConstants['MSUN_CGS'] = 1.98900e+33
 defaultConstants['MPC2CM'] = 3.085678e+24
 defaultConstants['ERRTOL'] = 1e-12
+defaultConstants['K_CGS'] = 1.3806488e-16
+defaultConstants['H_CGS'] = 6.62608e-27
 
 
 defaultCosmology = {}

@@ -1,6 +1,6 @@
 from enlib import enmap, utils
 import numpy as np
-
+from enlib.fft import fft,ifft
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
@@ -180,6 +180,9 @@ def get_real_attributes(shape,wcs):
 def filter_map(imap,kfilter):
     return np.real(ifft(fft(imap,axes=[-2,-1])*kfilter,axes=[-2,-1],normalize=True)) 
 
+def gauss_beam(ell,fwhm):
+    tht_fwhm = np.deg2rad(fwhm / 60.)
+    return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
 
 
 
@@ -283,3 +286,73 @@ class NoiseModel(object):
         self.kbeam2d = beam_2d_transform
     
 
+### FULL SKY
+
+
+def cutout_gnomonic(map,rot=None,coord=None,
+             xsize=200,ysize=None,reso=1.5,
+             nest=False,remove_dip=False,
+             remove_mono=False,gal_cut=0,
+             flip='astro'):
+    """Obtain a cutout from a healpix map (given as an array) in Gnomonic projection.
+
+    Parameters
+    ----------
+    map : array-like
+      The map to project, supports masked maps, see the `ma` function.
+    rot : scalar or sequence, optional
+      Describe the rotation to apply.
+      In the form (lon, lat, psi) (unit: degrees) : the point at
+      longitude *lon* and latitude *lat* will be at the center. An additional rotation
+      of angle *psi* around this direction is applied.
+    coord : sequence of character, optional
+      Either one of 'G', 'E' or 'C' to describe the coordinate
+      system of the map, or a sequence of 2 of these to rotate
+      the map from the first to the second coordinate system.
+    xsize : int, optional
+      The size of the image. Default: 200
+    ysize : None or int, optional
+      The size of the image. Default: None= xsize
+    reso : float, optional
+      Resolution (in arcmin). Default: 1.5 arcmin
+    nest : bool, optional
+      If True, ordering scheme is NESTED. Default: False (RING)
+    flip : {'astro', 'geo'}, optional
+      Defines the convention of projection : 'astro' (default, east towards left, west towards right)
+      or 'geo' (east towards roght, west towards left)
+    remove_dip : bool, optional
+      If :const:`True`, remove the dipole+monopole
+    remove_mono : bool, optional
+      If :const:`True`, remove the monopole
+    gal_cut : float, scalar, optional
+      Symmetric galactic cut for the dipole/monopole fit.
+      Removes points in latitude range [-gal_cut, +gal_cut]
+    
+
+    See Also
+    --------
+    gnomview, mollview, cartview, orthview, azeqview
+    """
+    import pylab
+    import healpy as hp
+    import healpy.projaxes as PA
+
+    margins = (0.075,0.05,0.075,0.05)
+    extent = (0.0,0.0,1.0,1.0)
+    extent = (extent[0]+margins[0],
+              extent[1]+margins[1],
+              extent[2]-margins[2]-margins[0],
+              extent[3]-margins[3]-margins[1])
+    f=pylab.figure(0,figsize=(5.5,6))
+    map = hp.pixelfunc.ma_to_array(map)
+    ax=PA.HpxGnomonicAxes(f,extent,coord=coord,rot=rot,
+                          format="%.3g",flipconv=flip)
+    if remove_dip:
+        map=hp.pixelfunc.remove_dipole(map,gal_cut=gal_cut,nest=nest,copy=True)
+    elif remove_mono:
+        map=hp.pixelfunc.remove_monopole(map,gal_cut=gal_cut,nest=nest,copy=True)
+    img = ax.projmap(map,nest=nest,coord=coord,
+               xsize=xsize,ysize=ysize,reso=reso)
+
+    pylab.close(f)
+    return img

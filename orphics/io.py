@@ -48,7 +48,7 @@ def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,ret
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename,verbose=True,ftsize=24,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=24,**kwargs):
     pl = Plotter(ftsize=ftsize)
     pl.plot2d(array,**kwargs)
     pl.done(filename,verbose=verbose)
@@ -185,7 +185,7 @@ class Plotter(object):
 
         if filename is not None:
             plt.savefig(filename,bbox_inches='tight',**kwargs)
-            if verbose: cprint("Saved plot to"+ filename,"g")
+            if verbose: cprint("Saved plot to "+ filename,"g")
         else:
             plt.show()
 
