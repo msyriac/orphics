@@ -13,6 +13,9 @@ try:
 except:
     dout_dir = "."
 
+def mkdir(dirpath):
+    if not os.path.exists(dirpath):
+        os.makedirs(dirpath)
 
 
 def load_path_config():
@@ -191,3 +194,15 @@ class Plotter(object):
 
         plt.close()
     
+
+
+### CONFIG FILES
+
+def bin_edges_from_config(Config,section):
+    from orphics.tools.stats import npspace
+
+    spacing = Config.get(section,"spacing")
+    minim = Config.getfloat(section,"left_edge")
+    maxim = Config.getfloat(section,"right_edge")
+    num = Config.getint(section,"num_bins")
+    return npspace(minim,maxim,num,scale=spacing)
