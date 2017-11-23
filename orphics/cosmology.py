@@ -22,6 +22,21 @@ defaultConstants['MPC2CM'] = 3.085678e+24
 defaultConstants['ERRTOL'] = 1e-12
 defaultConstants['K_CGS'] = 1.3806488e-16
 defaultConstants['H_CGS'] = 6.62608e-27
+defaultConstants['C'] = 2.99792e+10
+defaultConstants['A_ps'] = 3.1
+defaultConstants['A_g'] = 0.9
+defaultConstants['nu0'] = 150.
+defaultConstants['n_g'] = -0.7
+defaultConstants['al_g'] = 3.8
+defaultConstants['al_ps'] = -0.5
+defaultConstants['Td'] = 9.7
+defaultConstants['al_cib'] = 2.2
+defaultConstants['A_cibp'] = 6.9
+defaultConstants['A_cibc'] = 4.9
+defaultConstants['n_cib'] = 1.2
+defaultConstants['A_tsz'] = 5.6
+defaultConstants['ell0sec'] = 3000.
+
 
 
 defaultCosmology = {}
@@ -533,3 +548,71 @@ def validateMapType(mapXYType):
       " letter combination of T, E and B. e.g TT or TE."+bcolors.ENDC
 
         
+def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
+    '''
+    Given a CAMB path+output_root, reads CMB and lensing Cls into 
+    an orphics.theory.gaussianCov.TheorySpectra object.
+
+    The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
+    be used with dimensionless noise spectra and dimensionless maps.
+
+    All ell and 2pi factors are also stripped off.
+
+ 
+    '''
+    if not(get_dimensionless): TCMB = 1.
+    if useTotal:
+        uSuffix = "_totCls.dat"
+        lSuffix = "_lensedtotCls.dat"
+    else:
+        uSuffix = "_scalCls.dat"
+        lSuffix = "_lensedCls.dat"
+
+    uFile = cambRoot+uSuffix
+    lFile = cambRoot+lSuffix
+
+    theory = TheorySpectra()
+
+    ell, lcltt, lclee, lclbb, lclte = np.loadtxt(lFile,unpack=True,usecols=[0,1,2,3,4])
+    mult = 2.*np.pi/ell/(ell+1.)/TCMB**2.
+    lcltt *= mult
+    lclee *= mult
+    lclte *= mult
+    lclbb *= mult
+    theory.loadCls(ell,lcltt,'TT',lensed=True,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,lclte,'TE',lensed=True,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,lclee,'EE',lensed=True,interporder="linear",lpad=lpad)
+    theory.loadCls(ell,lclbb,'BB',lensed=True,interporder="linear",lpad=lpad)
+
+    try:
+        elldd, cldd = np.loadtxt(cambRoot+"_lenspotentialCls.dat",unpack=True,usecols=[0,5])
+        clkk = 2.*np.pi*cldd/4.
+    except:
+        elldd, cldd = np.loadtxt(cambRoot+"_scalCls.dat",unpack=True,usecols=[0,4])
+        clkk = cldd*(elldd+1.)**2./elldd**2./4./TCMB**2.
+        
+    theory.loadGenericCls(elldd,clkk,"kk",lpad=lpad)
+
+
+    if unlensedEqualsLensed:
+
+        theory.loadCls(ell,lcltt,'TT',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,lclte,'TE',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,lclee,'EE',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,lclbb,'BB',lensed=False,interporder="linear",lpad=lpad)
+
+    else:
+        ell, cltt, clee, clte = np.loadtxt(uFile,unpack=True,usecols=[0,1,2,3])
+        mult = 2.*np.pi/ell/(ell+1.)/TCMB**2.
+        cltt *= mult
+        clee *= mult
+        clte *= mult
+        clbb = clee*0.
+
+        theory.loadCls(ell,cltt,'TT',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,clte,'TE',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,clee,'EE',lensed=False,interporder="linear",lpad=lpad)
+        theory.loadCls(ell,clbb,'BB',lensed=False,interporder="linear",lpad=lpad)
+
+
+    return theory

@@ -184,7 +184,35 @@ def gauss_beam(ell,fwhm):
     tht_fwhm = np.deg2rad(fwhm / 60.)
     return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
 
+def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
+    output = np.ones(shape[-2:], dtype = int)
+    if (lmin is not None) or (lmax is not None): modlmap = enmap.modlmap(shape, wcs)
+    if (lxcut is not None) or (lycut is not None): ly, lx = enmap.laxes(shape, wcs, oversample=1)
+    if lmin is not None:
+        output[np.where(modlmap <= lmin)] = 0
+    if lmax is not None:
+        output[np.where(modlmap >= lmax)] = 0
+    if lxcut is not None:
+        output[:,np.where(np.abs(lx) < lxcut)] = 0
+    if lycut is not None:
+        output[np.where(np.abs(ly) < lycut),:] = 0
+    return output
 
+def ilc_cmb(kmaps,cinv):
+    """Clean a set of microwave observations using ILC to get an estimate of the CMB map.
+    
+    Accepts
+    -------
+
+    kmaps -- (nfreq,Ny,Nx) array of beam-deconvolved fourier transforms at each frequency
+    cinv -- (nfreq,nfreq,Ny,Nx) array of the inverted covariance matrix
+
+    Returns
+    -------
+
+    Fourier transform of CMB map estimate, (Ny,Nx) array 
+    """
+    return np.einsum('klij,lij->kij',cinv,kmaps).sum(axis=0) / cinv.sum(axis=(0,1))
 
 ## WORKING WITH DATA
 
