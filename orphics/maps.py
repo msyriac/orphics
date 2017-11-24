@@ -198,21 +198,33 @@ def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None)
         output[np.where(np.abs(ly) < lycut),:] = 0
     return output
 
-def ilc_cmb(kmaps,cinv):
-    """Clean a set of microwave observations using ILC to get an estimate of the CMB map.
+def ilc(kmaps,cinv,response=None):
+    """Make an internal linear combination (ILC) of given fourier space maps at different frequencies
+    and an inverse covariance matrix for its variance.
     
     Accepts
     -------
 
     kmaps -- (nfreq,Ny,Nx) array of beam-deconvolved fourier transforms at each frequency
     cinv -- (nfreq,nfreq,Ny,Nx) array of the inverted covariance matrix
+    response -- (nfreq,) array of f_nu response factors. Defaults to unity for CMB estimate.
 
     Returns
     -------
 
-    Fourier transform of CMB map estimate, (Ny,Nx) array 
+    Fourier transform of ILC estimate, (Ny,Nx) array 
     """
-    return np.einsum('klij,lij->kij',cinv,kmaps).sum(axis=0) / cinv.sum(axis=(0,1))
+    
+    if response is None:
+        # assume CMB
+        nfreq = kmaps.shape[0]
+        response = np.ones((nfreq,))
+
+    # Get response^T Cinv kmaps
+    weighted = np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
+    # Get response^T Cinv response
+    norm = np.einsum('l,lij->ij',response,np.einsum('k,klij->lij',response,cinv))
+    return weighted/norm
 
 ## WORKING WITH DATA
 
