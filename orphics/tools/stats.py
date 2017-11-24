@@ -193,9 +193,9 @@ def loadBinFile(binfile,delimiter='\t',returnBinner=True):
 
 
 class bin2D(object):
-    def __init__(self, modRMap, bin_edges):
+    def __init__(self, modRMap, bin_edges, right=True):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
-        self.digitized = np.digitize(np.ndarray.flatten(modRMap), bin_edges,right=True)
+        self.digitized = np.digitize(np.ndarray.flatten(modRMap), bin_edges, right)
         self.bin_edges = bin_edges
     def bin(self,data2d):
         data = np.ndarray.flatten(data2d)
