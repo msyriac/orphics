@@ -203,6 +203,8 @@ def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None)
 def silc(kmaps,cinv,response=None):
     """Make a simple internal linear combination (ILC) of given fourier space maps at different frequencies
     and an inverse covariance matrix for its variance.
+
+    From Eq 4 of arXiv:1006.5599
     
     Accepts
     -------
@@ -226,6 +228,26 @@ def silc(kmaps,cinv,response=None):
     return weighted/norm
 
 def cilc(kmaps,cinv,response_a,response_b):
+    """Constrained ILC -- Make a constrained internal linear combination (ILC) of given fourier space maps at different frequencies
+    and an inverse covariance matrix for its variance. The component of interest is specified through its f_nu response vector
+    response_a. The component to explicitly project out is specified through response_b.
+
+    Derived from Eq 18 of arXiv:1006.5599
+
+    Accepts
+    -------
+
+    kmaps -- (nfreq,Ny,Nx) array of beam-deconvolved fourier transforms at each frequency
+    cinv -- (nfreq,nfreq,Ny,Nx) array of the inverted covariance matrix
+    response_a -- (nfreq,) array of f_nu response factors for component of interest.
+    response_b -- (nfreq,) array of f_nu response factors for component to project out.
+
+    Returns
+    -------
+
+    Fourier transform of ILC estimate, (Ny,Nx) array 
+    """
+    
     brb = ilc_comb_a_b(response_b,response_b,cinv)
     arb = ilc_comb_a_b(response_a,response_b,cinv)
     arM = ilc_map_term(kmaps,cinv,response_a)
@@ -237,6 +259,7 @@ def cilc(kmaps,cinv,response_a,response_b):
     return numer/norm
 
 def ilc_def_response(response,cinv):
+    """Default CMB response -- vector of ones"""
     if response is None:
         # assume CMB
         nfreq = cinv.shape[0]
@@ -245,7 +268,8 @@ def ilc_def_response(response,cinv):
 
 def ilc_index(ndim):
     """Returns einsum indexing given ndim of cinv.
-    """
+    If covmat of 1d powers, return single index, else
+    return 2 indices for 2D kspace matrix."""
     if ndim==3:
         return "p"
     elif ndim==4:
@@ -254,13 +278,17 @@ def ilc_index(ndim):
         raise ValueError
 
 def ilc_map_term(kmaps,cinv,response):
+    """response^T . Cinv . kmaps """
     return np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
     
 def silc_noise(cinv,response=None):
+    """ Derived from Eq 4 of arXiv:1006.5599"""
     response = ilc_def_response(response,cinv)
     return (1./ilc_comb_a_b(response,response,cinv))
 
 def cilc_noise(cinv,response_a,response_b):
+    """ Derived from Eq 18 of arXiv:1006.5599 """
+    
     brb = ilc_comb_a_b(response_b,response_b,cinv)
     ara = ilc_comb_a_b(response_a,response_a,cinv)
     arb = ilc_comb_a_b(response_a,response_b,cinv)
@@ -276,7 +304,7 @@ def ilc_comb_a_b(response_a,response_b,cinv):
     pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
     return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
 
-def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fgen):
+def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -284,7 +312,7 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fgen):
     freqs -- array of floats with frequency bandpasses
     noises -- 1d, 2d or float noise powers (in uK^2-radian^2)
     components -- list of strings representing foreground components recognized by fgGenerator
-
+    fnoise -- A szar.foregrounds.fgNoises object (or derivative) containing foreground power definitions
     """
 
     nfreqs = len(noises)
@@ -296,7 +324,7 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fgen):
             if i==j:
                 Covmat[i,j,:] += noise1/kbeam1**2.
             for component in components:
-                Covmat[i,j,:] += fgen.get_noise(component,freq1,freq2,ells)
+                Covmat[i,j,:] += fnoise.get_noise(component,freq1,freq2,ells)
 
 
     cinv = np.linalg.inv(Covmat.T).T
@@ -413,6 +441,8 @@ def cutout_gnomonic(map,rot=None,coord=None,
              remove_mono=False,gal_cut=0,
              flip='astro'):
     """Obtain a cutout from a healpix map (given as an array) in Gnomonic projection.
+
+    Derivative of healpy.visufunc.gnomonic
 
     Parameters
     ----------
