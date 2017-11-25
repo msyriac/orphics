@@ -51,12 +51,35 @@ def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,ret
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=24,**kwargs):
-    pl = Plotter(ftsize=ftsize)
-    pl.plot2d(array,**kwargs)
-    pl.done(filename,verbose=verbose)
+def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,**kwargs):
+    if high_res:
+        high_res_plot_img(array,filename,verbose=verbose,**kwargs)
+    else:
+        pl = Plotter(ftsize=ftsize)
+        pl.plot2d(array,**kwargs)
+        pl.done(filename,verbose=verbose)
 
 
+def high_res_plot_img(array,filename,down=None,verbose=True,overwrite=True,crange=None):
+    if not(overwrite):
+        if os.path.isfile(filename): return
+    try:
+        from enlib import enmap, enplot
+    except:
+        traceback.print_exc()
+        printC("Could not produce plot "+filename+". High resolution plotting requires enlib, which couldn't be imported. Continuing without plotting.",color='fail')
+        return
+        
+        
+    if (down is not None) and (down!=1):
+        downmap = enmap.downgrade(enmap.enmap(array)[None], down)
+    else:
+        downmap = enmap.enmap(array)[None]
+    img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
+    img.save(filename)
+    if verbose: print(bcolors.OKGREEN+"Saved high-res plot to", filename+bcolors.ENDC)
+
+    
 def cprint(string,color=None,bold=False,uline=False):
     if not(isinstance(string,str)):
         string = str(string)

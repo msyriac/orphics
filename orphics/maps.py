@@ -1,6 +1,7 @@
 from enlib import enmap, utils
 import numpy as np
 from enlib.fft import fft,ifft
+from scipy.interpolate import interp1d
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
@@ -177,6 +178,47 @@ def get_real_attributes(shape,wcs):
 ## MAP OPERATIONS
 
 
+def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
+    Ny,Nx = shape[-2:]
+    if weight is None: weight = np.ones(shape[-2:])
+    taper = cosine_window(Ny,Nx,lenApodY=int(taper_percent*min(Ny,Nx)/100.),lenApodX=int(taper_percent*min(Ny,Nx)/100.),padY=int(pad_percent*min(Ny,Nx)/100.),padX=int(pad_percent*min(Ny,Nx)/100.))*weight
+    w2 = np.mean(taper**2.)
+    return taper,w2
+
+def cosine_window(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
+    win=np.ones((Ny,Nx))
+    
+    i = np.arange(Nx) 
+    j = np.arange(Ny)
+    ii,jj = np.meshgrid(i,j)
+
+    # ii is array of x indices
+    # jj is array of y indices
+    # numpy indexes (j,i)
+
+    # xdirection
+    if lenApodX>0:
+        r=ii.astype(float)-padX
+        sel = np.where(ii<=(lenApodX+padX))
+        win[sel] = 1./2*(1-np.cos(-np.pi*r[sel]/lenApodX))
+        sel = np.where(ii>=((Nx-1)-lenApodX-padX))
+        r=((Nx-1)-ii-padX).astype(float)
+        win[sel] = 1./2*(1-np.cos(-np.pi*r[sel]/lenApodX))
+    # ydirection
+    if lenApodY>0:
+        r=jj.astype(float)-padY
+        sel = np.where(jj<=(lenApodY+padY))
+        win[sel] *= 1./2*(1-np.cos(-np.pi*r[sel]/lenApodY))
+        sel = np.where(jj>=((Ny-1)-lenApodY-padY))
+        r=((Ny-1)-jj-padY).astype(float)
+        win[sel] *= 1./2*(1-np.cos(-np.pi*r[sel]/lenApodY))
+
+    win[0:padY,:]=0
+    win[:,0:padX]=0
+    win[Ny-padY:,:]=0
+    win[:,Nx-padX:]=0
+    return win
+
 def filter_map(imap,kfilter):
     return np.real(ifft(fft(imap,axes=[-2,-1])*kfilter,axes=[-2,-1],normalize=True)) 
 
@@ -325,6 +367,46 @@ class NoiseModel(object):
         assert self.shape[-2:]==beam_2d_transform.shape
         self.kbeam2d = beam_2d_transform
     
+def noise_from_splits(splits,fourier_calc=None,nthread=0):
+    
+
+    import itertools
+
+    if fourier_calc is None:
+        shape = splits[0].shape
+        wcs = splits[0].wcs
+        fourier_calc = FourierCalc(shape,wcs)
+    
+    Nsplits = len(splits)
+
+    # Get fourier transforms of I,Q,U
+    ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
+
+    # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
+    kteb_splits = []
+    for ksplit in ksplits:
+        kteb_splits.append( ksplit.copy())
+        kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
+
+    # get auto power of I,Q,U
+    auto = sum([fourier_calc.power2d(kmap=ksplit)[0] for ksplit in ksplits])/Nsplits
+
+    # do cross powers of I,Q,U
+    cross_splits = [y for y in itertools.combinations(ksplits,2)]
+    Ncrosses = len(cross_splits)
+    assert Ncrosses==(Nsplits*(Nsplits-1)/2)
+    cross = sum([fourier_calc.power2d(kmap=ksplit1,kmap2=ksplit2)[0] for (ksplit1,ksplit2) in cross_splits])/Ncrosses
+
+    # do cross powers of T,E,B
+    cross_teb_splits = [y for y in itertools.combinations(kteb_splits,2)]
+    cross_teb = sum([fourier_calc.power2d(kmap=ksplit1,kmap2=ksplit2)[0] for (ksplit1,ksplit2) in cross_teb_splits])/Ncrosses
+
+    # get noise model for I,Q,U
+    noise = (auto-cross)/Nsplits
+
+    # return I,Q,U noise model and T,E,B cross-power
+    return noise,cross_teb
+
 
 ### FULL SKY
 
