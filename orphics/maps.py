@@ -223,8 +223,23 @@ def ilc(kmaps,cinv,response=None):
     # Get response^T Cinv kmaps
     weighted = np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
     # Get response^T Cinv response
-    norm = np.einsum('l,lij->ij',response,np.einsum('k,klij->lij',response,cinv))
+    norm = ilc_comb_a_b(response,response,cinv) #np.einsum('l,lij->ij',response,np.einsum('k,klij->lij',response,cinv))
     return weighted/norm
+
+def ilc_index(ndim):
+    """Returns einsum indexing given ndim of cinv.
+    """
+    if ndim==3:
+        return "p"
+    elif ndim==4:
+        return "ij"
+    else:
+        raise ValueError
+    
+def ilc_comb_a_b(response_a,response_b,cinv):
+    """Return a^T cinv b"""
+    pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
+    return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
 
 ## WORKING WITH DATA
 
