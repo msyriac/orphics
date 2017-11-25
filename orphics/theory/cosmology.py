@@ -1,4 +1,5 @@
 from __future__ import print_function
+print("WARNING: This module is deprecated. Most of its contents have moved to orphics.cosmology. If you do not find the function you require there, please raise an issue.")
 import camb
 from math import pi
 from orphics.tools.cmb import loadTheorySpectraFromPycambResults

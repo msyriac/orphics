@@ -1,3 +1,5 @@
+from __future__ import print_function
+print("WARNING: This module is deprecated. Most of its contents have moved to orphics.stats. If you do not find the function you require there, please raise an issue.")
 from scipy.stats import norm,binned_statistic as binnedstat,chi2
 from scipy.optimize import curve_fit as cfit
 from orphics.tools.io import Plotter,printC

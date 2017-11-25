@@ -1,3 +1,5 @@
+from __future__ import print_function
+print("WARNING: This module is deprecated. Most of its contents have moved to orphics.maps. If you do not find the function you require there, please raise an issue.")
 import numpy as np
 import copy
 from scipy.interpolate import splrep,splev
@@ -282,8 +284,8 @@ class MapRotatorEquator(MapRotator):
             recommended_pix = self.source_pix*np.cos(max_dec)
 
             if verbose:
-                print(("INFO: Maximum declination in southern patch : ",max_dec*180./np.pi, " deg."))
-                print(("INFO: Recommended pixel size for northern patch : ",recommended_pix, " arcmin"))
+                print("INFO: Maximum declination in southern patch : ",max_dec*180./np.pi, " deg.")
+                print("INFO: Recommended pixel size for northern patch : ",recommended_pix, " arcmin")
 
         else:
             recommended_pix = pix_target_override_arcmin
@@ -295,7 +297,7 @@ class MapRotatorEquator(MapRotator):
         self.target_pix = recommended_pix
         self.wcs_target = wcs_target
         if verbose:
-            print(("INFO: Source pixel : ",self.source_pix, " arcmin"))
+            print("INFO: Source pixel : ",self.source_pix, " arcmin")
         
         if downsample:
             dpix = downsample_pix_arcmin if downsample_pix_arcmin is not None else self.source_pix
@@ -844,9 +846,9 @@ def makeTemplate(l,Fl,modLMap,k=1,debug=False):
         from ..tools.output import Plotter
         from scipy.interpolate import interp1d
         _func = interp1d(l,Fl,kind=k,bounds_error=False,fill_value = 0)
-        print((np.sort(lmapunravel)[1]))
-        print((lmapunravel.min(),template1d[lmapunravel==lmapunravel.min()]))
-        print((modLMap.ravel().min(),_func(modLMap.ravel()==modLMap.ravel().min())))
+        print(np.sort(lmapunravel)[1])
+        print(lmapunravel.min(),template1d[lmapunravel==lmapunravel.min()])
+        print(modLMap.ravel().min(),_func(modLMap.ravel()==modLMap.ravel().min()))
         pl = Plotter()
         pl.add(lmapunravel,template1d*(lmapunravel+1.)**2.,label="splev unravel",ls="-",marker="o")
         pl.add(modLMap.ravel(),_func(modLMap.ravel())*(modLMap.ravel()+1.)**2.,label="interp1d unravel",ls="none",marker="x")
@@ -1038,7 +1040,7 @@ def stack_on_map(lite_map,width_stamp_arcminute,pix_scale,ra_range,dec_range,ras
     width_stamp_degrees = width_stamp_arcminute /60.
     Np = np.int(width_stamp_arcminute/pix_scale+0.5)
     pad = np.int(Np/2+0.5)
-    print(("Expected width in pixels = ", Np))
+    print("Expected width in pixels = ", Np)
 
     lmap = lite_map
     stack=0

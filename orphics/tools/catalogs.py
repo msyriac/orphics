@@ -1,3 +1,5 @@
+from __future__ import print_function
+print("WARNING: This module is deprecated. Most of its contents have moved to orphics.catalogs. If you do not find the function you require there, please raise an issue.")
 import numpy as np
 from enlib import enmap, coordinates
 

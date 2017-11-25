@@ -1,4 +1,5 @@
 from __future__ import print_function
+print("WARNING: This module is deprecated. Most of its contents have moved to orphics.mpi. If you do not find the function you require there, please raise an issue.")
 import numpy as np
 import os
 
