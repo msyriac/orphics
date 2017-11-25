@@ -240,9 +240,13 @@ def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None)
         output[np.where(np.abs(ly) < lycut),:] = 0
     return output
 
-def ilc(kmaps,cinv,response=None):
-    """Make an internal linear combination (ILC) of given fourier space maps at different frequencies
+## ILC (MAP-LEVEL AND SPEC-LEVEL)
+
+def silc(kmaps,cinv,response=None):
+    """Make a simple internal linear combination (ILC) of given fourier space maps at different frequencies
     and an inverse covariance matrix for its variance.
+
+    From Eq 4 of arXiv:1006.5599
     
     Accepts
     -------
@@ -256,17 +260,119 @@ def ilc(kmaps,cinv,response=None):
 
     Fourier transform of ILC estimate, (Ny,Nx) array 
     """
+
+    response = ilc_def_response(response,cinv)
     
+    # Get response^T Cinv kmaps
+    weighted = ilc_map_term(kmaps,cinv,response)
+    # Get response^T Cinv response
+    norm = ilc_comb_a_b(response,response,cinv)
+    return weighted/norm
+
+def cilc(kmaps,cinv,response_a,response_b):
+    """Constrained ILC -- Make a constrained internal linear combination (ILC) of given fourier space maps at different frequencies
+    and an inverse covariance matrix for its variance. The component of interest is specified through its f_nu response vector
+    response_a. The component to explicitly project out is specified through response_b.
+
+    Derived from Eq 18 of arXiv:1006.5599
+
+    Accepts
+    -------
+
+    kmaps -- (nfreq,Ny,Nx) array of beam-deconvolved fourier transforms at each frequency
+    cinv -- (nfreq,nfreq,Ny,Nx) array of the inverted covariance matrix
+    response_a -- (nfreq,) array of f_nu response factors for component of interest.
+    response_b -- (nfreq,) array of f_nu response factors for component to project out.
+
+    Returns
+    -------
+
+    Fourier transform of ILC estimate, (Ny,Nx) array 
+    """
+    
+    brb = ilc_comb_a_b(response_b,response_b,cinv)
+    arb = ilc_comb_a_b(response_a,response_b,cinv)
+    arM = ilc_map_term(kmaps,cinv,response_a)
+    brM = ilc_map_term(kmaps,cinv,response_b)
+    ara = ilc_comb_a_b(response_a,response_a,cinv)
+
+    numer = brb * arM - arb*brM
+    norm = (ara*brb-arb**2.)
+    return numer/norm
+
+def ilc_def_response(response,cinv):
+    """Default CMB response -- vector of ones"""
     if response is None:
         # assume CMB
-        nfreq = kmaps.shape[0]
+        nfreq = cinv.shape[0]
         response = np.ones((nfreq,))
+    return response
 
-    # Get response^T Cinv kmaps
-    weighted = np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
-    # Get response^T Cinv response
-    norm = np.einsum('l,lij->ij',response,np.einsum('k,klij->lij',response,cinv))
-    return weighted/norm
+def ilc_index(ndim):
+    """Returns einsum indexing given ndim of cinv.
+    If covmat of 1d powers, return single index, else
+    return 2 indices for 2D kspace matrix."""
+    if ndim==3:
+        return "p"
+    elif ndim==4:
+        return "ij"
+    else:
+        raise ValueError
+
+def ilc_map_term(kmaps,cinv,response):
+    """response^T . Cinv . kmaps """
+    return np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
+    
+def silc_noise(cinv,response=None):
+    """ Derived from Eq 4 of arXiv:1006.5599"""
+    response = ilc_def_response(response,cinv)
+    return (1./ilc_comb_a_b(response,response,cinv))
+
+def cilc_noise(cinv,response_a,response_b):
+    """ Derived from Eq 18 of arXiv:1006.5599 """
+    
+    brb = ilc_comb_a_b(response_b,response_b,cinv)
+    ara = ilc_comb_a_b(response_a,response_a,cinv)
+    arb = ilc_comb_a_b(response_a,response_b,cinv)
+    bra = ilc_comb_a_b(response_b,response_a,cinv)
+
+    numer = (brb)**2. * ara + (arb)**2.*brb - brb*arb*arb - arb*brb*bra
+    denom = (ara*brb-arb**2.)**2.
+    return numer/denom
+
+
+def ilc_comb_a_b(response_a,response_b,cinv):
+    """Return a^T cinv b"""
+    pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
+    return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
+
+def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
+    """
+    ells -- either 1D or 2D fourier wavenumbers
+    cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
+    kbeams -- 1d or 2d beam transforms
+    freqs -- array of floats with frequency bandpasses
+    noises -- 1d, 2d or float noise powers (in uK^2-radian^2)
+    components -- list of strings representing foreground components recognized by fgGenerator
+    fnoise -- A szar.foregrounds.fgNoises object (or derivative) containing foreground power definitions
+    """
+
+    nfreqs = len(noises)
+    cshape = (nfreqs,nfreqs,1,1) if cmb_ps.ndim==2 else (nfreqs,nfreqs,1)
+    Covmat = np.tile(cmb_ps,cshape)
+
+    for i,(kbeam1,freq1,noise1) in enumerate(zip(kbeams,freqs,noises)):
+        for j,(kbeam2,freq2,noise2) in enumerate(zip(kbeams,freqs,noises)):
+            if i==j:
+                Covmat[i,j,:] += noise1/kbeam1**2.
+            for component in components:
+                Covmat[i,j,:] += fnoise.get_noise(component,freq1,freq2,ells)
+
+
+    cinv = np.linalg.inv(Covmat.T).T
+    return cinv
+
+
 
 ## WORKING WITH DATA
 
@@ -417,6 +523,8 @@ def cutout_gnomonic(map,rot=None,coord=None,
              remove_mono=False,gal_cut=0,
              flip='astro'):
     """Obtain a cutout from a healpix map (given as an array) in Gnomonic projection.
+
+    Derivative of healpy.visufunc.gnomonic
 
     Parameters
     ----------

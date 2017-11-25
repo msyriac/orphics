@@ -14,40 +14,38 @@ except:
 
 import time, re
 
-defaultConstants = {}
-defaultConstants['TCMB'] = 2.7255
-defaultConstants['G_CGS'] = 6.67259e-08
-defaultConstants['MSUN_CGS'] = 1.98900e+33
-defaultConstants['MPC2CM'] = 3.085678e+24
-defaultConstants['ERRTOL'] = 1e-12
-defaultConstants['K_CGS'] = 1.3806488e-16
-defaultConstants['H_CGS'] = 6.62608e-27
-defaultConstants['C'] = 2.99792e+10
-defaultConstants['A_ps'] = 3.1
-defaultConstants['A_g'] = 0.9
-defaultConstants['nu0'] = 150.
-defaultConstants['n_g'] = -0.7
-defaultConstants['al_g'] = 3.8
-defaultConstants['al_ps'] = -0.5
-defaultConstants['Td'] = 9.7
-defaultConstants['al_cib'] = 2.2
-defaultConstants['A_cibp'] = 6.9
-defaultConstants['A_cibc'] = 4.9
-defaultConstants['n_cib'] = 1.2
-defaultConstants['A_tsz'] = 5.6
-defaultConstants['ell0sec'] = 3000.
+defaultConstants = {'TCMB': 2.7255
+,'G_CGS': 6.67259e-08
+,'MSUN_CGS': 1.98900e+33
+,'MPC2CM': 3.085678e+24
+,'ERRTOL': 1e-12
+,'K_CGS': 1.3806488e-16
+,'H_CGS': 6.62608e-27
+,'C': 2.99792e+10
+,'A_ps': 3.1
+,'A_g': 0.9
+,'nu0': 150.
+,'n_g': -0.7
+,'al_g': 3.8
+,'al_ps': -0.5
+,'Td': 9.7
+,'al_cib': 2.2
+,'A_cibp': 6.9
+,'A_cibc': 4.9
+,'n_cib': 1.2
+,'A_tsz': 5.6
+,'ell0sec': 3000.
+}
 
 
-
-defaultCosmology = {}
-defaultCosmology['omch2'] = 0.12470
-defaultCosmology['ombh2'] = 0.02230
-defaultCosmology['H0'] = 67.0
-defaultCosmology['ns'] = 0.96
-defaultCosmology['As'] = 2.2e-9
-defaultCosmology['mnu'] = 0.0
-defaultCosmology['w0'] = -1.0
-
+defaultCosmology = {'omch2': 0.12470
+,'ombh2': 0.02230
+,'H0': 67.0
+,'ns': 0.96
+,'As': 2.2e-9
+,'mnu': 0.0
+,'w0': -1.0
+}
 
 
 class Cosmology(object):
