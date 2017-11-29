@@ -45,14 +45,14 @@ class MapGen(object):
                 else:
                         self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant")
 
-        def get_map(self,seed=None,scalar=False,iau_convention=True):
+        def get_map(self,seed=None,scalar=False,iau=True):
                 if seed is not None: np.random.seed(seed)
                 data = enmap.map_mul(self.covsqrt, enmap.rand_gauss_harm(self.shape, self.wcs))
                 kmap = enmap.ndmap(data, self.wcs)
                 if scalar:
                         return enmap.ifft(kmap).real
                 else:
-                        return enmap.harm2map(kmap,iau_convention=iau_convention)
+                        return enmap.harm2map(kmap,iau=iau)
 
         
         
@@ -63,12 +63,12 @@ class FourierCalc(object):
         to speed up fourier transforms and power spectra.
         """
 
-        def __init__(self,shape,wcs,iau_convention=True):
+        def __init__(self,shape,wcs,iau=True):
                 self.shape = shape
                 self.wcs = wcs
                 self.normfact = enmap.area(self.shape,self.wcs )/ np.prod(self.shape[-2:])**2.         
                 if len(shape) > 2 and shape[-3] > 1:
-                        self.rot = enmap.queb_rotmat(enmap.lmap(shape,wcs),iau_convention=iau_convention)
+                        self.rot = enmap.queb_rotmat(enmap.lmap(shape,wcs),iau=iau)
 
         def iqu2teb(self,emap, nthread=0, normalize=True, rot=True):
                 """Performs the 2d FFT of the enmap pixels, returning a complex enmap.
@@ -490,7 +490,7 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
 
 class NoiseModel(object):
 
-    def __init__(self,splits=None,wmap=None,mask=None,kmask=None,directory=None,spec_smooth_width=2.,skip_beam=True,skip_mask=True,skip_kmask=True,skip_cross=True,iau_convention=False):
+    def __init__(self,splits=None,wmap=None,mask=None,kmask=None,directory=None,spec_smooth_width=2.,skip_beam=True,skip_mask=True,skip_kmask=True,skip_cross=True,iau=False):
         """
         shape, wcs for geometry
         unmasked splits
@@ -513,7 +513,7 @@ class NoiseModel(object):
             wmap = enmap.ndmap(wmap,wcs)
 
             osplits = [split*mask for split in splits]
-            fc = FourierCalc(shape,wcs,iau_convention)
+            fc = FourierCalc(shape,wcs,iau)
             n2d, p2d = noise_from_splits(osplits,fc)
             w2 = np.mean(mask**2.)
             n2d *= (1./w2)
@@ -955,3 +955,24 @@ class ACTPolMapReader(object):
     def _hstring(self,season,patch,array,freq,day_night):
         splitstr = "set0123"
         return self.map_root+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
+
+
+
+### STACKING
+
+def cutout(imap,ra,dec,arcmin_width):   
+    iy,ix = imap.sky2pix(coords=(dec,ra))
+    res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
+    Npix = int(arc_width/res)
+    if Npix%2==0: Npix += 1
+    cutout = imap[int(iy-Npix/2):int(iy+Npix/2),int(ix-Npix/2):int(ix+Npix/2)]
+    shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
+    assert shape==cutout.shape
+    return enmap.ndmap(cutout,wcs)
+
+def aperture_photometry(stamp,aperture_radius,annulus_width,modrmap=None):
+    # inputs in radians
+    if modrmap is None: modrmap = stamp.modrmap()
+    flux = stamp[modrmap<aperture_radius].sum()
+    mean = stamp[np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean()
+    return flux - mean
