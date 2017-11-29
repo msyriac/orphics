@@ -970,9 +970,11 @@ def cutout(imap,ra,dec,arcmin_width):
     assert shape==cutout.shape
     return enmap.ndmap(cutout,wcs)
 
-def aperture_photometry(stamp,aperture_radius,annulus_width,modrmap=None):
+def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
     # inputs in radians
     if modrmap is None: modrmap = stamp.modrmap()
-    flux = stamp[modrmap<aperture_radius].sum()
+    stamp = instamp.copy()
     mean = stamp[np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean()
-    return flux - mean
+    stamp -= mean
+    flux = stamp[modrmap<aperture_radius].sum()
+    return flux
