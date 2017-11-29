@@ -513,7 +513,7 @@ class NoiseModel(object):
             wmap = enmap.ndmap(wmap,wcs)
 
             osplits = [split*mask for split in splits]
-            fc = enmap.FourierCalc(shape,wcs,iau_convention)
+            fc = FourierCalc(shape,wcs,iau_convention)
             n2d, p2d = noise_from_splits(osplits,fc)
             w2 = np.mean(mask**2.)
             n2d *= (1./w2)
@@ -532,7 +532,7 @@ class NoiseModel(object):
             self.wmap = wmap
             self.shape = shape
             self.wcs = wcs
-        self.ngen = enmap.MapGen(self.shape,self.wcs,self.noise2d)
+        self.ngen = MapGen(self.shape,self.wcs,self.noise2d)
         #self.noise_modulation = 1./np.sqrt(self.wmap)/np.sqrt(np.mean((1./self.wmap)))
         wt = 1./np.sqrt(self.wmap)
         wtw2 = np.mean(1./wt**2.)
@@ -627,6 +627,161 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0):
 
 ### FULL SKY
 
+def enmap_from_healpix_alms(shape,wcs,hp_map_file=None,hp_map=None,ncomp=1,lmax=0,rot="gal,equ",rot_method="alm"):
+	"""Project a healpix map to an enmap of chosen shape and wcs. The wcs
+	is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
+	is in galactic coordinates, this can be specified by hp_coords, and a
+	slow conversion is done. No coordinate systems other than equatorial
+	or galactic are currently supported. Only intensity maps are supported.
+	If interpolate is True, bilinear interpolation using 4 nearest neighbours
+	is done.
+
+	shape -- 2-tuple (Ny,Nx)
+	wcs -- enmap wcs object in equatorial coordinates
+	hp_map -- array-like healpix map
+	hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
+	interpolate -- boolean
+	
+	"""
+	
+	import healpy
+	from enlib import coordinates, curvedsky, sharp, utils
+
+	# equatorial to galactic euler zyz angles
+	euler = np.array([57.06793215,	62.87115487, -167.14056929])*utils.degree
+
+	# If multiple templates are specified, the output file is
+	# interpreted as an output directory.
+
+	print("Loading map...")
+	assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
+	dtype = np.float64
+	ctype = np.result_type(dtype,0j)
+	# Read the input maps
+        if hp_map_file is not None:
+	    print(hp_map_file)
+	    m = np.atleast_2d(healpy.read_map(hp_map_file, field=tuple(range(0,ncomp)))).astype(dtype)
+        else:
+            assert hp_map is not None
+            m = np.atleast_2d(hp_map).astype(dtype)
+
+	# Prepare the transformation
+	print("SHT prep...")
+
+	nside = healpy.npix2nside(m.shape[1])
+	lmax  = lmax or 3*nside
+	minfo = sharp.map_info_healpix(nside)
+	ainfo = sharp.alm_info(lmax)
+	sht   = sharp.sht(minfo, ainfo)
+	alm   = np.zeros((ncomp,ainfo.nelem), dtype=ctype)
+	# Perform the actual transform
+	print("SHT...")
+	sht.map2alm(m[0], alm[0])
+	
+	if ncomp == 3:
+		sht.map2alm(m[1:3],alm[1:3], spin=2)
+	del m
+
+
+	if rot and rot_method != "alm":
+		print("rotate...")
+		pmap = posmap(shape, wcs)
+		s1,s2 = rot.split(",")
+		opos = coordinates.transform(s2, s1, pmap[::-1], pol=ncomp==3)
+		pmap[...] = opos[1::-1]
+		if len(opos) == 3: psi = -opos[2].copy()
+		del opos
+		res  = curvedsky.alm2map_pos(alm, pmap)
+		if ncomp==3:
+			res[1:3] = rotate_pol(res[1:3], psi)
+	else:
+		print(" alm rotate...")
+		# We will project directly onto target map if possible
+		if rot:
+			s1,s2 = rot.split(",")
+			if s1 != s2:
+				print("rotating alm...")
+				# Note: rotate_alm does not actually modify alm
+				# if it is single precision
+				if s1 == "gal" and (s2 == "equ" or s2 == "cel"):
+					healpy.rotate_alm(alm, euler[0], euler[1], euler[2])
+				elif s2 == "gal" and (s1 == "equ" or s1 == "cel"):
+					healpy.rotate_alm(alm,-euler[2],-euler[1],-euler[0])
+				else:
+					raise NotImplementedError
+			print("done rotating alm...")
+		res = enmap.zeros((len(alm),)+shape[-2:], wcs, dtype)
+		res = curvedsky.alm2map(alm, res)
+	return res
+
+
+def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
+	"""Project a healpix map to an enmap of chosen shape and wcs. The wcs
+	is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
+	is in galactic coordinates, this can be specified by hp_coords, and a
+	slow conversion is done. No coordinate systems other than equatorial
+	or galactic are currently supported. Only intensity maps are supported.
+	If interpolate is True, bilinear interpolation using 4 nearest neighbours
+	is done.
+
+	shape -- 2-tuple (Ny,Nx)
+	wcs -- enmap wcs object in equatorial coordinates
+	hp_map -- array-like healpix map
+	hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
+	interpolate -- boolean
+	
+	"""
+	
+	import healpy as hp
+	from astropy.coordinates import SkyCoord
+	import astropy.units as u
+
+
+	eq_coords = ['fk5','j2000','equatorial']
+	gal_coords = ['galactic']
+	
+	imap = enmap.zeros(shape,wcs)
+	Ny,Nx = shape
+
+	inds = np.indices([Nx,Ny])
+	x = inds[0].ravel()
+	y = inds[1].ravel()
+
+	# Not as slow as you'd expect
+	posmap = enmap.pix2sky(shape,wcs,np.vstack((y,x)))*180./np.pi
+
+	ph = posmap[1,:]
+	th = posmap[0,:]
+
+	if hp_coords.lower() not in eq_coords:
+		# This is still the slowest part. If there are faster coord transform libraries, let me know!
+		assert hp_coords.lower() in gal_coords
+		gc = SkyCoord(ra=ph*u.degree, dec=th*u.degree, frame='fk5')
+		gc = gc.transform_to('galactic')
+		phOut = gc.l.deg
+		thOut = gc.b.deg
+	else:
+		thOut = th
+		phOut = ph
+
+	phOut *= np.pi/180
+	thOut = 90. - thOut #polar angle is 0 at north pole
+	thOut *= np.pi/180
+
+	# Not as slow as you'd expect
+	if interpolate:
+		imap[y,x] = hp.get_interp_val(hp_map, thOut, phOut)
+	else:
+		ind = hp.ang2pix( hp.get_nside(hp_map), thOut, phOut )
+		imap[:] = 0.
+		imap[[y,x]]=hp_map[ind]
+		
+		
+		
+	return enmap.ndmap(imap,wcs)
+
+
+
 
 def cutout_gnomonic(map,rot=None,coord=None,
              xsize=200,ysize=None,reso=1.5,
@@ -698,6 +853,54 @@ def cutout_gnomonic(map,rot=None,coord=None,
     pylab.close(f)
     return img
 
+
+def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alphas=None,beamFile=None, \
+                 noiseFuncs=None):
+    # Returns 2d map noise in units of uK**0.
+    # Despite the name of the function, there are options to add
+    # a simplistic atmosphere noise model
+
+    # If no atmosphere is specified, set lknee to zero and alpha to 1
+    if lknees is None:
+        lknees = (np.array(noiseLevels)*0.).tolist()
+    if alphas is None:
+        alphas = (np.array(noiseLevels)*0.+1.).tolist()
+
+    # we'll loop over it, so make it a list if nothing is specified
+    if noiseFuncs is None: noiseFuncs = [None]*len(noiseLevels)
+
+        
+    # if one of the noise files is not specified, we will need a beam
+    if None in noiseFuncs:
+        
+        if beamFile is not None:
+            ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
+            filt = 1./(np.array(f_ell)**2.)
+            bfunc = interp1d(ell,f_ell,bounds_error=False,fill_value=np.inf)
+            filt2d = bfunc(modLMap)
+        else:
+            Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
+            filt2d = np.exp(-(modLMap**2.)*Sigma*Sigma)
+
+
+    retList = []
+
+    for noiseLevel,lknee,alpha,noiseFunc in zip(noiseLevels,lknees,alphas,noiseFuncs):
+        if noiseFunc is not None:
+            retList.append(nfunc(modLMap))
+        else:
+        
+            noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  
+
+            if lknee>0.:
+                atmFactor = (lknee*np.nan_to_num(1./modLMap))**(-alpha)
+            else:
+                atmFactor = 0.
+                
+            with np.errstate(divide='ignore'):
+                retList.append(noiseForFilter*(atmFactor+1.)*np.nan_to_num(1./filt2d.copy()))
+
+    return retList
 
 
 ### INTERFACES WITH EXPERIMENTS

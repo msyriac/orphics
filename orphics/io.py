@@ -61,7 +61,8 @@ def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,ret
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,**kwargs):
+    if flip: array = np.flipud(array)
     if high_res:
         high_res_plot_img(array,filename,verbose=verbose,**kwargs)
     else:
