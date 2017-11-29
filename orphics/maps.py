@@ -960,11 +960,25 @@ class ACTPolMapReader(object):
 
 ### STACKING
 
+class Stacker(object):
+
+    def __init__(self,imap,arcmin_width):
+        self.imap = imap
+        res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
+        self.Npix = int(arcmin_width/res)
+        if self.Npix%2==0: self.Npix += 1
+        self.shape,self.wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=(self.Npix,self.Npix))
+
+    def cutout(self,ra,dec):   
+        iy,ix = self.imap.sky2pix(coords=(dec,ra))
+        cutout = self.imap[int(iy-self.Npix/2):int(iy+self.Npix/2),int(ix-self.Npix/2):int(ix+self.Npix/2)]
+        assert self.shape==cutout.shape
+        return enmap.ndmap(cutout,self.wcs)
+        
 def cutout(imap,ra,dec,arcmin_width):   
-    iy,ix = imap.sky2pix(coords=(dec,ra))
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
-    if Npix%2==0: Npix += 1
+    iy,ix = imap.sky2pix(coords=(dec,ra))
     cutout = imap[int(iy-Npix/2):int(iy+Npix/2),int(ix-Npix/2):int(ix+Npix/2)]
     shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
     assert shape==cutout.shape
@@ -972,8 +986,8 @@ def cutout(imap,ra,dec,arcmin_width):
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
     # inputs in radians
-    if modrmap is None: modrmap = stamp.modrmap()
     stamp = instamp.copy()
+    if modrmap is None: modrmap = stamp.modrmap()
     mean = stamp[np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean()
     stamp -= mean
     flux = stamp[modrmap<aperture_radius].sum()
