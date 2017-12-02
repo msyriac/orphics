@@ -35,7 +35,6 @@ class fakeMpiComm:
 
 
 def mpi_distribute(num_tasks,avail_cores):
-    import numpy as np
 
     assert avail_cores<=num_tasks
     min_each, rem = divmod(num_tasks,avail_cores)
@@ -130,7 +129,7 @@ class jobMaker:
             #sys.exit()    
             ##suboutput = os.popen('python labs/testthis.py').read()
             suboutput = os.popen('qsub '+filename).read()
-            print suboutput
+            print (suboutput)
             jobid = int(re.findall('\d+', suboutput)[0])
             self.submittedJobIDs.append(jobid)
 
@@ -140,7 +139,7 @@ class jobMaker:
             
 
 
-        print self._jobCount, "job(s) submitted in", j, "script(s)."
+        print (self._jobCount, "job(s) submitted in", j, "script(s).")
         
         self.scripts = []
         self._jobCount = 0
