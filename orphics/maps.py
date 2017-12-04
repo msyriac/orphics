@@ -1031,6 +1031,8 @@ class InterpStack(object):
 
         box = np.array([[dec_rad-coord_height/2.,ra_rad-coord_width/2.],[dec_rad+coord_height/2.,ra_rad+coord_width/2.]])
         submap = imap.submap(box,inclusive=True)
+        if submap.shape[0]<1 or submap.shape[1]<1:
+            return None
         
         
         newcoord = coordinates.recenter((self.lra,self.ldec),(self.rat,self.dect,ra_rad,dec_rad))
