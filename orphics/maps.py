@@ -199,7 +199,7 @@ def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=F
 
     from enlib import coordinates
     
-    # what are the center coordinates of each geometris
+    # what are the center coordinates of each geometries
     center_source = enmap.pix2sky(shape_source,wcs_source,(shape_source[0]/2.,shape_source[1]/2.))
     center_target= enmap.pix2sky(shape_target,wcs_target,(shape_target[0]/2.,shape_target[1]/2.))
     decs,ras = center_source
@@ -965,7 +965,7 @@ class Stacker(object):
     def __init__(self,imap,arcmin_width):
         self.imap = imap
         res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
-        self.Npix = int(arcmin_width/res)
+        self.Npix = int(arcmin_width/res)*1.
         if self.Npix%2==0: self.Npix += 1
         self.shape,self.wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=(self.Npix,self.Npix))
 
@@ -974,7 +974,9 @@ class Stacker(object):
         cutout = self.imap[int(iy-self.Npix/2):int(iy+self.Npix/2),int(ix-self.Npix/2):int(ix+self.Npix/2)]
         assert self.shape==cutout.shape
         return enmap.ndmap(cutout,self.wcs)
-        
+
+
+    
 def cutout(imap,ra,dec,arcmin_width):   
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
@@ -992,3 +994,59 @@ def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
     stamp -= mean
     flux = stamp[modrmap<aperture_radius].sum()
     return flux
+
+
+
+
+class InterpStack(object):
+
+    def __init__(self,arc_width,px,proj="car"):
+        if proj.upper()!="CAR": raise NotImplementedError
+        
+        self.shape_target,self.wcs_target = rect_geometry(width_arcmin=arc_width,
+                                                      height_arcmin=arc_width,
+                                                      px_res_arcmin=px,yoffset_degree=0.
+                                                      ,xoffset_degree=0.,proj=proj)
+                 
+        center_target = enmap.pix2sky(self.shape_target,self.wcs_target,(self.shape_target[0]/2.,self.shape_target[1]/2.))
+        self.dect,self.rat = center_target
+        # what are the angle coordinates of each pixel in the target geometry
+        pos_target = enmap.posmap(self.shape_target,self.wcs_target)
+        self.lra = pos_target[1,:,:].ravel()
+        self.ldec = pos_target[0,:,:].ravel()
+        del pos_target
+
+        self.arc_width = arc_width 
+
+
+    def cutout(self,imap,ra,dec,**kwargs):
+        from enlib import coordinates
+        
+        ra_rad = np.deg2rad(ra)
+        dec_rad = np.deg2rad(dec)
+        
+        # CAR
+        coord_width = np.deg2rad(self.arc_width/np.cos(dec_rad)/60.)
+        coord_height = np.deg2rad(self.arc_width/60.)
+
+        box = np.array([[dec_rad-coord_height/2.,ra_rad-coord_width/2.],[dec_rad+coord_height/2.,ra_rad+coord_width/2.]])
+        submap = imap.submap(box,inclusive=True)
+        
+        
+        newcoord = coordinates.recenter((self.lra,self.ldec),(self.rat,self.dect,ra_rad,dec_rad))
+
+        # reshape these new coordinates into enmap-friendly form
+        new_pos = np.empty((2,self.shape_target[0],self.shape_target[1]))
+        new_pos[0,:,:] = newcoord[1,:].reshape(self.shape_target)
+        new_pos[1,:,:] = newcoord[0,:].reshape(self.shape_target)
+        del newcoord
+        
+        # translate these new coordinates to pixel positions in the target geometry based on the source's wcs
+        pix_new = enmap.sky2pix(submap.shape,submap.wcs,new_pos)
+
+        rotmap = enmap.at(submap,pix_new,unit="pix",**kwargs)
+        assert rotmap.shape==self.shape_target
+        return rotmap
+        
+
+
