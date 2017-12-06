@@ -491,6 +491,114 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
     return cinv
 
 
+def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
+
+    """
+    by Thibaut Louis
+
+    my_map  -- masked map
+    my_map_2  -- random map with same power
+    Mask -- mask
+    power_spec -- 2d S+N power
+    nxside
+    nyside
+    eps
+
+    """
+
+    assert imap.ndim==2
+    nyside,nxside = imap.shape
+    
+    def apply_px_c_inv_px(my_map):
+        
+        my_map.shape=(nyside,nxside)
+        #apply x_proj
+        my_new_map=(1-mask)*my_map
+        # change to Fourrier representation
+        a_l = fft(my_new_map,axes=[-2,-1])
+        # apply inverse power spectrum
+        a_l=a_l*1/power2d
+        # change back to pixel representation
+        my_new_map = ifft(a_l,normalize=True,axes=[-2,-1])
+        #Remove the imaginary part
+        my_new_map=my_new_map.real
+        # apply x_proj
+        my_new_map=(1-mask)*my_new_map
+        #Array to vector
+        my_new_map.shape=(nxside*nyside,)
+        my_map.shape=(nxside*nyside,)
+        return(my_new_map)
+    
+    def apply_px_c_inv_py(my_map):
+        # apply y_proj
+        my_map.shape=(nyside,nxside)
+        my_new_map=mask*my_map
+        # change to Fourrier representation
+        a_l = fft(my_new_map,axes=[-2,-1])
+        # apply inverse power spectrum
+        a_l=a_l*1/power2d
+        # change back to pixel representation
+        my_new_map = ifft(a_l,normalize=True,axes=[-2,-1])
+        #Remove the imaginary part
+        my_new_map=my_new_map.real
+        # apply x_proj
+        my_new_map=(1-mask)*my_new_map
+        #Array to vector
+        my_new_map.shape=(nxside*nyside,)
+        return(my_new_map)
+    
+    b=-apply_px_c_inv_py(imap-rand_map)
+    
+    #Number of iterations
+    i_max=2000
+    
+    #initial value of x
+    x=b
+    i=0
+    
+    r=b-apply_px_c_inv_px(x)
+    d=r
+    
+    delta_new=np.inner(r,r)
+    delta_o=delta_new
+    
+    delta_array=np.zeros(shape=(i_max))
+    
+    while i<i_max and delta_new > eps**2*delta_o:
+        # print ""
+        # print "number of iterations:", i
+        # print ""
+        # print "eps**2*delta_o=",eps**2*delta_o
+        # print ""
+        # print "delta new=",delta_new
+        
+        q=apply_px_c_inv_px(d)
+        alpha=delta_new/(np.inner(d,q))
+        x=x+alpha*d
+        
+        if i/50.<np.int(i/50):
+            
+            r=b-apply_px_c_inv_px(x)
+        else:
+            r=r-alpha*q
+        
+        delta_old=delta_new
+        delta_new=np.inner(r,r)
+        beta=delta_new/delta_old
+        d=r+beta*d
+        i=i+1
+    
+    #print "delta_o=", delta_o
+    #print "delta_new=", delta_new
+    
+    x.shape=(nyside,nxside)
+    x_old=x
+    x=x+rand_map*(1-mask)
+    complete=imap*mask
+    rebuild_map=complete+x
+    print("Num iterations : ",i)
+    return rebuild_map
+
 
 ## WORKING WITH DATA
 
@@ -526,7 +634,7 @@ class NoiseModel(object):
             n2d *= (1./w2)
             p2d *= (1./w2)
 
-            n2d = enmap.smooth_spectrum(n2d, kernel="gauss", weight="mode", width=spec_smooth_width)
+            n2d = np.fft.ifftshift(enmap.smooth_spectrum(np.fft.fftshift(n2d), kernel="gauss", weight="mode", width=spec_smooth_width))
             self.spec_smooth_width = spec_smooth_width
             ncomp = shape[0] if len(shape)>2 else 1
             
@@ -946,6 +1054,27 @@ class SigurdCoaddReader(ACTMapReader):
     def _config_tag(self,freq,day_night,planck):
         planckstr = "_planck" if planck else ""
         return freq+planckstr+"_"+day_night
+
+    def _sel_from_region(self,region):
+        if region is None:
+            selection = None
+        elif isinstance(region, six.string_types):
+            selection = enmap.slice_from_box(self.shape,self.wcs,self.boxes[region])
+        else:
+            selection = enmap.slice_from_box(self.shape,self.wcs,region)
+        return selection
+
+    def get_ptsrc_mask(self,region=None):
+        selection = self._sel_from_region(region)
+        fstr = self.map_root+"s16/coadd/pointSourceMask_full_all.fits"
+        fmap = enmap.read_fits(fstr,sel=selection)
+        return fmap
+    
+    def get_survey_mask(self,region=None):
+        selection = self._sel_from_region(region)
+        self.map_root+"s16/coadd/surveyMask_full_all.fits"
+        fmap = enmap.read_fits(fstr,sel=selection)
+        return fmap
     
     def get_map(self,split,freq="150",day_night="daynight",planck=True,region=None,weight=False,get_identifier=False):
 
@@ -953,13 +1082,7 @@ class SigurdCoaddReader(ACTMapReader):
         fstr = self._fstring(split,freq,day_night,planck,weight)
         cal = float(self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['cal']) if not(weight) else 1.
 
-        if region is None:
-            selection = None
-        elif isinstance(region, six.string_types):
-            selection = enmap.slice_from_box(self.shape,self.wcs,self.boxes[region])
-        else:
-            selection = enmap.slice_from_box(self.shape,self.wcs,region)
-
+        selection = self._sel_from_region(region)
         fmap = enmap.read_fits(fstr,sel=selection)*np.sqrt(cal)
 
         if get_identifier:
@@ -976,7 +1099,7 @@ class SigurdCoaddReader(ACTMapReader):
         return self.map_root+"s16/coadd/f"+freq+"_"+day_night+"_all"+splitstr+"_"+weightstr+"_mono.fits"
 
 
-    def get_beam(self,freq="150",day_night="daynight"):
+    def get_beam(self,freq="150",day_night="daynight",planck=True):
         beam_file = self.beam_root+self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
