@@ -19,6 +19,13 @@ except:
     MPI = template()
     MPI.COMM_WORLD = fakeMpiComm()
 
+# From Sigurd's enlib.mpi:
+# Uncaught exceptions don't cause mpi to abort. This can lead to thousands of
+# wasted CPU hours
+def cleanup(type, value, traceback):
+	sys.__excepthook__(type, value, traceback)
+	MPI.COMM_WORLD.Abort(1)
+sys.excepthook = cleanup
 
 class fakeMpiComm:
     """
@@ -31,6 +38,8 @@ class fakeMpiComm:
     def Get_size(self):
         return 1
     def Barrier(self):
+        pass
+    def Abort(self,dummy):
         pass
 
 
