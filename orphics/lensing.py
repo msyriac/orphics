@@ -9,9 +9,73 @@ from scipy.interpolate import interp1d
 from enlib.fft import fft,ifft
 
 from orphics.stats import bin2D
+from enlib import lensing as enlensing
 
 import time
 import cPickle as pickle
+
+def lens_cov(ucov,alpha_pix,lens_order=5):
+    """Given the pix-pix covariance matrix for the unlensed CMB,
+    returns the lensed covmat for a given pixel displacement model.
+
+    ucov -- (Npix,Npix) array where Npix = Ny*Nx
+    alpha_pix -- (2,Ny,Nx) array of lensing displacements in pixel units
+
+    """
+    Scov = ucov.copy()
+    shape = alpha_pix.shape[-2:]
+    for i in range(Scov.shape[0]):
+        unlensed = Scov[i,:].copy().reshape(shape)
+        Scov[i,:] = enlensing.displace_map(unlensed, alpha_pix, order=lens_order).ravel()
+    for j in range(Scov.shape[1]):
+        unlensed = Scov[:,j].copy().reshape(shape)
+        Scov[:,j] = enlensing.displace_map(unlensed, alpha_pix, order=lens_order).ravel()
+    return Scov
+
+def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None):
+    if noise2d is None: noise2d = np.zeros(shape[-2:])
+    if beam2d is None: beam2d = np.ones(shape[-2:])
+    return Estimator(shape,wcs,
+                     theory,
+                     theorySpectraForNorm=theory,
+                     noiseX2dTEB=[noise2d,noise2d_P,noise2d_P],
+                     noiseY2dTEB=[noise2d,noise2d_P,noise2d_P],
+                     noiseX_is_total = False,
+                     noiseY_is_total = False,
+                     fmaskX2dTEB=[kmask,kmask_P,kmask_P],
+                     fmaskY2dTEB=[kmask,kmask_P,kmask_P],
+                     fmaskKappa=kmask_K,
+                     kBeamX = beam2d,
+                     kBeamY = beam2d,
+                     doCurl=False,
+                     TOnly=not(pol),
+                     halo=True,
+                     gradCut=grad_cut,
+                     verbose=False,
+                     loadPickledNormAndFilters=None,
+                     savePickledNormAndFilters=None,
+                     uEqualsL=False,
+                     bigell=9000,
+                     mpi_comm=None,
+                     lEqualsU=False)
+
+
+def kappa_to_phi(kappa,modlmap,return_fphi=False):
+    fphi = enmap.samewcs(kappa_to_fphi(kappa,modlmap),kappa)
+    phi =  enmap.samewcs(ifft(fphi,axes=[-2,-1],normalize=True).real, kappa) 
+    if return_fphi:
+        return phi, fphi
+    else:
+        return phi
+
+def kappa_to_fphi(kappa,modlmap):
+    return fkappa_to_fphi(fft(kappa,axes=[-2,-1]),modlmap)
+
+def fkappa_to_fphi(fkappa,modlmap):
+    kmap = np.nan_to_num(2.*fkappa/modlmap/(modlmap+1.))
+    kmap[modlmap<2.] = 0.
+    return kmap
+
 
 
 def fillLowEll(ells,cls,ellmin):
@@ -1253,13 +1317,18 @@ class Estimator(object):
             except:
                 pass
 
-
+    def kappa_from_map(self,XY,T2DData,E2DData=None,B2DData=None,alreadyFTed=False):
+        self.updateTEB_X(T2DData,E2DData,B2DData,alreadyFTed)
+        self.updateTEB_Y()
+        return self.get_kappa(XY)
+        
+        
     def fmask_func(self,arr):
         fMask = self.fmaskK
         arr[fMask<1.e-3] = 0.
         return arr
         
-    def getKappa(self,XY,returnFt=False):
+    def get_kappa(self,XY,returnFt=False):
 
         assert self._hasX and self._hasY
         assert XY in ['TT','TE','ET','EB','TB','EE']
@@ -1381,3 +1450,73 @@ class Estimator(object):
         else:
             return self.kappa
 
+
+
+
+
+## HALOS
+
+# g(x) = g(theta/thetaS) HuDeDeoVale 2007
+gnfw = lambda x: np.piecewise(x, [x>1., x<1., x==1.], \
+                            [lambda y: (1./(y*y - 1.)) * \
+                             ( 1. - ( (2./np.sqrt(y*y - 1.)) * np.arctan(np.sqrt((y-1.)/(y+1.))) ) ), \
+                             lambda y: (1./(y*y - 1.)) * \
+                            ( 1. - ( (2./np.sqrt(-(y*y - 1.))) * np.arctanh(np.sqrt(-((y-1.)/(y+1.)))) ) ), \
+                        lambda y: (1./3.)])
+
+f_c = lambda c: np.log(1.+c) - (c/(1.+c))
+
+
+def nfw_kappa(massOverh,modrmap_radians,cc,zL=0.7,concentration=3.2,overdensity=180.,critical=False,atClusterZ=False):
+    sgn = 1. if massOverh>0. else -1.
+    comS = cc.results.comoving_radial_distance(cc.cmbZ)*cc.h
+    comL = cc.results.comoving_radial_distance(zL)*cc.h
+    winAtLens = (comS-comL)/comS
+    kappa,r500 = NFWkappa(cc,np.abs(massOverh),concentration,zL,modrmap_radians* 180.*60./np.pi,winAtLens,
+                          overdensity=overdensity,critical=critical,atClusterZ=atClusterZ)
+
+    return sgn*kappa
+
+
+
+def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,critical=True,atClusterZ=True):
+
+    comL  = (cc.results.comoving_radial_distance(zL) )*cc.h
+
+    
+
+    c = concentration
+    M = massOverh
+
+    zdensity = 0.
+    if atClusterZ: zdensity = zL
+
+    if critical:
+        r500 = cc.rdel_c(M,zdensity,overdensity).flatten()[0] # R500 in Mpc/h
+    else:
+        r500 = cc.rdel_m(M,zdensity,overdensity) # R500 in Mpc/h
+
+
+    conv=np.pi/(180.*60.)
+    theta = thetaArc*conv # theta in radians
+
+    rS = r500/c
+
+    thetaS = rS/ comL 
+
+
+    const12 = 9.571e-20 # 2G/c^2 in Mpc / solar mass 
+    fc = np.log(1.+c) - (c/(1.+c))    
+    #const3 = comL * comLS * (1.+zL) / comS #  Mpc
+    const3 = comL *  (1.+zL) *winAtLens #  Mpc
+    const4 = M / (rS*rS) #solar mass / MPc^2
+    const5 = 1./fc
+    
+
+    kappaU = gnfw(theta/thetaS)+theta*0. # added for compatibility with enmap
+
+    consts = const12 * const3 * const4 * const5
+    kappa = consts * kappaU
+
+
+    return kappa, r500

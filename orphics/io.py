@@ -184,7 +184,7 @@ class Plotter(object):
         self._ax.axhline(y=y,ls=ls,alpha=alpha,color=color,**kwargs)
         
     def vline(self,x=0.,ls="--",alpha=0.5,color="k",**kwargs):
-        self._ax.axhline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
+        self._ax.axvline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
 
     def done(self,filename=None,verbose=True,**kwargs):
 

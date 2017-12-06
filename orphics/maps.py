@@ -292,8 +292,35 @@ def get_real_attributes(shape,wcs):
 
 
 
+## MAXLIKE
+
+def get_lnlike(covinv,instamp):
+    Npix = instamp.size
+    assert covinv.size==Npix**2
+    vec = instamp.reshape((Npix,1))
+    ans = np.dot(np.dot(vec.T,covinv),vec)
+    assert ans.size==1
+    return ans[0,0]
+
+def pixcov(shape,wcs,ps,Nsims,seed=None,mean_sub=True):
+    mg = MapGen(shape,wcs,ps)
+    np.random.seed(seed)
+    umaps = []
+    for i in range(Nsims):
+        cmb = mg.get_map()
+        if mean_sub: cmb -= cmb.mean()
+        umaps.append(cmb.ravel())
+
+    pixcov = np.cov(np.array(umaps).T)
+    return pixcov
+
 
 ## MAP OPERATIONS
+
+
+
+def butterworth(ells,ell0,n):
+    return 1./(1.+(ells*1./ell0)**(2.*n))
 
 
 def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):

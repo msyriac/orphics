@@ -350,6 +350,40 @@ class LimberCosmology(Cosmology):
                 
                 
 
+def unpack_cmb_theory(theory,ells,lensed=False):
+    
+    if lensed:
+        cltt = theory.lCl('TT',ells)
+        clee = theory.lCl('EE',ells)
+        clte = theory.lCl('TE',ells)
+        clbb = theory.lCl('BB',ells)    
+    else:
+        cltt = theory.uCl('TT',ells)
+        clee = theory.uCl('EE',ells)
+        clte = theory.uCl('TE',ells)
+        clbb = theory.uCl('BB',ells)
+
+    return cltt, clee, clte, clbb
+
+def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,orphics_dimensionless=True,TCMB=2.7255e6):
+    if orphics_dimensionless and dimensionless: tmul = 1.
+    if orphics_dimensionless and not(dimensionless): tmul = TCMB**2.
+    if not(orphics_dimensionless) and not(dimensionless): tmul = 1.
+    if not(orphics_dimensionless) and dimensionless: tmul = 1./TCMB**2.
+    
+    
+    fine_ells = np.arange(0,lmax,1)
+    cltt, clee, clte, clbb = unpack_cmb_theory(theory,fine_ells,lensed=lensed)
+    ps = np.zeros((3,3,fine_ells.size))
+    ps[0,0] = cltt
+    ps[1,1] = clee
+    ps[0,1] = clte
+    ps[1,0] = clte
+    ps[2,2] = clbb
+
+    return ps*tmul
+
+        
 def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True):
     '''
 
