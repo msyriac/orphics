@@ -2,11 +2,18 @@ from enlib import enmap, utils
 import numpy as np
 from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
-import yaml
+import yaml,six
+from orphics import io
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
+def bounds_from_list(blist):
+    """Given blist = [dec0,ra0,dec1,ra1] in degrees
+    return ndarray([[dec0,ra0],[dec1,ra1]]) in radians
+    """
+    return np.array(blist).reshape((2,2))*np.pi/180.
+        
 
 def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",pol=False,height_deg=None,height_arcmin=None,xoffset_degree=0.,yoffset_degree=0.):
     """
@@ -932,7 +939,9 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
 
 ### INTERFACES WITH EXPERIMENTS
 
-class ACTPolMapReader(object):
+
+
+class ACTMapReader(object):
 
     def __init__(self,config_yaml_path):
 
@@ -942,15 +951,72 @@ class ACTPolMapReader(object):
         self.map_root = self._cfg['map_root']
         self.beam_root = self._cfg['beam_root']
 
+        
+        self.boxes = {}
+        for key in self._cfg['patches']:
+            self.boxes[key] = bounds_from_list(io.list_from_string(self._cfg['patches'][key]))
+
+
     def patch_bounds(self,patch):
         return (np.array([float(x) for x in self._cfg['patches'][patch].split(',')])*np.pi/180.).reshape((2,2))
+        
+
+
+class SigurdCoaddReader(ACTMapReader):
+    
+    def __init__(self,config_yaml_path):
+        ACTMapReader.__init__(self,config_yaml_path)
+        eg_file = self._fstring(split=-1,freq="150",day_night="daynight",planck=True)
+        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
+
+
+    def _config_tag(self,freq,day_night,planck):
+        planckstr = "_planck" if planck else ""
+        return freq+planckstr+"_"+day_night
+    
+    def get_map(self,split,freq="150",day_night="daynight",planck=True,region=None,weight=False,get_identifier=False):
+
+        
+        fstr = self._fstring(split,freq,day_night,planck,weight)
+        cal = float(self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['cal']) if not(weight) else 1.
+
+        if region is None:
+            selection = None
+        elif isinstance(region, six.string_types):
+            selection = enmap.slice_from_box(self.shape,self.wcs,self.boxes[region])
+        else:
+            selection = enmap.slice_from_box(self.shape,self.wcs,region)
+
+        fmap = enmap.read_fits(fstr,sel=selection)*np.sqrt(cal)
+
+        if get_identifier:
+            identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
+            return fmap,identifier
+        else:
+            return fmap
+        
+
+    def _fstring(self,split,freq="150",day_night="daynight",planck=True,weight=False):
+        # Change this function if the map naming scheme changes
+        splitstr = "" if split<0 or split>3 else "_2way_"+str(split)
+        weightstr = "div" if weight else "map"
+        return self.map_root+"s16/coadd/f"+freq+"_"+day_night+"_all"+splitstr+"_"+weightstr+"_mono.fits"
+
+
+    def get_beam(self,freq="150",day_night="daynight"):
+        beam_file = self.beam_root+self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['beam']
+        ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
+        return ls, bells
+    
+class SimoneC7V5Reader(ACTMapReader):
+    
+    def __init__(self,config_yaml_path):
+        ACTMapReader.__init__(self,config_yaml_path)
         
     def get_beam(self,season,patch,array,freq="150",day_night="night"):
         beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
-
-        
     def get_map(self,split,season,patch,array,freq="150",day_night="night",full_map=False,weight=False,get_identifier=False,t_only=False):
 
         maps = []
@@ -977,11 +1043,11 @@ class ACTPolMapReader(object):
     def _fstring(self,split,season,patch,array,freq,day_night,pol):
         # Change this function if the map naming scheme changes
         splitstr = "set0123" if split<0 or split>3 else "set"+str(split)
-        return self.map_root+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
+        return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
 
     def _hstring(self,season,patch,array,freq,day_night):
         splitstr = "set0123"
-        return self.map_root+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
+        return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
 
 
 
@@ -1058,6 +1124,8 @@ class InterpStack(object):
 
         box = np.array([[dec_rad-coord_height/2.,ra_rad-coord_width/2.],[dec_rad+coord_height/2.,ra_rad+coord_width/2.]])
         submap = imap.submap(box,inclusive=True)
+        if submap.shape[0]<1 or submap.shape[1]<1:
+            return None
         
         
         newcoord = coordinates.recenter((self.lra,self.ldec),(self.rat,self.dect,ra_rad,dec_rad))
