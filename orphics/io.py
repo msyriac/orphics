@@ -48,6 +48,13 @@ def bin_edges_from_config(Config,section):
     num = Config.getint(section,"num_bins")
     return npspace(minim,maxim,num,scale=spacing)
 
+def list_from_string(string):
+    return [float(x) for x in string.split(',')]
+
+def list_from_config(Config,section,name):
+    return list_from_string(Config.get(section,name))
+
+
 ### PLOTTING
 
 def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
