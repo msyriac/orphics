@@ -39,27 +39,31 @@ class Stats(object):
         else:
             self.loopover = loopover
 
-    def add_to_stats(self,label,vector):
+    def add_to_stats(self,label,vector,exclude=False):
         """
         Append the 1d vector to a statistic named "label".
         Create a new one if it doesn't already exist.
         """
         
-        if not(label in list(self.vectors.keys())): self.vectors[label] = []
-        self.vectors[label].append(vector)
+        if not(label in list(self.vectors.keys())):
+            self.vectors[label] = []
+            self.columns = vector.size
+        if not(exclude):
+            self.vectors[label].append(vector)
 
 
-    def add_to_stack(self,label,arr):
+    def add_to_stack(self,label,arr,exclude=False):
         """
         This is just an accumulator, it can't track statisitics.
         Add arr to a cumulative stack named "label". Could be 2d arrays.
         Create a new one if it doesn't already exist.
         """
         if not(label in list(self.little_stack.keys())):
-            self.little_stack[label] = 0.
+            self.little_stack[label] = arr*0.
             self.little_stack_count[label] = 0
-        self.little_stack[label] += arr
-        self.little_stack_count[label] += 1
+        if not(exclude):
+            self.little_stack[label] += arr
+            self.little_stack_count[label] += 1
 
 
     def get_stacks(self,verbose=True):
@@ -108,8 +112,6 @@ class Stats(object):
         Collect from all MPI cores and calculate statistics for
         1d measurements.
         """
-        import orphics.tools.stats as stats
-        import numpy as np
 
         if self.rank in self.loopover:
             for k,label in enumerate(self.vectors.keys()):
@@ -136,13 +138,16 @@ class Stats(object):
             for core in self.loopover: #range(1,self.numcores):
                 if verbose: print("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.vectors.keys()):
-                    expected_shape = (self.numobj[label][core],self.vectors[label].shape[1])
+                    expected_shape = (self.numobj[label][core],self.columns)
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
                     self.comm.Recv(data_vessel, source=core, tag=self.tag_start+k)
-                    self.vectors[label] = np.append(self.vectors[label],data_vessel,axis=0)
+                    try:
+                        self.vectors[label] = np.append(self.vectors[label],data_vessel,axis=0)
+                    except: # in case rank 0 has no data because it is not participating
+                        self.vectors[label] = data_vessel
 
             for k,label in enumerate(self.vectors.keys()):
-                self.stats[label] = stats.getStats(self.vectors[label])
+                self.stats[label] = get_stats(self.vectors[label])
             #self.vectors = {}
                 
 

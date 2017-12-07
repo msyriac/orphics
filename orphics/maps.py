@@ -250,7 +250,8 @@ def rotate_map(imap,shape_target=None,wcs_target=None,pix_target=None,**kwargs):
 ### REAL AND FOURIER SPACE ATTRIBUTES
 
 def get_ft_attributes(shape,wcs):
-    Ny, Nx = shape[-2:]
+    shape = shape[-2:]
+    Ny, Nx = shape
     pixScaleY, pixScaleX = enmap.pixshape(shape,wcs)
 
     
@@ -518,6 +519,11 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
     return cinv
 
 
+def resolution(shape,wcs):
+    res = np.min(enmap.extent(shape,wcs)/shape[-2:])
+    return res
+
+
 def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
 
     """
@@ -716,7 +722,7 @@ class NoiseModel(object):
         
         
 
-    def get_noise_sim(self,seed):
+    def get_noise_sim(self,seed=None):
         return self.ngen.get_map(seed=seed,scalar=True) * self.noise_modulation
         
     def add_beam_1d(self,ells,beam_1d_transform):
@@ -1082,23 +1088,25 @@ class SigurdCoaddReader(ACTMapReader):
         planckstr = "_planck" if planck else ""
         return freq+planckstr+"_"+day_night
 
-    def _sel_from_region(self,region):
+    def sel_from_region(self,region,shape=None,wcs=None):
+        if shape is None: shape = self.shape
+        if wcs is None: wcs = self.wcs
         if region is None:
             selection = None
         elif isinstance(region, six.string_types):
-            selection = enmap.slice_from_box(self.shape,self.wcs,self.boxes[region])
+            selection = enmap.slice_from_box(shape,wcs,self.boxes[region])
         else:
-            selection = enmap.slice_from_box(self.shape,self.wcs,region)
+            selection = enmap.slice_from_box(shape,wcs,region)
         return selection
 
     def get_ptsrc_mask(self,region=None):
-        selection = self._sel_from_region(region)
+        selection = self.sel_from_region(region)
         fstr = self.map_root+"s16/coadd/pointSourceMask_full_all.fits"
         fmap = enmap.read_fits(fstr,sel=selection)
         return fmap
     
     def get_survey_mask(self,region=None):
-        selection = self._sel_from_region(region)
+        selection = self.sel_from_region(region)
         self.map_root+"s16/coadd/surveyMask_full_all.fits"
         fmap = enmap.read_fits(fstr,sel=selection)
         return fmap
@@ -1109,7 +1117,7 @@ class SigurdCoaddReader(ACTMapReader):
         fstr = self._fstring(split,freq,day_night,planck,weight)
         cal = float(self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['cal']) if not(weight) else 1.
 
-        selection = self._sel_from_region(region)
+        selection = self.sel_from_region(region)
         fmap = enmap.read_fits(fstr,sel=selection)*np.sqrt(cal)
 
         if get_identifier:

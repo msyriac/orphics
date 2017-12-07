@@ -32,7 +32,7 @@ def lens_cov(ucov,alpha_pix,lens_order=5):
         Scov[:,j] = enlensing.displace_map(unlensed, alpha_pix, order=lens_order).ravel()
     return Scov
 
-def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None):
+def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False):
     if noise2d is None: noise2d = np.zeros(shape[-2:])
     if beam2d is None: beam2d = np.ones(shape[-2:])
     return Estimator(shape,wcs,
@@ -54,7 +54,7 @@ def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask
                      verbose=False,
                      loadPickledNormAndFilters=None,
                      savePickledNormAndFilters=None,
-                     uEqualsL=False,
+                     uEqualsL=unlensed_equals_lensed,
                      bigell=9000,
                      mpi_comm=None,
                      lEqualsU=False)
