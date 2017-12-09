@@ -6,6 +6,9 @@ import os,sys
 from szar import counts
 from scipy.linalg import pinv2
 
+arc = 30.0
+px = 1.0
+
 dimensionless = False
 mean_sub = False
 
@@ -13,7 +16,7 @@ theory_file_root = "../alhazen/data/Aug6_highAcc_CDM"
 cc = counts.ClusterCosmology(skipCls=True)
 theory = cosmology.loadTheorySpectraFromCAMB(theory_file_root,unlensedEqualsLensed=False,
                                                     useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=dimensionless)
-shape, wcs = maps.rect_geometry(width_arcmin=20.,px_res_arcmin=0.25,pol=False)
+shape, wcs = maps.rect_geometry(width_arcmin=arc,px_res_arcmin=px,pol=False)
 print(shape)
 lmax = 8000
 ells = np.arange(0,lmax,1)
@@ -24,24 +27,30 @@ ps = theory.uCl('TT',ells).reshape((1,1,lmax))
 modlmap = enmap.modlmap(shape,wcs)
 fwhm = 1.
 kbeam = maps.gauss_beam(fwhm,modlmap)
-# power2d = theory.uCl('TT',modlmap)
-# fcov = maps.diagonal_cov(power2d)
-# #io.plot_img(fcov.reshape(np.prod(shape),np.prod(shape)))
-# Ucov = maps.pixcov(shape,wcs,fcov).reshape(np.prod(shape),np.prod(shape))
-# io.plot_img(Ucov,"theorypcov.png")
-Ucov = maps.pixcov_sim(shape,wcs,ps,Nsims=10000,mean_sub=mean_sub,seed=1)
+power2d = theory.uCl('TT',modlmap)
+fcov = maps.diagonal_cov(power2d)
+# io.plot_img(fcov.reshape(np.prod(shape),np.prod(shape)))
+Ucov = maps.pixcov(shape,wcs,fcov).reshape(np.prod(shape),np.prod(shape)) #+ 6000
+#io.plot_img(Ucov,"theorypcov.png")
+#io.plot_img(np.random.multivariate_normal(np.zeros(np.prod(shape)),Ucov).reshape(shape[0],shape[1]) )
+
+# Ucov = maps.pixcov_sim(shape,wcs,ps,Nsims=10000,mean_sub=False,seed=1)
+# io.plot_img(Ucov,"simpcov.png")
 
 
+# # io.plot_img(np.random.multivariate_normal(np.zeros(np.prod(shape)),Ucov).reshape(shape[0],shape[1]) )
+#sys.exit()
+# Ucov = maps.pixcov_sim(shape,wcs,ps,Nsims=10000,mean_sub=mean_sub,seed=1)
 
 TCMB = 2.7255e6 if dimensionless else 1.
 Ucov /= TCMB**2.
 
-noise_uK_rad = 3.0*np.pi/180./60./TCMB
+noise_uK_rad = 10.0*np.pi/180./60./TCMB
 normfact = np.sqrt(np.prod(enmap.pixsize(shape,wcs)))
 noise_uK_pixel = noise_uK_rad/normfact
 Ncov = np.diag([(noise_uK_pixel)**2.]*Ucov.shape[0])
 
-
+print (Ncov[0,0],Ncov[-1,-1])
 
 modrmap = enmap.modrmap(shape,wcs)
 #kamps = np.linspace(0.01,0.8,40)
@@ -74,14 +83,16 @@ for k,kamp in enumerate(kamps):
     
 
 
-    Tcov = Scov + Ncov
+    Tcov = Scov + Ncov + 5000
     s,logdet = np.linalg.slogdet(Tcov)
+    print (s,logdet)
     assert s>0
     logdets.append(logdet)
-    Cinvs.append( pinv2(Tcov) )
-    # Cinvs.append( np.linalg.pinv(Tcov) )
+    Cinvs.append( pinv2(Tcov))
+    #Cinvs.append( np.linalg.pinv(Tcov) )
+    #Cinvs.append( np.linalg.inv(Tcov) )
     # print(logdet)
-    print(kamp)
+    #print(kamp)
 
 
 
