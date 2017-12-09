@@ -13,10 +13,9 @@ except:
 ### FILE I/O
     
 def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
-    comm.Barrier()
-    if not os.path.exists(dirpath):
-        if comm.Get_rank()==0: os.makedirs(dirpath)
-    comm.Barrier()
+    if comm.Get_rank()==0: 
+        if not os.path.exists(dirpath):
+            os.makedirs(dirpath)
     
 def save_cols(filename,tuple_of_vectors,**kwargs):
     tuple_of_vectors = np.asarray(tuple_of_vectors)

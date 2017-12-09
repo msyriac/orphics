@@ -6,6 +6,7 @@ import os,sys
 from szar import counts
 from scipy.linalg import pinv2
 import argparse
+import json
 
 
 # Parse command line
@@ -13,10 +14,6 @@ parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("GridName", type=str,help='Name of directory to read cinvs from.')
 parser.add_argument("Nclusters", type=int,help='Number of simulated clusters.')
 parser.add_argument("Amp", type=float,help='Amplitude of mass wrt 1e15.')
-parser.add_argument("-a", "--arc",     type=float,  default=10.,help="Stamp width (arcmin).")
-parser.add_argument("-p", "--pix",     type=float,  default=0.5,help="Pix width (arcmin).")
-parser.add_argument("-b", "--beam",     type=float,  default=1.0,help="Beam (arcmin).")
-parser.add_argument("-n", "--noise",     type=float,  default=3.0,help="Noise (uK-arcmin).")
 #parser.add_argument("-f", "--flag", action='store_true',help='A flag.')
 args = parser.parse_args()
 
@@ -28,10 +25,14 @@ numcores = comm.Get_size()
 
 
 # Paths
+with open(GridName+"/attribs.json",'r') as f:
+    attribs = json.loads(f.read())
+arc = attribs['arc'] ; pix = attribs['pix']  ; beam = attribs['beam']  ; noise = attribs['noise']
+
 PathConfig = io.load_path_config()
 GridName = PathConfig.get("paths","output_data")+args.GridName+"_"+ \
            io.join_nums((args.GridMin,args.GridMax,args.GridNum,args.arc,args.pix,args.beam,args.noise))
-pout_dir = PathConfig.get("paths","plots")+args.GridName+"_"+io.join_nums((GridMin,GridMax,GridNum,args.arc,args.pix,args.beam,args.noise))
+pout_dir = PathConfig.get("paths","plots")+args.GridName+"_"+io.join_nums((GridMin,GridMax,GridNum,arc,pix,beam,noise))
 io.mkdir(pout_dir,comm)
 
 
@@ -42,13 +43,13 @@ theory = cosmology.loadTheorySpectraFromCAMB(theory_file_root,unlensedEqualsLens
                                                     useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
 
 # Geometry
-shape, wcs = maps.rect_geometry(width_arcmin=args.arc,px_res_arcmin=args.pix,pol=False)
+shape, wcs = maps.rect_geometry(width_arcmin=arc,px_res_arcmin=pix,pol=False)
 modlmap = enmap.modlmap(shape,wcs)
 modrmap = enmap.modrmap(shape,wcs)
 
 # Noise model
-noise_uK_rad = args.noise*np.pi/180./60.
-kbeam = maps.gauss_beam(args.beam,modlmap)
+noise_uK_rad = noise*np.pi/180./60.
+kbeam = maps.gauss_beam(beam,modlmap)
 
 
 # Simulate

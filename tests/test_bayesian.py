@@ -1,6 +1,6 @@
 from __future__ import print_function
 from orphics import maps,io,cosmology,lensing,stats,mpi
-from enlib import enmap,lensing as enlensing,bench
+from enlib import enmap,bench
 import numpy as np
 import os,sys
 from szar import counts
@@ -79,15 +79,26 @@ my_tasks = each_tasks[rank]
 mstats = stats.Stats(comm)
 
 # File I/O
-if rank==0: io.mkdir(GridName)
-comm.Barrier()
+if rank==0: io.mkdir(GridName,comm)
 cinv_name = lambda x: GridName+"/cinv_"+str(x)+".npy"
 
+if rank==0: print("Rank 0 starting ...")
 for k,my_task in enumerate(my_tasks):
     kamp = kamps[my_task]
     pos = posmap + kamp*grad_phi
     alpha_pix = enmap.sky2pix(shape,wcs,pos, safe=False)
-    Scov = lensing.lens_cov(Ucov,alpha_pix,lens_order=lens_order,kbeam=kbeam)
+
+
+    def do_the_thing():
+        return lensing.lens_cov(Ucov,alpha_pix,lens_order=lens_order,kbeam=kbeam)
+
+    if rank==0:
+        with bench.show("rank 0 lensing cov"):
+            Scov = do_the_thing()
+    else:
+        Scov = do_the_thing()
+
+        
     Tcov = Scov + Ncov + 5000
     s,logdet = np.linalg.slogdet(Tcov)
     assert s>0
@@ -101,3 +112,7 @@ mstats.get_stats(verbose=True,skip_stats=True)
 if rank==0:
     logdets = mstats.vectors["logdets"]
     io.save_cols(GridName+"/amps_logdets.txt",(kamps,logdets))
+    import json
+    save_dict = {"arc":args.arc,"pix":args.pix,"beam":args.beam,"noise":args.noise}
+    with open(GridName+"/attribs.json") as f:
+        f.write(json.dumps(save_dict))
