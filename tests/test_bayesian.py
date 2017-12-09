@@ -22,8 +22,7 @@ args = parser.parse_args()
 
 # Paths
 PathConfig = io.load_path_config()
-GridName = PathConfig.get("paths","output_data")+args.GridName+"_"+ \
-           io.join_nums((args.GridMin,args.GridMax,args.GridNum,args.arc,args.pix,args.beam,args.noise))
+GridName = PathConfig.get("paths","output_data")+args.GridName
 
 # MPI
 comm = mpi.MPI.COMM_WORLD
@@ -79,7 +78,7 @@ my_tasks = each_tasks[rank]
 mstats = stats.Stats(comm)
 
 # File I/O
-if rank==0: io.mkdir(GridName,comm)
+io.mkdir(GridName,comm)
 cinv_name = lambda x: GridName+"/cinv_"+str(x)+".npy"
 
 if rank==0: print("Rank 0 starting ...")
