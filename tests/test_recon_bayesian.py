@@ -31,7 +31,7 @@ GridName = PathConfig.get("paths","output_data")+args.GridName
 with open(GridName+"/attribs.json",'r') as f:
     attribs = json.loads(f.read())
 arc = attribs['arc'] ; pix = attribs['pix']  ; beam = attribs['beam']  ; noise = attribs['noise']
-pout_dir = PathConfig.get("paths","plots")+args.GridName+"/plots_"+io.join_nums((GridMin,GridMax,GridNum,arc,pix,beam,noise))+"_"
+pout_dir = PathConfig.get("paths","plots")+args.GridName+"/plots_"+io.join_nums((arc,pix,beam,noise))+"_"
 io.mkdir(pout_dir,comm)
 
 
