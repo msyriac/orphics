@@ -520,7 +520,7 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
 
 
 def resolution(shape,wcs):
-    res = np.min(enmap.extent(shape,wcs)/shape[-2:])
+    res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
     return res
 
 
@@ -663,6 +663,8 @@ class NoiseModel(object):
             osplits = [split*mask for split in splits]
             fc = FourierCalc(shape,wcs,iau)
             n2d, p2d = noise_from_splits(osplits,fc)
+            del osplits
+            del splits
             w2 = np.mean(mask**2.)
             n2d *= (1./w2)
             p2d *= (1./w2)
