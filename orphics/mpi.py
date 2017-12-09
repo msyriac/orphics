@@ -56,6 +56,16 @@ def mpi_distribute(num_tasks,avail_cores):
     return num_each,task_dist
     
 
+class Grid(object):
+
+    def __init__(self,comm,shape):
+
+        self.comm = comm
+        self.mine = np.zeros(shape)
+
+    
+
+        
 
 ### SCINET JOBMAKER
 """

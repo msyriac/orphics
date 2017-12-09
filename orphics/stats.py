@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 
 
@@ -27,7 +28,7 @@ class Stats(object):
             
         self.rank = self.comm.Get_rank()
         self.numcores = self.comm.Get_size()
-            
+        self.columns = {}
             
         self.vectors = {}
         self.little_stack = {}
@@ -47,7 +48,7 @@ class Stats(object):
         
         if not(label in list(self.vectors.keys())):
             self.vectors[label] = []
-            self.columns = vector.size
+            self.columns[label] = vector.shape
         if not(exclude):
             self.vectors[label].append(vector)
 
@@ -107,7 +108,7 @@ class Stats(object):
             for k,label in enumerate(self.little_stack.keys()):                
                 self.stacks[label] /= self.stack_count[label]
                 
-    def get_stats(self,verbose=True):
+    def get_stats(self,verbose=True,skip_stats=False):
         """
         Collect from all MPI cores and calculate statistics for
         1d measurements.
@@ -138,7 +139,7 @@ class Stats(object):
             for core in self.loopover: #range(1,self.numcores):
                 if verbose: print("Waiting for core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.vectors.keys()):
-                    expected_shape = (self.numobj[label][core],self.columns)
+                    expected_shape = (self.numobj[label][core],)+self.columns[label]
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
                     self.comm.Recv(data_vessel, source=core, tag=self.tag_start+k)
                     try:
@@ -146,8 +147,9 @@ class Stats(object):
                     except: # in case rank 0 has no data because it is not participating
                         self.vectors[label] = data_vessel
 
-            for k,label in enumerate(self.vectors.keys()):
-                self.stats[label] = get_stats(self.vectors[label])
+            if not(skip_stats):
+                for k,label in enumerate(self.vectors.keys()):
+                    self.stats[label] = get_stats(self.vectors[label])
             #self.vectors = {}
                 
 

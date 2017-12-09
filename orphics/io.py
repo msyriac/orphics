@@ -3,6 +3,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import os,sys
+from orphics import mpi
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
@@ -11,15 +12,24 @@ except:
 
 ### FILE I/O
     
-def mkdir(dirpath):
+def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
+    comm.Barrier()
     if not os.path.exists(dirpath):
-        os.makedirs(dirpath)
-
+        if comm.Get_rank()==0: os.makedirs(dirpath)
+    comm.Barrier()
+    
 def save_cols(filename,tuple_of_vectors,**kwargs):
     tuple_of_vectors = np.asarray(tuple_of_vectors)
     save_mat = np.vstack(tuple_of_vectors).T
     np.savetxt(filename,save_mat,**kwargs)
 
+### NAMING
+    
+def join_nums(nums):
+    return "_".join([str(f) for f in nums])
+
+
+    
 ### CONFIG FILES
     
 def load_path_config():
