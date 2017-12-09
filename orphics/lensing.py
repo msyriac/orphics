@@ -14,7 +14,7 @@ from enlib import lensing as enlensing
 import time
 import cPickle as pickle
 
-def lens_cov(ucov,alpha_pix,lens_order=5):
+def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,
     returns the lensed covmat for a given pixel displacement model.
 
@@ -25,11 +25,15 @@ def lens_cov(ucov,alpha_pix,lens_order=5):
     Scov = ucov.copy()
     shape = alpha_pix.shape[-2:]
     for i in range(Scov.shape[0]):
-        unlensed = Scov[i,:].copy().reshape(shape)
-        Scov[i,:] = enlensing.displace_map(unlensed, alpha_pix, order=lens_order).ravel()
+        unlensed = Scov[i,:].copy().reshape(shape) 
+        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        Scov[i,:] = lensed.ravel()
     for j in range(Scov.shape[1]):
         unlensed = Scov[:,j].copy().reshape(shape)
-        Scov[:,j] = enlensing.displace_map(unlensed, alpha_pix, order=lens_order).ravel()
+        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        Scov[:,j] = lensed.ravel()
     return Scov
 
 def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None):

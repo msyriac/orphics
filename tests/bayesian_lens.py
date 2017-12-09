@@ -13,38 +13,43 @@ theory_file_root = "../alhazen/data/Aug6_highAcc_CDM"
 cc = counts.ClusterCosmology(skipCls=True)
 theory = cosmology.loadTheorySpectraFromCAMB(theory_file_root,unlensedEqualsLensed=False,
                                                     useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=dimensionless)
-shape, wcs = maps.rect_geometry(width_arcmin=10.,px_res_arcmin=0.5,pol=False)
+shape, wcs = maps.rect_geometry(width_arcmin=20.,px_res_arcmin=0.25,pol=False)
+print(shape)
 lmax = 8000
 ells = np.arange(0,lmax,1)
 ps = theory.uCl('TT',ells).reshape((1,1,lmax))
 #ps = cosmology.enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=dimensionless,orphics_dimensionless=dimensionless)
 #Ucov = np.load("scov.npy")
 
+modlmap = enmap.modlmap(shape,wcs)
+fwhm = 1.
+kbeam = maps.gauss_beam(fwhm,modlmap)
+# power2d = theory.uCl('TT',modlmap)
+# fcov = maps.diagonal_cov(power2d)
+# #io.plot_img(fcov.reshape(np.prod(shape),np.prod(shape)))
+# Ucov = maps.pixcov(shape,wcs,fcov).reshape(np.prod(shape),np.prod(shape))
+# io.plot_img(Ucov,"theorypcov.png")
+Ucov = maps.pixcov_sim(shape,wcs,ps,Nsims=10000,mean_sub=mean_sub,seed=1)
 
-Ucov = maps.pixcov(shape,wcs,ps,Nsims=10000,mean_sub=mean_sub,seed=1)
-#print(shape,Ucov.shape)
-#sys.exit()
-# np.save("scov.npy",Ucov)
 
 
 TCMB = 2.7255e6 if dimensionless else 1.
 Ucov /= TCMB**2.
 
-noise_uK_rad = 0.1*np.pi/180./60./TCMB
-Ncov = np.diag([(noise_uK_rad)**2.]*Ucov.shape[0])
-print(Ucov.shape,Ncov.shape)
-# sys.exit()
+noise_uK_rad = 3.0*np.pi/180./60./TCMB
+normfact = np.sqrt(np.prod(enmap.pixsize(shape,wcs)))
+noise_uK_pixel = noise_uK_rad/normfact
+Ncov = np.diag([(noise_uK_pixel)**2.]*Ucov.shape[0])
+
 
 
 modrmap = enmap.modrmap(shape,wcs)
-modlmap = enmap.modlmap(shape,wcs)
-ksigma = 4.0 * np.pi/180./180.
 #kamps = np.linspace(0.01,0.8,40)
-amp_min = 0.19
-amp_max = 0.21
+amp_min = -0.3
+amp_max = 0.5
 # amp_min = 0.76
 # amp_max = 0.84
-kamps = np.linspace(amp_min,amp_max,30)
+kamps = np.linspace(amp_min,amp_max,10)
 
 print(kamps)
 
@@ -52,7 +57,6 @@ Ccovs = []
 Cinvs = []
 logdets = []
 
-#kappa = np.exp(-modrmap**2./2./ksigma**2.)
 
 kappa = lensing.nfw_kappa(1e15,modrmap,cc)
 
@@ -65,7 +69,7 @@ for k,kamp in enumerate(kamps):
     pos = posmap + kamp*grad_phi
     alpha_pix = enmap.sky2pix(shape,wcs,pos, safe=False)
 
-    Scov = lensing.lens_cov(Ucov,alpha_pix,lens_order=lens_order)
+    Scov = lensing.lens_cov(Ucov,alpha_pix,lens_order=lens_order,kbeam=kbeam)
     # io.plot_img(np.nan_to_num((Scov-Ucov)*100./Ucov))
     
 
@@ -108,17 +112,20 @@ lnprior = (kamps-aprior)**2./aprior_sigma
 
 pl = io.Plotter(xlabel="$A$",ylabel="$\\mathrm{ln}\\mathcal{L}$")
 totlikes = 0.
+np.random.seed(2)
+
 for i in range(Nclusters):
     if (i+1)%10==0: print(i+1)
 
 
     
-    unlensed = mg.get_map(seed=int(1e9)+i)
-    # stamp = unlensed + ng.get_map(seed=int(1e9)+2*i+1)
-    noise_map = ng.get_map(seed=int(1e9+1e8)+i)
-    stamp = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)  #+ noise_map
+    unlensed = mg.get_map()
+    noise_map = ng.get_map()
+    #noise_map -= noise_map.mean()
+    lensed = maps.filter_map(enlensing.displace_map(unlensed, alpha_pix, order=lens_order),kbeam)
+    stamp = lensed  + noise_map #np.random.multivariate_normal(np.zeros(np.prod(shape)),Ncov).reshape(shape[0],shape[1]) #noise_map
 
-    # io.plot_img(unlensed)
+    # io.plot_img(lensed)
     # io.plot_img(stamp)
     
     if mean_sub: stamp -= stamp.mean()
@@ -131,7 +138,7 @@ for i in range(Nclusters):
         totlnlikes.append(totlnlike)
 
     nlnlikes = -0.5*np.array(totlnlikes)
-    nlnlikes -= nlnlikes.max()
+    #nlnlikes -= nlnlikes.max()
     totlikes += nlnlikes.copy()
     # print(nlnlikes)
 

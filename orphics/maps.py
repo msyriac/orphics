@@ -294,6 +294,22 @@ def get_real_attributes(shape,wcs):
 
 ## MAXLIKE
 
+def diagonal_cov(power2d):
+    ny,nx = power2d.shape[-2:]
+    Cflat = np.zeros((nx*ny,nx*ny))
+    np.fill_diagonal(Cflat,power2d.reshape(-1))
+    return Cflat.reshape((ny,nx,ny,nx))
+
+
+def pixcov(shape,wcs,fourierCov):
+    fourierCov = fourierCov.astype(np.float32, copy=False)
+    bny,bnx = shape
+    from numpy.fft import fft2,ifft2
+
+    pcov = fft2((ifft2(fourierCov,axes=(-4,-3))),axes=(-2,-1)).real
+    #pcov = fftfast.fft((fftfast.ifft2(fourierCov,axes=(-4,-3))),axes=(-2,-1)).real
+    return pcov*bnx*bny/enmap.area(shape,wcs)
+
 def get_lnlike(covinv,instamp):
     Npix = instamp.size
     assert covinv.size==Npix**2
@@ -302,7 +318,7 @@ def get_lnlike(covinv,instamp):
     assert ans.size==1
     return ans[0,0]
 
-def pixcov(shape,wcs,ps,Nsims,seed=None,mean_sub=True):
+def pixcov_sim(shape,wcs,ps,Nsims,seed=None,mean_sub=True):
     mg = MapGen(shape,wcs,ps)
     np.random.seed(seed)
     umaps = []
@@ -310,7 +326,7 @@ def pixcov(shape,wcs,ps,Nsims,seed=None,mean_sub=True):
         cmb = mg.get_map()
         if mean_sub: cmb -= cmb.mean()
         umaps.append(cmb.ravel())
-
+        
     pixcov = np.cov(np.array(umaps).T)
     return pixcov
 
@@ -1086,7 +1102,7 @@ def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
     mean = stamp[np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean()
     stamp -= mean
     flux = stamp[modrmap<aperture_radius].sum()
-    return flux
+    return flux * enmap.area(stamp.shape,stamp.wcs )/ np.prod(stamp.shape[-2:])**2.
 
 
 
