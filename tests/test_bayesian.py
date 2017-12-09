@@ -114,5 +114,5 @@ if rank==0:
     io.save_cols(GridName+"/amps_logdets.txt",(kamps,logdets))
     import json
     save_dict = {"arc":args.arc,"pix":args.pix,"beam":args.beam,"noise":args.noise}
-    with open(GridName+"/attribs.json") as f:
+    with open(GridName+"/attribs.json",'w') as f:
         f.write(json.dumps(save_dict))
