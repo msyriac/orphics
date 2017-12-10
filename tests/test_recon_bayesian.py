@@ -14,6 +14,7 @@ parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("GridName", type=str,help='Name of directory to read cinvs from.')
 parser.add_argument("Nclusters", type=int,help='Number of simulated clusters.')
 parser.add_argument("Amp", type=float,help='Amplitude of mass wrt 1e15.')
+parser.add_argument("-n", "--noise",     type=float,  default=3.0,help="Noise (uK-arcmin).")
 #parser.add_argument("-f", "--flag", action='store_true',help='A flag.')
 args = parser.parse_args()
 
@@ -30,8 +31,8 @@ PathConfig = io.load_path_config()
 GridName = PathConfig.get("paths","output_data")+args.GridName
 with open(GridName+"/attribs.json",'r') as f:
     attribs = json.loads(f.read())
-arc = attribs['arc'] ; pix = attribs['pix']  ; beam = attribs['beam']  ; noise = attribs['noise']
-pout_dir = PathConfig.get("paths","plots")+args.GridName+"/plots_"+io.join_nums((arc,pix,beam,noise))+"_"
+arc = attribs['arc'] ; pix = attribs['pix']  ; beam = attribs['beam']  
+pout_dir = PathConfig.get("paths","plots")+args.GridName+"/plots_"+io.join_nums((arc,pix,beam,args.noise))+"_"
 io.mkdir(pout_dir,comm)
 
 
@@ -47,7 +48,10 @@ modlmap = enmap.modlmap(shape,wcs)
 modrmap = enmap.modrmap(shape,wcs)
 
 # Noise model
-noise_uK_rad = noise*np.pi/180./60.
+noise_uK_rad = args.noise*np.pi/180./60.
+normfact = np.sqrt(np.prod(enmap.pixsize(shape,wcs)))
+noise_uK_pixel = noise_uK_rad/normfact
+Ncov = np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
 kbeam = maps.gauss_beam(beam,modlmap)
 
 
@@ -67,12 +71,19 @@ pos = posmap + grad_phi
 alpha_pix = enmap.sky2pix(shape,wcs,pos, safe=False)
 lens_order = 5
 
-# Load Cinvs
-kamps, logdets = np.loadtxt(GridName+"/amps_logdets.txt",unpack=True)
-cinv_file = lambda x: GridName+"/cinv_"+str(x)+".npy"
+# Load covs
+kamps = np.loadtxt(GridName+"/amps.txt",unpack=True)
+cov_file = lambda x: GridName+"/cov_"+str(x)+".npy"
 cinvs = []
+logdets = []
 for k in range(len(kamps)):
-    cinvs.append(np.load(cinv_file(k)))
+    cov = np.load(cov_file(k))
+    
+    Tcov = cov + Ncov + 5000
+    s,logdet = np.linalg.slogdet(Tcov)
+    assert s>0
+    cinvs.append(pinv2(Tcov))
+    logdets.append(logdet)
 
 
 
@@ -107,18 +118,19 @@ mstats.get_stats()
 
 if rank==0:
 
+    print("Summing...")
     totlikes = mstats.vectors["totlikes"].sum(axis=0)
     totlikes -= totlikes.max()
 
     amaxes = kamps[np.isclose(totlikes,totlikes.max())]
 
-    pl = io.Plotter(xlabel="$A$",ylabel="$\\mathrm{ln}\\mathcal{L}$")
-    for nlnlikes in mstats.vectors["totlikes"]:
-        pl.add(kamps,np.array(nlnlikes),alpha=0.2)
-    for amax in amaxes:
-        pl.vline(x=amax,ls="-")
-    pl.vline(x=kamp_true,ls="--")
-    pl.done(pout_dir+"lensed_lnlikes.png")
+    # pl = io.Plotter(xlabel="$A$",ylabel="$\\mathrm{ln}\\mathcal{L}$")
+    # for nlnlikes in mstats.vectors["totlikes"]:
+    #     pl.add(kamps,np.array(nlnlikes),alpha=0.2)
+    # for amax in amaxes:
+    #     pl.vline(x=amax,ls="-")
+    # pl.vline(x=kamp_true,ls="--")
+    # pl.done(pout_dir+"lensed_lnlikes.png")
 
 
     pl = io.Plotter(xlabel="$A$",ylabel="$\\mathrm{ln}\\mathcal{L}$")

@@ -4,7 +4,6 @@ from enlib import enmap,bench
 import numpy as np
 import os,sys
 from szar import counts
-from scipy.linalg import pinv2
 import argparse
 
 # Parse command line
@@ -16,7 +15,6 @@ parser.add_argument("GridNum", type=int,help='Number of amplitudes.')
 parser.add_argument("-a", "--arc",     type=float,  default=10.,help="Stamp width (arcmin).")
 parser.add_argument("-p", "--pix",     type=float,  default=0.5,help="Pix width (arcmin).")
 parser.add_argument("-b", "--beam",     type=float,  default=1.0,help="Beam (arcmin).")
-parser.add_argument("-n", "--noise",     type=float,  default=3.0,help="Noise (uK-arcmin).")
 #parser.add_argument("-f", "--flag", action='store_true',help='A flag.')
 args = parser.parse_args()
 
@@ -47,10 +45,6 @@ fcov = maps.diagonal_cov(power2d)
 Ucov = maps.pixcov(shape,wcs,fcov).reshape(np.prod(shape),np.prod(shape))
 
 # Noise model
-noise_uK_rad = args.noise*np.pi/180./60.
-normfact = np.sqrt(np.prod(enmap.pixsize(shape,wcs)))
-noise_uK_pixel = noise_uK_rad/normfact
-Ncov = np.diag([(noise_uK_pixel)**2.]*Ucov.shape[0])
 kbeam = maps.gauss_beam(args.beam,modlmap)
 
 
@@ -75,11 +69,10 @@ Njobs = Nsims
 num_each,each_tasks = mpi.mpi_distribute(Njobs,numcores)
 if rank==0: print ("At most ", max(num_each) , " tasks...")
 my_tasks = each_tasks[rank]
-mstats = stats.Stats(comm)
 
 # File I/O
 io.mkdir(GridName,comm)
-cinv_name = lambda x: GridName+"/cinv_"+str(x)+".npy"
+cov_name = lambda x: GridName+"/cov_"+str(x)+".npy"
 
 if rank==0: print("Rank 0 starting ...")
 for k,my_task in enumerate(my_tasks):
@@ -96,22 +89,13 @@ for k,my_task in enumerate(my_tasks):
             Scov = do_the_thing()
     else:
         Scov = do_the_thing()
-
         
-    Tcov = Scov + Ncov + 5000
-    s,logdet = np.linalg.slogdet(Tcov)
-    assert s>0
-    if rank==0: print(k+1 , " / ", len(my_tasks))
+    np.save(cov_name(my_task),Scov)
 
-    np.save(cinv_name(my_task),pinv2(Tcov))
-    mstats.add_to_stats("logdets",logdet)
-
-mstats.get_stats(verbose=True,skip_stats=True)
 
 if rank==0:
-    logdets = mstats.vectors["logdets"]
-    io.save_cols(GridName+"/amps_logdets.txt",(kamps,logdets))
+    io.save_cols(GridName+"/amps.txt",(kamps,))
     import json
-    save_dict = {"arc":args.arc,"pix":args.pix,"beam":args.beam,"noise":args.noise}
+    save_dict = {"arc":args.arc,"pix":args.pix,"beam":args.beam}
     with open(GridName+"/attribs.json",'w') as f:
         f.write(json.dumps(save_dict))
