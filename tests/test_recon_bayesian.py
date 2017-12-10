@@ -68,8 +68,8 @@ alpha_pix = enmap.sky2pix(shape,wcs,pos, safe=False)
 lens_order = 5
 
 # Load Cinvs
-kamps, logdets = np.loadtxt(args.GridName+"/amps_logdets.txt",unpack=True)
-cinv_file = lambda x: args.GridName+"/cinv_"+str(x)+".npy"
+kamps, logdets = np.loadtxt(GridName+"/amps_logdets.txt",unpack=True)
+cinv_file = lambda x: GridName+"/cinv_"+str(x)+".npy"
 cinvs = []
 for k in range(len(kamps)):
     cinvs.append(np.load(cinv_file(k)))
