@@ -92,3 +92,6 @@ ENV/
 .DS_Store
 
 *.png
+
+
+input/*local.ini
