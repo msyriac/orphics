@@ -8,6 +8,25 @@ from orphics import io
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
+def cutup(shape,numy,numx,pad=0):
+    Ny,Nx = shape
+    pixs_y = np.linspace(0,shape[-2],num=numy+1,endpoint=True)	
+    pixs_x = np.linspace(0,shape[-1],num=numx+1,endpoint=True)
+    num_boxes = numy*numx
+    boxes = np.zeros((num_boxes,2,2))
+    boxes[:,0,0] = np.tile(pixs_y[:-1],numx) - pad
+    boxes[:,0,0][boxes[:,0,0]<0] = 0
+    boxes[:,1,0] = np.tile(pixs_y[1:],numx) + pad
+    boxes[:,1,0][boxes[:,1,0]>(Ny-1)] = Ny-1
+    boxes[:,0,1] = np.repeat(pixs_x[:-1],numy) - pad
+    boxes[:,0,1][boxes[:,0,1]<0] = 0
+    boxes[:,1,1] = np.repeat(pixs_x[1:],numy) + pad
+    boxes[:,1,1][boxes[:,1,1]>(Nx-1)] = Nx-1
+    boxes = boxes.astype(np.int)
+
+    return boxes
+
+
 def bounds_from_list(blist):
     """Given blist = [dec0,ra0,dec1,ra1] in degrees
     return ndarray([[dec0,ra0],[dec1,ra1]]) in radians
