@@ -2,22 +2,35 @@ from __future__ import print_function
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-#import itertools
-import traceback
-#import contextlib
-import os,sys,time,logging
-#import h5py
+import os,sys
+from orphics import mpi
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
 except:
     dout_dir = "."
 
-def mkdir(dirpath):
-    if not os.path.exists(dirpath):
-        os.makedirs(dirpath)
+### FILE I/O
+    
+def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
+    if comm.Get_rank()==0: 
+        if not os.path.exists(dirpath):
+            os.makedirs(dirpath)
+    
+def save_cols(filename,tuple_of_vectors,**kwargs):
+    tuple_of_vectors = np.asarray(tuple_of_vectors)
+    save_mat = np.vstack(tuple_of_vectors).T
+    np.savetxt(filename,save_mat,**kwargs)
+
+### NAMING
+    
+def join_nums(nums):
+    return "_".join([str(f) for f in nums])
 
 
+    
+### CONFIG FILES
+    
 def load_path_config():
     if os.path.exists('input/paths_local.ini'):
         return config_from_file('input/paths_local.ini')
@@ -26,11 +39,7 @@ def load_path_config():
     else:
         raise IOError
     
-def save_cols(filename,tuple_of_vectors,**kwargs):
-    tuple_of_vectors = np.asarray(tuple_of_vectors)
-    save_mat = np.vstack(tuple_of_vectors).T
-    np.savetxt(filename,save_mat,**kwargs)
-
+    
 def config_from_file(filename):
     assert os.path.isfile(filename) 
     from configparser import SafeConfigParser 
@@ -39,6 +48,23 @@ def config_from_file(filename):
     Config.read(filename)
     return Config
     
+def bin_edges_from_config(Config,section):
+    from orphics.tools.stats import npspace
+
+    spacing = Config.get(section,"spacing")
+    minim = Config.getfloat(section,"left_edge")
+    maxim = Config.getfloat(section,"right_edge")
+    num = Config.getint(section,"num_bins")
+    return npspace(minim,maxim,num,scale=spacing)
+
+def list_from_string(string):
+    return [float(x) for x in string.split(',')]
+
+def list_from_config(Config,section,name):
+    return list_from_string(Config.get(section,name))
+
+
+### PLOTTING
 
 def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
     '''
@@ -47,53 +73,38 @@ def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,ret
     import healpy as hp
     retimg = hp.mollview(hp_map,min=cmin,max=cmax,coord=coord,return_projected_map=return_projected_map,**kwargs)
     if filename is not None:
-        matplotlib.pyplot.savefig(filename)
+        plt.savefig(filename)
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=24,**kwargs):
-    pl = Plotter(ftsize=ftsize)
-    pl.plot2d(array,**kwargs)
-    pl.done(filename,verbose=verbose)
+def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,**kwargs):
+    if flip: array = np.flipud(array)
+    if high_res:
+        high_res_plot_img(array,filename,verbose=verbose,**kwargs)
+    else:
+        pl = Plotter(ftsize=ftsize)
+        pl.plot2d(array,**kwargs)
+        pl.done(filename,verbose=verbose)
 
 
-def cprint(string,color=None,bold=False,uline=False):
-    if not(isinstance(string,str)):
-        string = str(string)
-    x=""
-    if bold:
-        x+=bcolors.BOLD
-    if uline:
-        x+=bcolors.UNDERLINE
-
-    color = color.lower()    
-    if color in ['b','blue']:
-        x+=bcolors.OKBLUE
-    elif color in ['r','red','f','fail']:
-        x+=bcolors.FAIL
-    elif color in ['g','green','ok']:
-        x+=bcolors.OKGREEN
-    elif color in ['y','yellow','w','warning']:
-        x+=bcolors.WARNING
-    elif color in ['p','purple','h','header']:
-        x+=bcolors.HEADER
-    
-    print(x+string+bcolors.ENDC)
-    
-class bcolors:
-    '''
-    Colored output for print commands
-    '''
-    
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
+def high_res_plot_img(array,filename,down=None,verbose=True,overwrite=True,crange=None):
+    if not(overwrite):
+        if os.path.isfile(filename): return
+    try:
+        from enlib import enmap, enplot
+    except:
+        traceback.print_exc()
+        printC("Could not produce plot "+filename+". High resolution plotting requires enlib, which couldn't be imported. Continuing without plotting.",color='fail')
+        return
+        
+        
+    if (down is not None) and (down!=1):
+        downmap = enmap.downgrade(enmap.enmap(array)[None], down)
+    else:
+        downmap = enmap.enmap(array)[None]
+    img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
+    img.save(filename)
+    if verbose: print(bcolors.OKGREEN+"Saved high-res plot to", filename+bcolors.ENDC)
 
 
 class Plotter(object):
@@ -182,7 +193,7 @@ class Plotter(object):
         self._ax.axhline(y=y,ls=ls,alpha=alpha,color=color,**kwargs)
         
     def vline(self,x=0.,ls="--",alpha=0.5,color="k",**kwargs):
-        self._ax.axhline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
+        self._ax.axvline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
 
     def done(self,filename=None,verbose=True,**kwargs):
 
@@ -196,13 +207,43 @@ class Plotter(object):
     
 
 
-### CONFIG FILES
 
-def bin_edges_from_config(Config,section):
-    from orphics.tools.stats import npspace
 
-    spacing = Config.get(section,"spacing")
-    minim = Config.getfloat(section,"left_edge")
-    maxim = Config.getfloat(section,"right_edge")
-    num = Config.getint(section,"num_bins")
-    return npspace(minim,maxim,num,scale=spacing)
+# CONSOLE I/O
+def cprint(string,color=None,bold=False,uline=False):
+    if not(isinstance(string,str)):
+        string = str(string)
+    x=""
+    if bold:
+        x+=bcolors.BOLD
+    if uline:
+        x+=bcolors.UNDERLINE
+
+    color = color.lower()    
+    if color in ['b','blue']:
+        x+=bcolors.OKBLUE
+    elif color in ['r','red','f','fail']:
+        x+=bcolors.FAIL
+    elif color in ['g','green','ok']:
+        x+=bcolors.OKGREEN
+    elif color in ['y','yellow','w','warning']:
+        x+=bcolors.WARNING
+    elif color in ['p','purple','h','header']:
+        x+=bcolors.HEADER
+    
+    print(x+string+bcolors.ENDC)
+    
+class bcolors:
+    '''
+    Colored output for print commands
+    '''
+    
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+

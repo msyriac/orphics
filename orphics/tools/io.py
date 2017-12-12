@@ -1,4 +1,6 @@
 from __future__ import print_function
+import warnings
+warnings.warn("WARNING: This module is deprecated. Most of its contents have moved to orphics.io. If you do not find the function you require there, please raise an issue.")
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np

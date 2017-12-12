@@ -2,6 +2,19 @@ import numpy as np
 from enlib import enmap, coordinates
 
 
+def random_catalog(shape,wcs,N,edge_avoid_deg=0.):
+
+    box = enmap.box(shape,wcs)
+    dec0 = min(box[0,0],box[1,0]) + edge_avoid_deg*np.pi/180.
+    dec1 = max(box[0,0],box[1,0]) - edge_avoid_deg*np.pi/180.
+    ra0 = min(box[0,1],box[1,1]) + edge_avoid_deg*np.pi/180.
+    ra1 = max(box[0,1],box[1,1]) - edge_avoid_deg*np.pi/180.
+
+    ras = np.random.uniform(ra0,ra1,N) * 180./np.pi
+    decs = np.random.uniform(dec0,dec1,N) * 180./np.pi
+
+    return ras,decs
+
 class HealpixCatMapper(object):
 
     def __init__(self,nside,ras_deg,decs_deg):

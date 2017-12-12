@@ -17,14 +17,17 @@ or
 
 ### Usage
 
-There are three main subpackages:
+Some key modules include:
 
-1. `orphics.theory` : Cosmology theory modules (mostly interfaces with CAMB)
-2. `orphics.analysis` : data analysis helpers
-3. `orphics.tools` : miscellaneous tools (e.g. plotting, statistics)
+1. `orphics.cosmology` : Cosmology theory modules (mostly interfaces with CAMB)
+2. `orphics.maps` : extensions to enlib and other map utilities for power spectra, ILC, etc.
+3. `orphics.io` : plotting, config files, ...
+4. `orphics.stats` : statistics, binning
+5. `orphics.mpi` : MPI helpers
+6. `orphics.catalogs` : galaxy catalogs
 
 For example, if you wanted to calculate Limber approximation power spectra, you would import:
 
 ``
-from orphics.theory.cosmology import LimberCosmology
+from orphics.cosmology import LimberCosmology
 ``

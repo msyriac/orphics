@@ -14,40 +14,38 @@ except:
 
 import time, re
 
-defaultConstants = {}
-defaultConstants['TCMB'] = 2.7255
-defaultConstants['G_CGS'] = 6.67259e-08
-defaultConstants['MSUN_CGS'] = 1.98900e+33
-defaultConstants['MPC2CM'] = 3.085678e+24
-defaultConstants['ERRTOL'] = 1e-12
-defaultConstants['K_CGS'] = 1.3806488e-16
-defaultConstants['H_CGS'] = 6.62608e-27
-defaultConstants['C'] = 2.99792e+10
-defaultConstants['A_ps'] = 3.1
-defaultConstants['A_g'] = 0.9
-defaultConstants['nu0'] = 150.
-defaultConstants['n_g'] = -0.7
-defaultConstants['al_g'] = 3.8
-defaultConstants['al_ps'] = -0.5
-defaultConstants['Td'] = 9.7
-defaultConstants['al_cib'] = 2.2
-defaultConstants['A_cibp'] = 6.9
-defaultConstants['A_cibc'] = 4.9
-defaultConstants['n_cib'] = 1.2
-defaultConstants['A_tsz'] = 5.6
-defaultConstants['ell0sec'] = 3000.
+defaultConstants = {'TCMB': 2.7255
+,'G_CGS': 6.67259e-08
+,'MSUN_CGS': 1.98900e+33
+,'MPC2CM': 3.085678e+24
+,'ERRTOL': 1e-12
+,'K_CGS': 1.3806488e-16
+,'H_CGS': 6.62608e-27
+,'C': 2.99792e+10
+,'A_ps': 3.1
+,'A_g': 0.9
+,'nu0': 150.
+,'n_g': -0.7
+,'al_g': 3.8
+,'al_ps': -0.5
+,'Td': 9.7
+,'al_cib': 2.2
+,'A_cibp': 6.9
+,'A_cibc': 4.9
+,'n_cib': 1.2
+,'A_tsz': 5.6
+,'ell0sec': 3000.
+}
 
 
-
-defaultCosmology = {}
-defaultCosmology['omch2'] = 0.12470
-defaultCosmology['ombh2'] = 0.02230
-defaultCosmology['H0'] = 67.0
-defaultCosmology['ns'] = 0.96
-defaultCosmology['As'] = 2.2e-9
-defaultCosmology['mnu'] = 0.0
-defaultCosmology['w0'] = -1.0
-
+defaultCosmology = {'omch2': 0.12470
+,'ombh2': 0.02230
+,'H0': 67.0
+,'ns': 0.96
+,'As': 2.2e-9
+,'mnu': 0.0
+,'w0': -1.0
+}
 
 
 class Cosmology(object):
@@ -352,6 +350,40 @@ class LimberCosmology(Cosmology):
                 
                 
 
+def unpack_cmb_theory(theory,ells,lensed=False):
+    
+    if lensed:
+        cltt = theory.lCl('TT',ells)
+        clee = theory.lCl('EE',ells)
+        clte = theory.lCl('TE',ells)
+        clbb = theory.lCl('BB',ells)    
+    else:
+        cltt = theory.uCl('TT',ells)
+        clee = theory.uCl('EE',ells)
+        clte = theory.uCl('TE',ells)
+        clbb = theory.uCl('BB',ells)
+
+    return cltt, clee, clte, clbb
+
+def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,orphics_dimensionless=True,TCMB=2.7255e6):
+    if orphics_dimensionless and dimensionless: tmul = 1.
+    if orphics_dimensionless and not(dimensionless): tmul = TCMB**2.
+    if not(orphics_dimensionless) and not(dimensionless): tmul = 1.
+    if not(orphics_dimensionless) and dimensionless: tmul = 1./TCMB**2.
+    
+    
+    fine_ells = np.arange(0,lmax,1)
+    cltt, clee, clte, clbb = unpack_cmb_theory(theory,fine_ells,lensed=lensed)
+    ps = np.zeros((3,3,fine_ells.size))
+    ps[0,0] = cltt
+    ps[1,1] = clee
+    ps[0,1] = clte
+    ps[1,0] = clte
+    ps[2,2] = clbb
+
+    return ps*tmul
+
+        
 def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True):
     '''
 
@@ -616,3 +648,189 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
 
 
     return theory
+
+
+
+#### FISHER FORECASTS
+
+class LensForecast:
+
+    def __init__(self,theory=None):
+        '''
+        Make S/N projections for CMB and OWL auto and cross-correlations.
+
+        K refers to the CMB (source) kappa
+        S refers to the shear/kappa of an optical background galaxy sample
+        G refers to the number density of an optical foreground galaxy sample
+
+        '''
+        self._haveKK = False
+        self._haveKG = False
+        self._haveGG = False
+        
+        self._haveSS = False
+        self._haveSG = False
+        
+        self._haveKS = False
+
+        if theory is None:
+            self.theory = TheorySpectra()
+        else:
+            self.theory = theory
+            
+        self.Nls = {}
+        
+
+    def loadKK(self,ellsCls,Cls,ellsNls,Nls):
+        self.Nls['kk'] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
+        self.theory.loadGenericCls(ellsCls,Cls,'kk')
+    
+        self._haveKK = True
+        
+
+    def loadGG(self,ellsCls,Cls,ngal):
+        self.ngalForeground = ngal
+        self.Nls['gg'] = lambda x: 1./(self.ngalForeground*1.18e7)
+        self.theory.loadGenericCls(ellsCls,Cls,'gg')
+    
+        self._haveGG = True
+        
+        
+
+    def loadSS(self,ellsCls,Cls,ngal,shapeNoise=0.3):
+        if shapeNoise==None or shapeNoise<1.e-9:
+            print("No/negligible shape noise given. Using default = 0.3.")
+            self.shapeNoise=0.3
+
+        else:             
+            self.shapeNoise = shapeNoise
+        self.ngalBackground = ngal
+        self.Nls['ss'] = lambda x: x*0.+self.shapeNoise*self.shapeNoise/(2.*self.ngalBackground*1.18e7)
+
+
+        self.theory.loadGenericCls(ellsCls,Cls,'ss')
+        
+        self._haveSS = True
+
+
+    def loadSG(self,ellsCls,Cls):
+        self.theory.loadGenericCls(ellsCls,Cls,'sg')
+        
+        self._haveSG = True
+
+
+    def loadKG(self,ellsCls,Cls):
+        self.theory.loadGenericCls(ellsCls,Cls,'kg')
+        self._haveKG = True
+                
+
+    def loadKS(self,ellsCls,Cls):
+        self.theory.loadGenericCls(ellsCls,Cls,'ks')
+
+        self._haveKS = True
+
+    def loadGenericCls(self,specType,ellsCls,Cls,ellsNls=None,Nls=None):
+        if Nls is not None: self.Nls[specType] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
+        self.theory.loadGenericCls(ellsCls,Cls,specType)
+        
+    def _bin_cls(self,spec,ell_left,ell_right,noise=True):
+        a,b = spec
+        ells = np.arange(ell_left,ell_right+1,1)
+        cls = self.theory.gCl(spec,ells)
+        Noise = 0.
+        if noise:
+            if a==b:
+                Noise = self.Nls[spec](ells)
+            else:
+                Noise = 0.
+        tot = cls+Noise
+        return np.sum(ells*tot)/np.sum(ells)
+
+    def KnoxCov(self,specTypeXY,specTypeWZ,ellBinEdges,fsky):
+        '''
+        returns cov(Cl_XY,Cl_WZ),signalToNoise(Cl_XY)^2, signalToNoise(Cl_WZ)^2
+        '''
+        def ClTot(spec,ell1,ell2):
+            return self._bin_cls(spec,ell1,ell2,noise=True)
+        
+        X, Y = specTypeXY
+        W, Z = specTypeWZ
+
+        ellMids  =  (ellBinEdges[1:] + ellBinEdges[:-1]) / 2
+        ellWidths = np.diff(ellBinEdges)
+
+        covs = []
+        sigs1 = []
+        sigs2 = []
+
+        for ell_left,ell_right in zip(ellBinEdges[:-1],ellBinEdges[1:]):
+            ClSum = ClTot(X+W,ell_left,ell_right)*ClTot(Y+Z,ell_left,ell_right)+ClTot(X+Z,ell_left,ell_right)*ClTot(Y+W,ell_left,ell_right)
+            ellMid = (ell_right+ell_left)/2.
+            ellWidth = ell_right-ell_left
+            var = ClSum/(2.*ellMid+1.)/ellWidth/fsky
+            covs.append(var)
+            sigs1.append(self._bin_cls(specTypeXY,ell_left,ell_right,noise=False)**2.*np.nan_to_num(1./var))
+            sigs2.append(self._bin_cls(specTypeWZ,ell_left,ell_right,noise=False)**2.*np.nan_to_num(1./var))
+        
+
+        return np.array(covs), np.array(sigs1), np.array(sigs2)
+
+    def sigmaClSquared(self,specType,ellBinEdges,fsky):
+        return self.KnoxCov(specType,specType,ellBinEdges,fsky)[0]
+
+    def sn(self,ellBinEdges,fsky,specType):
+        
+        var, sigs1, sigs2 = self.KnoxCov(specType,specType,ellBinEdges,fsky)
+
+        signoise = np.sqrt(sigs1.sum())
+        errs = np.sqrt(var)
+
+        return signoise, errs
+            
+
+    def snRatio(self,ellBinEdges,fsky):
+        
+        ellMids  =  (ellBinEdges[1:] + ellBinEdges[:-1]) / 2
+        ellWidths = np.diff(ellBinEdges)
+
+        sumchisq = 0.
+        signum = 0.
+        sigden = 0.
+        
+        for ellMid,ellWidth in zip(ellMids,ellWidths):
+            Clkk = self.theory.gCl('kk',ellMid)
+            Nlkk = self.Nls['kk'](ellMid)
+            Nlgg = self.Nls['gg'](ellMid)
+            Nlss = self.Nls['ss'](ellMid)
+            Clkg = self.theory.gCl('kg',ellMid)
+            Clgg = self.theory.gCl('gg',ellMid)
+            Clks = self.theory.gCl('ks',ellMid)
+            Clss = self.theory.gCl('ss',ellMid)
+            Clsg = self.theory.gCl('sg',ellMid)
+    
+            r0 = Clkg / Clsg
+            pref = 1./(fsky*(2.*ellMid+1.)*ellWidth) # added ellWidth
+
+            sigmaZsq = ((Clkk+Nlkk)*(Clgg+Nlgg))+(Clkg**2.)+((r0**2.)*((Clss+Nlss)*(Clgg+Nlgg)+Clsg**2.))-(2*r0*(Clks*(Clgg+Nlgg)+Clkg*Clsg))
+
+            sigmaZsq = sigmaZsq * pref
+
+            numer = (Clsg**2.)
+            denom = sigmaZsq
+
+            signum += (Clkg*Clsg/sigmaZsq)
+            sigden += ((Clsg**2.)/sigmaZsq)
+
+
+            chisq = numer/denom
+
+            sumchisq += chisq
+    
+        maxlike = signum/sigden
+
+        sigmaR = 1./np.sqrt(sumchisq)
+        percentR = sigmaR*100./maxlike
+        snR = maxlike/sigmaR
+
+        return percentR,snR,maxlike
+           
