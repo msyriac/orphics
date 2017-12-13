@@ -8,16 +8,6 @@ try:
 except:
     disable_mpi = False
 
-try:
-    if disable_mpi: raise
-    from mpi4py import MPI
-except:
-
-    class template:
-        pass
-
-    MPI = template()
-    MPI.COMM_WORLD = fakeMpiComm()
 
 # From Sigurd's enlib.mpi:
 # Uncaught exceptions don't cause mpi to abort. This can lead to thousands of
@@ -41,6 +31,20 @@ class fakeMpiComm:
         pass
     def Abort(self,dummy):
         pass
+
+
+
+
+try:
+    if disable_mpi: raise
+    from mpi4py import MPI
+except:
+
+    class template:
+        pass
+
+    MPI = template()
+    MPI.COMM_WORLD = fakeMpiComm()
 
 
 def mpi_distribute(num_tasks,avail_cores):
