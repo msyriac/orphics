@@ -1524,3 +1524,23 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
 
 
     return kappa, r500
+
+
+def Nlmv(Nleach,pols,centers,nlkk,bin_edges):
+    # Nleach: dict of (ls,Nls) for each polComb
+    # pols: list of polCombs to include
+    # centers,nlkk: additonal Nl to add
+    
+    Nlmvinv = 0.
+    for polComb in pols:
+        ls,Nls = Nleach[polComb]
+        nlfunc = interp1d(ls,Nls,bounds_error=False,fill_value=np.inf)
+        Nleval = nlfunc(bin_edges)
+        Nlmvinv += np.nan_to_num(1./Nleval)
+        
+    if nlkk is not None:
+        nlfunc = interp1d(centers,nlkk,bounds_error=False,fill_value=np.inf)
+        Nleval = nlfunc(bin_edges)
+        Nlmvinv += np.nan_to_num(1./Nleval)
+        
+    return np.nan_to_num(1./Nlmvinv)

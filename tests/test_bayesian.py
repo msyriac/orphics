@@ -49,9 +49,6 @@ kbeam = maps.gauss_beam(args.beam,modlmap)
 
 
 # Lens template
-kappa_template = lensing.nfw_kappa(1e15,modrmap,cc)
-phi,_ = lensing.kappa_to_phi(kappa_template,modlmap,return_fphi=True)
-grad_phi = enmap.grad(phi)
 lens_order = 5
 posmap = enmap.posmap(shape,wcs)
 
@@ -77,7 +74,12 @@ cov_name = lambda x: GridName+"/cov_"+str(x)+".npy"
 if rank==0: print("Rank 0 starting ...")
 for k,my_task in enumerate(my_tasks):
     kamp = kamps[my_task]
-    pos = posmap + kamp*grad_phi
+
+
+    kappa_template = lensing.nfw_kappa(kamp*1e15,modrmap,cc,overdensity=200.,critical=True,atClusterZ=True)
+    phi,_ = lensing.kappa_to_phi(kappa_template,modlmap,return_fphi=True)
+    grad_phi = enmap.grad(phi)
+    pos = posmap + grad_phi
     alpha_pix = enmap.sky2pix(shape,wcs,pos, safe=False)
 
 

@@ -8,7 +8,6 @@ from scipy.linalg import pinv2
 import argparse
 import json
 
-
 # Parse command line
 parser = argparse.ArgumentParser(description='Do a thing.')
 parser.add_argument("GridName", type=str,help='Name of directory to read cinvs from.')
@@ -32,7 +31,7 @@ GridName = PathConfig.get("paths","output_data")+args.GridName
 with open(GridName+"/attribs.json",'r') as f:
     attribs = json.loads(f.read())
 arc = attribs['arc'] ; pix = attribs['pix']  ; beam = attribs['beam']  
-pout_dir = PathConfig.get("paths","plots")+args.GridName+"/plots_"+io.join_nums((arc,pix,beam,args.noise))+"_"
+pout_dir = PathConfig.get("paths","plots")+args.GridName+"/bayesian_plots_"+io.join_nums((arc,pix,beam,args.noise))+"_"
 io.mkdir(pout_dir,comm)
 
 
@@ -63,7 +62,7 @@ ps_noise = np.array([(noise_uK_rad)**2.]*ells.size).reshape((1,1,ells.size))
 mg = maps.MapGen(shape,wcs,ps)
 ng = maps.MapGen(shape,wcs,ps_noise)
 kamp_true = args.Amp
-kappa = kamp_true*lensing.nfw_kappa(1e15,modrmap,cc)
+kappa = lensing.nfw_kappa(kamp_true*1e15,modrmap,cc,overdensity=200.,critical=True,atClusterZ=True)
 phi,_ = lensing.kappa_to_phi(kappa,modlmap,return_fphi=True)
 grad_phi = enmap.grad(phi)
 posmap = enmap.posmap(shape,wcs)
@@ -73,9 +72,11 @@ lens_order = 5
 
 # Load covs
 kamps = np.loadtxt(GridName+"/amps.txt",unpack=True)
+if rank==0: print(kamps)
 cov_file = lambda x: GridName+"/cov_"+str(x)+".npy"
 cinvs = []
 logdets = []
+if rank==0: print("Loading covs...")
 for k in range(len(kamps)):
     cov = np.load(cov_file(k))
     
@@ -83,10 +84,12 @@ for k in range(len(kamps)):
     s,logdet = np.linalg.slogdet(Tcov)
     assert s>0
     cinvs.append(pinv2(Tcov))
+    # cinvs.append(np.linalg.inv(Tcov))
     logdets.append(logdet)
 
 
 
+if rank==0: print("Starting sims...")
 # Stats
 Nsims = args.Nclusters
 Njobs = Nsims
@@ -103,6 +106,7 @@ for i,task in enumerate(my_tasks):
     noise_map = ng.get_map()
     lensed = maps.filter_map(enlensing.displace_map(unlensed, alpha_pix, order=lens_order),kbeam)
     stamp = lensed  + noise_map
+    if task==0: io.plot_img(stamp,pout_dir+"cmb_noisy.png")
 
     totlnlikes = []    
     for k,kamp in enumerate(kamps):
@@ -118,19 +122,10 @@ mstats.get_stats()
 
 if rank==0:
 
-    print("Summing...")
     totlikes = mstats.vectors["totlikes"].sum(axis=0)
     totlikes -= totlikes.max()
 
     amaxes = kamps[np.isclose(totlikes,totlikes.max())]
-
-    # pl = io.Plotter(xlabel="$A$",ylabel="$\\mathrm{ln}\\mathcal{L}$")
-    # for nlnlikes in mstats.vectors["totlikes"]:
-    #     pl.add(kamps,np.array(nlnlikes),alpha=0.2)
-    # for amax in amaxes:
-    #     pl.vline(x=amax,ls="-")
-    # pl.vline(x=kamp_true,ls="--")
-    # pl.done(pout_dir+"lensed_lnlikes.png")
 
 
     pl = io.Plotter(xlabel="$A$",ylabel="$\\mathrm{ln}\\mathcal{L}$")
@@ -146,6 +141,11 @@ if rank==0:
     mean = -b/2./c
     sigma = np.sqrt(-1./2./c)
     print(mean,sigma)
+    sn = (kamp_true/sigma)
+    print ("S/N fit for 1000 : ",sn*np.sqrt(1000./args.Nclusters))
+    pbias = (mean-kamp_true)*100./kamp_true
+    print ("Bias : ",pbias, " %")
+    print ("Bias : ",(mean-kamp_true)/sigma, " sigma")
 
 
     kamps = np.linspace(kamps.min(),kamps.max(),1000)
