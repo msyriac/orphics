@@ -1281,17 +1281,37 @@ class InterpStack(object):
 
 
     def cutout(self,imap,ra,dec,**kwargs):
-        from enlib import coordinates
-        
         ra_rad = np.deg2rad(ra)
         dec_rad = np.deg2rad(dec)
+
+        box = self._box_from_ra_dec(ra_rad,dec_rad)
+        submap = imap.submap(box,inclusive=True)
+        return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
+    
+    def cutout_from_file(self,imap_file,shape,wcs,ra,dec,**kwargs):
+        ra_rad = np.deg2rad(ra)
+        dec_rad = np.deg2rad(dec)
+
+        box = self._box_from_ra_dec(ra_rad,dec_rad)
+        selection = enmap.slice_from_box(shape,wcs,box)
+        submap = enmap.read_map(imap_file,sel=selection)
+        return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
+
+    def _box_from_ra_dec(self,ra_rad,dec_rad):
+
         
         # CAR
         coord_width = np.deg2rad(self.arc_width/np.cos(dec_rad)/60.)
         coord_height = np.deg2rad(self.arc_width/60.)
 
         box = np.array([[dec_rad-coord_height/2.,ra_rad-coord_width/2.],[dec_rad+coord_height/2.,ra_rad+coord_width/2.]])
-        submap = imap.submap(box,inclusive=True)
+
+        return box
+
+        
+    def _rot_cut(self,submap,ra_rad,dec_rad,**kwargs):
+        from enlib import coordinates
+    
         if submap.shape[0]<1 or submap.shape[1]<1:
             return None
         
@@ -1308,7 +1328,7 @@ class InterpStack(object):
         pix_new = enmap.sky2pix(submap.shape,submap.wcs,new_pos)
 
         rotmap = enmap.at(submap,pix_new,unit="pix",**kwargs)
-        assert rotmap.shape==self.shape_target
+        assert rotmap.shape[-2:]==self.shape_target[-2:]
         return rotmap
         
 
