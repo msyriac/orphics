@@ -366,6 +366,17 @@ def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
     w2 = np.mean(taper**2.)
     return taper,w2
 
+def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,weight=None):
+    Ny,Nx = shape[-2:]
+    if weight is None: weight = np.ones(shape[-2:])
+    res = resolution(shape,wcs)
+    pix_apod = int(taper_width_degrees*np.pi/180./res)
+    pix_pad = int(pad_width_degrees*np.pi/180./res)
+    taper = cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod,padY=pix_pad,padX=pix_pad)*weight
+    w2 = np.mean(taper**2.)
+    return taper,w2
+
+
 def cosine_window(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
     win=np.ones((Ny,Nx))
     
@@ -928,15 +939,13 @@ def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
         imap = enmap.zeros(shape,wcs)
         Ny,Nx = shape
 
-        inds = np.indices([Nx,Ny])
-        x = inds[0].ravel()
-        y = inds[1].ravel()
+        pixmap = enmap.pixmap(shape,wcs)
+        y = pixmap[0,...].T.ravel()
+        x = pixmap[1,...].T.ravel()
+        posmap = enmap.posmap(shape,wcs)
 
-        # Not as slow as you'd expect
-        posmap = enmap.pix2sky(shape,wcs,np.vstack((y,x)))*180./np.pi
-
-        ph = posmap[1,:]
-        th = posmap[0,:]
+        ph = posmap[1,...].T.ravel()
+        th = posmap[0,...].T.ravel()
 
         if hp_coords.lower() not in eq_coords:
                 # This is still the slowest part. If there are faster coord transform libraries, let me know!
@@ -949,9 +958,7 @@ def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
                 thOut = th
                 phOut = ph
 
-        phOut *= np.pi/180
-        thOut = 90. - thOut #polar angle is 0 at north pole
-        thOut *= np.pi/180
+        thOut = np.pi/2. - thOut #polar angle is 0 at north pole
 
         # Not as slow as you'd expect
         if interpolate:
