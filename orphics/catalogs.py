@@ -40,7 +40,7 @@ class CatMapper(object):
     def get_map(self,weights=None):
         print("Calculating histogram...")
         if self.curved:
-            return np.histogram(self.pixs,bins=self.shape,weights=weights,range=[0,self.shape])[0]
+            return np.histogram(self.pixs,bins=self.shape,weights=weights,range=[0,self.shape])[0].astype(np.float32)
         else:
             Ny,Nx = self.shape
             return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
@@ -116,15 +116,19 @@ class BOSSMapper(CatMapper):
     
 class HSCMapper(CatMapper):
 
-    def __init__(self,cat_fits,pz_fits=None,zmin=None,zmax=None,mask_threshold=4.,shape=None,wcs=None,nside=None):
-        from astropy.io import fits
-        f = fits.open(cat_fits)
-        self.cat = f[1].copy()
-        f.close()
+    def __init__(self,cat_file=None,pz_file=None,zmin=None,zmax=None,mask_threshold=4.,shape=None,wcs=None,nside=None):
+        if cat_file[-5:]==".fits":
+            from astropy.io import fits
+            f = fits.open(cat_fits)
+            self.cat = f[1].copy()
+            f.close()
+        elif cat_file[-4:]==".hdf" or cat_file[-3:]==".h5":
+            import h5py
+            pass
         ras = self.cat.data['ira']
         decs = self.cat.data['idec']
         self.wts = self.cat.data['ishape_hsm_regauss_derived_weight']
-        if pz_fits is not None:
+        if pz_file is not None:
             raise NotImplementedError
 
         CatMapper.__init__(self,ras,decs,shape,wcs,nside)
