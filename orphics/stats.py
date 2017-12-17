@@ -1,6 +1,17 @@
 from __future__ import print_function
 import numpy as np
 
+def cov2corr(cov):
+    # slow and stupid!
+    
+    d = np.diag(cov)
+    stddev = np.sqrt(d)
+    corr = cov.copy()*0.
+    for i in range(cov.shape[0]):
+        for j in range(cov.shape[0]):
+            corr[i,j] = cov[i,j]/stddev[i]/stddev[j]
+
+    return corr
 
 class Stats(object):
     """
