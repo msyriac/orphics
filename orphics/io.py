@@ -87,7 +87,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True
         pl.done(filename,verbose=verbose)
 
 
-def high_res_plot_img(array,filename,down=None,verbose=True,overwrite=True,crange=None):
+def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None):
     if not(overwrite):
         if os.path.isfile(filename): return
     try:
@@ -103,8 +103,11 @@ def high_res_plot_img(array,filename,down=None,verbose=True,overwrite=True,crang
     else:
         downmap = enmap.enmap(array)[None]
     img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
-    img.save(filename)
-    if verbose: print(bcolors.OKGREEN+"Saved high-res plot to", filename+bcolors.ENDC)
+    if filename is None:
+        img.show()
+    else:
+        img.save(filename)
+        if verbose: print(bcolors.OKGREEN+"Saved high-res plot to", filename+bcolors.ENDC)
 
 
 class Plotter(object):

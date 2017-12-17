@@ -268,6 +268,11 @@ def rotate_map(imap,shape_target=None,wcs_target=None,pix_target=None,**kwargs):
                     
 ### REAL AND FOURIER SPACE ATTRIBUTES
 
+def angmap(shape,wcs,iau=False):
+    sgn = -1 if iau else 1
+    lmap = enmap.lmap(shape,wcs)
+    return sgn*np.arctan2(-lmap[1], lmap[0])
+
 def get_ft_attributes(shape,wcs):
     shape = shape[-2:]
     Ny, Nx = shape
