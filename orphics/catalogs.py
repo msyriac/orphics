@@ -119,12 +119,16 @@ class HSCMapper(CatMapper):
     def __init__(self,cat_file=None,pz_file=None,zmin=None,zmax=None,mask_threshold=4.,shape=None,wcs=None,nside=None):
         if cat_file[-5:]==".fits":
             from astropy.io import fits
-            f = fits.open(cat_fits)
+            f = fits.open(cat_file)
             self.cat = f[1].copy()
             f.close()
         elif cat_file[-4:]==".hdf" or cat_file[-3:]==".h5":
-            import h5py
-            pass
+            import h5py,pandas as pd
+            df = pd.read_hdf(cat_file)
+            class Temp:
+                pass
+            self.cat = Temp()
+            self.cat.data = df
         ras = self.cat.data['ira']
         decs = self.cat.data['idec']
         self.wts = self.cat.data['ishape_hsm_regauss_derived_weight']

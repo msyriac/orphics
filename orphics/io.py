@@ -4,12 +4,24 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os,sys
 from orphics import mpi
+import contextlib
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
 except:
     dout_dir = "."
 
+class DummyFile(object):
+    def write(self, x): pass
+
+@contextlib.contextmanager
+def nostdout():
+    save_stdout = sys.stdout
+    sys.stdout = DummyFile()
+    yield
+    sys.stdout = save_stdout
+
+    
 ### FILE I/O
     
 def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
