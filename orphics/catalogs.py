@@ -141,7 +141,7 @@ class HSCMapper(CatMapper):
         self.update_mask(mask_threshold)
 
     def update_mask(self,mask_threshold):
-        mask = np.zeros(self.shape)
+        mask = enmap.zeros(self.shape,self.wcs)
         mask[self.mean_wt>mask_threshold] = 1
         self.mask = mask
         self._counts()
