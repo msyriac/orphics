@@ -1143,21 +1143,21 @@ class SigurdCoaddReader(ACTMapReader):
         if region is None:
             selection = None
         elif isinstance(region, six.string_types):
-            selection = enmap.slice_from_box(shape,wcs,self.boxes[region])
+            selection = self.boxes[region] #enmap.slice_from_box(shape,wcs,self.boxes[region])
         else:
-            selection = enmap.slice_from_box(shape,wcs,region)
+            selection = region #enmap.slice_from_box(shape,wcs,region)
         return selection
 
     def get_ptsrc_mask(self,region=None):
         selection = self.sel_from_region(region)
         fstr = self.map_root+"s16/coadd/pointSourceMask_full_all.fits"
-        fmap = enmap.read_fits(fstr,sel=selection)
+        fmap = enmap.read_fits(fstr,box=selection)
         return fmap
     
     def get_survey_mask(self,region=None):
         selection = self.sel_from_region(region)
         self.map_root+"s16/coadd/surveyMask_full_all.fits"
-        fmap = enmap.read_fits(fstr,sel=selection)
+        fmap = enmap.read_fits(fstr,box=selection)
         return fmap
     
     def get_map(self,split,freq="150",day_night="daynight",planck=True,region=None,weight=False,get_identifier=False):
@@ -1167,7 +1167,7 @@ class SigurdCoaddReader(ACTMapReader):
         cal = float(self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['cal']) if not(weight) else 1.
 
         selection = self.sel_from_region(region)
-        fmap = enmap.read_fits(fstr,sel=selection)*np.sqrt(cal)
+        fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
 
         if get_identifier:
             identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
@@ -1305,8 +1305,8 @@ class InterpStack(object):
         dec_rad = np.deg2rad(dec)
 
         box = self._box_from_ra_dec(ra_rad,dec_rad)
-        selection = enmap.slice_from_box(shape,wcs,box)
-        submap = enmap.read_map(imap_file,sel=selection)
+        #selection = enmap.slice_from_box(shape,wcs,box)
+        submap = enmap.read_fits(imap_file,box=box)#sel=selection)
         return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
 
     def _box_from_ra_dec(self,ra_rad,dec_rad):
