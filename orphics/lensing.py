@@ -23,22 +23,33 @@ def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     kbeam -- (Ny,Nx) array of 2d beam wavenumbers
 
     """
+
     shape = alpha_pix.shape[-2:]
-    if bshape is None: bshape = shape
-    Scov = np.zeros((np.prod(bshape),np.prod(bshape)))
-    for i in range(Scov.shape[0]):
-        unlensed = ucov[i,:].copy().reshape(shape) 
+    Scov = ucov.copy()
+    for i in range(ucov.shape[0]):
+        unlensed = Scov[i,:].copy().reshape(shape)
         lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
         if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
-        lensed=lensed[int(shape[0]/2.-bshape[0]/2.):int(shape[0]/2.+bshape[0]/2.),int(shape[0]/2.-bshape[0]/2.):int(shape[0]/2.+bshape[0]/2.)]
         Scov[i,:] = lensed.ravel()
-    for j in range(Scov.shape[1]):
-        unlensed = ucov[:,j].copy().reshape(shape)
+    for j in range(ucov.shape[1]):
+        unlensed = Scov[:,j].copy().reshape(shape)
         lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
         if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
-        lensed=lensed[int(shape[0]/2.-bshape[0]/2.):int(shape[0]/2.+bshape[0]/2.),int(shape[0]/2.-bshape[0]/2.):int(shape[0]/2.+bshape[0]/2.)]
         Scov[:,j] = lensed.ravel()
+
+    if (bshape is not None) and (bshape!=shape):
+        ny,nx = shape
+        Scov = Scov.reshape((ny,nx,ny,nx))
+        bny,bnx = bshape
+        sy = int(ny/2.-bny/2.)
+        ey = int(ny/2.+bny/2.)
+        sx = int(nx/2.-bnx/2.)
+        ex = int(nx/2.+bnx/2.)
+        Scov = Scov[sy:ey,sx:ex,sy:ey,sx:ex].reshape((np.prod(bshape),np.prod(bshape)))
     return Scov
+
+
+
 
 def beam_cov(ucov,kbeam):
     """Given the pix-pix covariance matrix for the lensed CMB,
