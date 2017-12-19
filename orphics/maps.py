@@ -343,14 +343,26 @@ def get_lnlike(covinv,instamp):
     assert ans.size==1
     return ans[0,0]
 
-def pixcov_sim(shape,wcs,ps,Nsims,seed=None,mean_sub=True):
-    mg = MapGen(shape,wcs,ps)
+def pixcov_sim(shape,wcs,ps,Nsims,seed=None,mean_sub=True,pad=0):
+    if pad>0:
+        retmap = enmap.pad(enmap.zeros(shape,wcs), pad, return_slice=False, wrap=False)
+        oshape,owcs = retmap.shape,retmap.wcs
+    else:
+        oshape,owcs = shape,wcs
+        
+    
+    mg = MapGen(oshape,owcs,ps)
     np.random.seed(seed)
     umaps = []
     for i in range(Nsims):
         cmb = mg.get_map()
         if mean_sub: cmb -= cmb.mean()
-        umaps.append(cmb.ravel())
+
+        if pad>0:
+            ocmb = enmap.extract(cmb, shape, wcs)
+        else:
+            ocmb = cmb
+        umaps.append(ocmb.ravel())
         
     pixcov = np.cov(np.array(umaps).T)
     return pixcov

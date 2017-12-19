@@ -25,6 +25,7 @@ def nostdout():
 ### FILE I/O
     
 def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
+    comm.Barrier()
     if comm.Get_rank()==0: 
         if not os.path.exists(dirpath):
             os.makedirs(dirpath)

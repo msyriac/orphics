@@ -14,27 +14,53 @@ from enlib import lensing as enlensing
 import time
 import cPickle as pickle
 
-def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None):
+def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,
     returns the lensed covmat for a given pixel displacement model.
 
     ucov -- (Npix,Npix) array where Npix = Ny*Nx
     alpha_pix -- (2,Ny,Nx) array of lensing displacements in pixel units
+    kbeam -- (Ny,Nx) array of 2d beam wavenumbers
+
+    """
+    shape = alpha_pix.shape[-2:]
+    if bshape is None: bshape = shape
+    Scov = np.zeros((np.prod(bshape),np.prod(bshape)))
+    for i in range(Scov.shape[0]):
+        unlensed = ucov[i,:].copy().reshape(shape) 
+        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        lensed=lensed[int(shape[0]/2.-bshape[0]/2.):int(shape[0]/2.+bshape[0]/2.),int(shape[0]/2.-bshape[0]/2.):int(shape[0]/2.+bshape[0]/2.)]
+        Scov[i,:] = lensed.ravel()
+    for j in range(Scov.shape[1]):
+        unlensed = ucov[:,j].copy().reshape(shape)
+        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        lensed=lensed[int(shape[0]/2.-bshape[0]/2.):int(shape[0]/2.+bshape[0]/2.),int(shape[0]/2.-bshape[0]/2.):int(shape[0]/2.+bshape[0]/2.)]
+        Scov[:,j] = lensed.ravel()
+    return Scov
+
+def beam_cov(ucov,kbeam):
+    """Given the pix-pix covariance matrix for the lensed CMB,
+    returns the beamed covmat. The beam can be a ratio of beams to
+    readjust the beam in a given matrix.
+
+    ucov -- (Npix,Npix) array where Npix = Ny*Nx
+    kbeam -- (Ny,Nx) array of 2d beam wavenumbers
 
     """
     Scov = ucov.copy()
     shape = alpha_pix.shape[-2:]
     for i in range(Scov.shape[0]):
-        unlensed = Scov[i,:].copy().reshape(shape) 
-        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        lensed = Scov[i,:].copy().reshape(shape) 
+        lensed = maps.filter_map(lensed,kbeam)
         Scov[i,:] = lensed.ravel()
     for j in range(Scov.shape[1]):
-        unlensed = Scov[:,j].copy().reshape(shape)
-        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        lensed = Scov[:,j].copy().reshape(shape)
+        lensed = maps.filter_map(lensed,kbeam)
         Scov[:,j] = lensed.ravel()
     return Scov
+
 
 def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False):
     if noise2d is None: noise2d = np.zeros(shape[-2:])
