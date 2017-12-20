@@ -264,9 +264,9 @@ class LimberCosmology(Cosmology):
                     retvals.append((_galInt))
             return np.array(retvals)
     
-    def addDeltaNz(self,tag,zsource,bias=None,magbias=None):
+    def addDeltaNz(self,tag,zsource,bias=None,magbias=None,ignore_exists=False):
 
-        assert not(tag in list(self.kernels.keys())), "Tag already exists."
+        if not(ignore_exists): assert not(tag in list(self.kernels.keys())), "Tag already exists."
         assert tag!="cmb", "cmb is a tag reserved for cosmic microwave background. Use a different tag."
         
         
@@ -277,8 +277,8 @@ class LimberCosmology(Cosmology):
         self._generateWindow(tag,bias,magbias,numzIntegral=None)
           
             
-    def addStepNz(self,tag,zmin,zmax,bias=None,magbias=None,numzIntegral=300):
-        assert not(tag in list(self.kernels.keys())), "Tag already exists."
+    def addStepNz(self,tag,zmin,zmax,bias=None,magbias=None,numzIntegral=300,ignore_exists=False):
+        if not(ignore_exists): assert not(tag in list(self.kernels.keys())), "Tag already exists."
         assert tag!="cmb", "cmb is a tag reserved for cosmic microwave background. Use a different tag."
         
         self.kernels[tag] = {}
@@ -289,7 +289,7 @@ class LimberCosmology(Cosmology):
         
         self._generateWindow(tag,bias,magbias,numzIntegral)
         
-    def addNz(self,tag,zedges,nz,bias=None,magbias=None,numzIntegral=300):
+    def addNz(self,tag,zedges,nz,bias=None,magbias=None,numzIntegral=300,ignore_exists=False):
 
         '''
         Assumes equally spaced bins
@@ -297,7 +297,7 @@ class LimberCosmology(Cosmology):
         If magbias provided, applies it as magnification bias assuming it is 's' in Eq 7 of Omuri Holder. Bias must be provided too.
         '''
 
-        assert not(tag in list(self.kernels.keys())), "Tag already exists."
+        if not(ignore_exists): assert not(tag in list(self.kernels.keys())), "Tag already exists."
         assert tag!="cmb", "cmb is a tag reserved for cosmic microwave background. Use a different tag."
         
             
