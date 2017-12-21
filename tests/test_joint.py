@@ -71,7 +71,7 @@ Ncov = np.diag([(noise_uK_pixel)**2.]*np.prod(bshape))
 kbeam = maps.gauss_beam(args.beam,modlmap)
 okbeam = maps.gauss_beam(args.beam,omodlmap)
 
-if True:
+if True: #True:
     # Load covs
     bkamps = np.loadtxt(GridName+"/amps.txt",unpack=True) #[:1] # !!!
     if rank==0: print("Amplitudes: ",bkamps)
@@ -100,7 +100,7 @@ if True:
             num_cores= str(multiprocessing.cpu_count())
             os.environ["OMP_NUM_THREADS"] = num_cores
 
-            Tcov = cov + Ncov + 500 # !!!
+            Tcov = cov + Ncov + 5000 # !!!
             with bench.show("covwork"):
                 s,logdet = np.linalg.slogdet(Tcov)
                 assert s>0
@@ -120,13 +120,21 @@ if True:
         cinvs.append(cinv)
         logdets.append(logdet)
 
+# else:
+#     bkamps = []
+#     import glob
+#     import cPickle as pickle
+#     fs = glob.glob(PathConfig.get("paths","output_data")+"dump/cdump_*")
+#     nfs = len(fs)
 
+#     for i in range(nfs):
+#         pickle.load(open(PathConfig.get("paths","output_data")+"dump/cdump_*"
 
 # Theory
 theory_file_root = "../alhazen/data/Aug6_highAcc_CDM"
 cc = counts.ClusterCosmology(skipCls=True)
 theory = cosmology.loadTheorySpectraFromCAMB(theory_file_root,unlensedEqualsLensed=False,
-                                                    useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
+                                             useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
 
 
 # Simulate
@@ -176,28 +184,11 @@ for i,task in enumerate(my_tasks):
     unlensed = mg.get_map()
     noise_map = ng.get_map()
     lensed = maps.filter_map(enlensing.displace_map(unlensed, alpha_pix, order=lens_order),kbeam)
-
     fdownsampled = enmap.enmap(resample.resample_fft(lensed,oshape),owcs)
     stamp = fdownsampled  + noise_map
 
     # Bayesian
     cutout = stamp[int(oshape[0]/2.-bshape[0]/2.):int(oshape[0]/2.+bshape[0]/2.),int(oshape[0]/2.-bshape[0]/2.):int(oshape[0]/2.+bshape[0]/2.)]
-    # if i==0:
-    #     bmg = maps.MapGen(bshape,bwcs,ps)
-    #     if args.hdv:
-    #         bkappa = lensing.nfw_kappa(kamp_true*1e15,bmodrmap,cc,overdensity=180.,critical=False,atClusterZ=False)
-    #     else:
-    #         bkappa = lensing.nfw_kappa(kamp_true*1e15,bmodrmap,cc,overdensity=200.,critical=True,atClusterZ=True)
-    #     bphi,_ = lensing.kappa_to_phi(bkappa,bmodlmap,return_fphi=True)
-    #     bgrad_phi = enmap.grad(bphi)
-    #     bposmap = enmap.posmap(bshape,bwcs)
-    #     bpos = bposmap + bgrad_phi
-    #     balpha_pix = enmap.sky2pix(bshape,bwcs,bpos, safe=False)
-    #     bkbeam = maps.gauss_beam(args.beam,bmodlmap)
-    # unlensed = bmg.get_map()
-    # lensed = maps.filter_map(enlensing.displace_map(unlensed, balpha_pix, order=lens_order),bkbeam)
-    # downsampled = lensed
-    # cutout = downsampled  + noise_map[int(oshape[0]/2.-bshape[0]/2.):int(oshape[0]/2.+bshape[0]/2.),int(oshape[0]/2.-bshape[0]/2.):int(oshape[0]/2.+bshape[0]/2.)]
 
     totlnlikes = []    
     for k,kamp in enumerate(bkamps):
