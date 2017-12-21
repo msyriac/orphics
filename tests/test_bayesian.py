@@ -92,7 +92,7 @@ for k,my_task in enumerate(my_tasks):
 
 
     def do_the_thing():
-        return lensing.lens_cov(Ucov,alpha_pix,lens_order=lens_order,kbeam=kbeam,bshape=shape) #.reshape((sny,snx,sny,snx)).reshape(np.prod(shape),np.prod(shape))
+        return lensing.lens_cov(Ucov,alpha_pix,lens_order=lens_order,kbeam=kbeam,bshape=shape)
 
     if rank==0:
         with bench.show("rank 0 lensing cov"):

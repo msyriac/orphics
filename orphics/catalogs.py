@@ -2,6 +2,10 @@ import numpy as np
 from enlib import enmap, coordinates
 import healpy as hp
 
+def dndz(z,z0=1./3.):
+    ans = (z**2.)* np.exp(-1.0*z/z0)/ (2.*z0**3.)
+    return ans    
+
 def random_catalog(shape,wcs,N,edge_avoid_deg=0.):
 
     box = enmap.box(shape,wcs)
@@ -36,6 +40,8 @@ class CatMapper(object):
             print( "Done with pixels...")
             self.curved = False
         self.counts = self.get_map()
+        if not self.curved:
+            self.counts = enmap.enmap(self.counts,self.wcs)
 
     def get_map(self,weights=None):
         print("Calculating histogram...")
@@ -59,7 +65,10 @@ class CatMapper(object):
         self.ngal_per_arcminsq  = self.ngals/(self.area_sqdeg*60.*60.)
 
     def get_delta(self):
-        return (self.counts/self.nmean-1.)
+        delta = (self.counts/self.nmean-1.)
+        if not self.curved:
+            delta = enmap.enmap(delta,self.wcs)
+        return delta
     
 
 
@@ -111,6 +120,8 @@ class BOSSMapper(CatMapper):
 
         self.mask = np.zeros(self.shape)
         self.mask[smap>rand_threshold] = 1
+        if not self.curved:
+            self.mask = enmap.enmap(self.mask,self.wcs)
         self._counts()
             
     
@@ -144,6 +155,8 @@ class HSCMapper(CatMapper):
         mask = np.zeros(self.shape)
         mask[self.mean_wt>mask_threshold] = 1
         self.mask = mask
+        if not self.curved:
+            self.mask = enmap.enmap(self.mask,self.wcs)
         self._counts()
 
         
@@ -169,6 +182,10 @@ class HSCMapper(CatMapper):
         g1map = np.nan_to_num(hsc_e1/2./hsc_resp/(1.+hsc_m)/hsc_wts) - np.nan_to_num(hsc_c1/(1.+hsc_m))
         g2map = np.nan_to_num(hsc_e2/2./hsc_resp/(1.+hsc_m)/hsc_wts) - np.nan_to_num(hsc_c2/(1.+hsc_m))
 
+        if not self.curved:
+            g1map = enmap.enmap(g1map,self.wcs)
+            g2map = enmap.enmap(g2map,self.wcs)
+            
         return g1map,g2map
 
 def split_samples(in_samples,split_points):
