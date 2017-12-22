@@ -7,7 +7,25 @@ from orphics import io
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
-
+def slice_from_box(shape, wcs, box, inclusive=False):
+    """slice_from_box(shape, wcs, box, inclusive=False)
+    Extract the part of the map inside the given box as a selection
+    without returning the data.
+    Parameters
+    ----------
+    box : array_like
+	    The [[fromy,fromx],[toy,tox]] bounding box to select.
+	    The resulting map will have a bounding box as close
+	    as possible to this, but will differ slightly due to
+	    the finite pixel size.
+    inclusive : boolean
+		Whether to include pixels that are only partially
+		inside the bounding box. Default: False."""
+    ibox = enmap.subinds(shape, wcs, box, inclusive)
+    print(shape,ibox)
+    islice = utils.sbox2slice(ibox.T)
+    return islice
+    
 def cutup(shape,numy,numx,pad=0):
     Ny,Nx = shape
     pixs_y = np.linspace(0,shape[-2],num=numy+1,endpoint=True)	
@@ -182,7 +200,7 @@ class MapRotatorEquator(MapRotator):
         else:
             recommended_pix = pix_target_override_arcmin
             
-        shape_target,wcs_target = enmap.rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
+        shape_target,wcs_target = rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
                                                       height_arcmin=height_multiplier*patch_height*60.,
                                                       px_res_arcmin=recommended_pix,yoffset_degree=0.,proj=proj)
 
@@ -194,7 +212,7 @@ class MapRotatorEquator(MapRotator):
         if downsample:
             dpix = downsample_pix_arcmin if downsample_pix_arcmin is not None else self.source_pix
 
-            self.shape_final,self.wcs_final = enmap.rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
+            self.shape_final,self.wcs_final = rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
                                               height_arcmin=height_multiplier*patch_height*60.,
                                               px_res_arcmin=dpix,yoffset_degree=0.,proj=proj)
         else:
@@ -1329,8 +1347,13 @@ class InterpStack(object):
         dec_rad = np.deg2rad(dec)
 
         box = self._box_from_ra_dec(ra_rad,dec_rad)
-        #selection = enmap.slice_from_box(shape,wcs,box)
-        submap = enmap.read_fits(imap_file,box=box)#sel=selection)
+        print(ra_rad*180./np.pi,dec_rad*180./np.pi,box*180./np.pi)
+        selection = slice_from_box(shape,wcs,box)
+        print(selection)
+        #submap = enmap.read_fits(imap_file,box=box)#sel=selection)
+        sys.exit()
+        submap = enmap.read_fits(imap_file,sel=selection)
+        io.plot_img(submap,io.dout_dir+"scut.png",high_res=True)
         return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
 
     def _box_from_ra_dec(self,ra_rad,dec_rad):
@@ -1365,6 +1388,8 @@ class InterpStack(object):
 
         rotmap = enmap.at(submap,pix_new,unit="pix",**kwargs)
         assert rotmap.shape[-2:]==self.shape_target[-2:]
+
+        
         return rotmap
         
 
