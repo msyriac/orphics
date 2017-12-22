@@ -1559,6 +1559,12 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
     consts = const12 * const3 * const4 * const5
     kappa = consts * kappaU
 
+    if thetaArc.shape[0]%2==1 and thetaArc.shape[1]%2==1:
+        Ny,Nx = thetaArc.shape
+        cx = int(Nx/2.)
+        cy = int(Ny/2.)
+        kappa[cy,cx] = kappa[cy-1,cx]
+        
 
     return kappa, r500
 
