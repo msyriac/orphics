@@ -995,7 +995,7 @@ def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
                 ind = hp.ang2pix( hp.get_nside(hp_map), thOut, phOut )
                 imap[:] = 0.
                 imap[[y,x]]=hp_map[ind]
-                
+
                 
                 
         return enmap.ndmap(imap,wcs)

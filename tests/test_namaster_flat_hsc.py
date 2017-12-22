@@ -104,16 +104,18 @@ Ly,Lx = enmap.extent(shape,wcs)
 Ny, Nx = shape[-2:]
 
 
-# Mask fraction
-frac = np.sum(mask)*1./mask.size
-area = enmap.area(shape,wcs)*frac*(180./np.pi)**2.
-print ("Masked area sq.deg.: ", area)
 
 if not(do_mask):
     mask=mask*0.+1.
 else:
     if do_apod:
-        nmt.mask_apodization_flat(mask,Lx,Ly,aposize=apod_width,apotype=apotype)
+        mask = nmt.mask_apodization_flat(mask,Lx,Ly,aposize=apod_width,apotype=apotype)
+
+# Mask fraction
+frac = np.sum(mask)*1./mask.size
+area = enmap.area(shape,wcs)*frac*(180./np.pi)**2.
+print ("Masked area sq.deg.: ", area)
+
 w2 = np.mean(mask**2.)  # Naive power scaling factor
 
 N = args.Nsims
@@ -130,6 +132,7 @@ for i in range(N):
     if i==0:
 
         # Plots of mask and fields
+        print(mask.shape)
         io.plot_img(mask,io.dout_dir+field+"_mask.png",high_res=True)
         # io.plot_img(imaps[0],io.dout_dir+field+"_I.png",high_res=True)
         # io.plot_img(imaps[1],io.dout_dir+field+"_Q.png",high_res=True)
@@ -191,9 +194,9 @@ for i in range(N):
         
 
     #Computing power spectra:
-    cl00_coupled=nmt.compute_coupled_cell_flat(f0,f0); cl00_uncoupled=w00.decouple_cell(cl00_coupled)
-    cl02_coupled=nmt.compute_coupled_cell_flat(f0,f2); cl02_uncoupled=w02.decouple_cell(cl02_coupled)
-    cl22_coupled=nmt.compute_coupled_cell_flat(f2,f2); cl22_uncoupled=w22.decouple_cell(cl22_coupled)
+    cl00_coupled=nmt.compute_coupled_cell_flat(f0,f0,b); cl00_uncoupled=w00.decouple_cell(cl00_coupled)
+    cl02_coupled=nmt.compute_coupled_cell_flat(f0,f2,b); cl02_uncoupled=w02.decouple_cell(cl02_coupled)
+    cl22_coupled=nmt.compute_coupled_cell_flat(f2,f2,b); cl22_uncoupled=w22.decouple_cell(cl22_coupled)
 
     # Collect statistics
     s.add_to_stats("ukk",cl00_uncoupled[0])
@@ -280,10 +283,16 @@ pl._ax.set_ylim(-5.e-10,5e-10)
 pl.done(io.dout_dir+field+"_clsnull.png")
 
 
-
 clkkfunc = interp1d(ellrange,clkk,bounds_error=False,fill_value=0.)
 clkgfunc = interp1d(ellrange,clkg,bounds_error=False,fill_value=0.)
 clggfunc = interp1d(ellrange,clgg,bounds_error=False,fill_value=0.)
+
+
+#Generate theory prediction
+# clkk_th=w00.decouple_cell(w00.couple_cell(ellrange,np.array([clkk])))
+# clkg_th=w02.decouple_cell(w02.couple_cell(ellrange,np.array([clkg,0*clkg])))
+# clgg_th=w22.decouple_cell(w22.couple_cell(ellrange,np.array([clgg,0*clgg,0*clgg,clgg*0.])))
+
 
 pl = io.Plotter(xlabel="$L$",ylabel='$\\frac{\\Delta \\sigma(C_L)}{\\sigma(C_L)}$')
 y,yerr = gstats("ukk")
@@ -303,7 +312,7 @@ ym,yerrm = gstats("mee")
 pl.add_err(ells_uncoupled,ym/yt-1.,yerr=yerrm/yt,color='C2',label='ee',marker="x",ls="none",alpha=0.3)
 pl.legend(loc='upper right')
 pl._ax.set_xlim(0,3100)
-pl._ax.set_ylim(-0.2,0.15)
+pl._ax.set_ylim(-0.05,0.05)
 pl.hline()
 pl.done(io.dout_dir+field+"_clsdiff.png")
 
