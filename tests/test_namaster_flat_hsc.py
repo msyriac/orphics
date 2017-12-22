@@ -96,7 +96,7 @@ bin_edges = np.arange(40,3000,100)
 binner = stats.bin2D(modlmap,bin_edges)
 binit = lambda x: binner.bin(x)[1]
 cents = binner.centers
-
+ells_coupled = cents
 
 # === ENMAP TO NAMASTER ===
 # get the extent and shape of our geometry
@@ -157,7 +157,7 @@ for i in range(N):
     mpt,mpq,mpu = imaps[0],imaps[1],imaps[2]
     f0=nmt.NmtFieldFlat(Lx,Ly,mask,[mpt])
     f2=nmt.NmtFieldFlat(Lx,Ly,mask,[mpq,mpu],purify_e=purify_e,purify_b=purify_b)
-    ells_coupled=f0.get_ell_sampling()
+    # ells_coupled=f0.get_ell_sampling()
 
     #Bins:
     l0_bins= bin_edges[:-1]
@@ -182,11 +182,13 @@ for i in range(N):
             w00.compute_coupling_matrix(f0,f0,b)
             w02.compute_coupling_matrix(f0,f2,b)
             w22.compute_coupling_matrix(f2,f2,b)
+
+
             w00.write_to(out_dir+field+"_w00_flat.dat"); 
             w02.write_to(out_dir+field+"_w02_flat.dat"); 
             w22.write_to(out_dir+field+"_w22_flat.dat"); 
 
-
+        
 
     #Computing power spectra:
     cl00_coupled=nmt.compute_coupled_cell_flat(f0,f0); cl00_uncoupled=w00.decouple_cell(cl00_coupled)

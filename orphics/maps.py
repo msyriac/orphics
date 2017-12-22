@@ -582,6 +582,17 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
     return cinv
 
 
+def minimum_ell(shape,wcs):
+    """
+    Returns the lowest angular wavenumber of an ndmap
+    rounded down to the nearest integer.
+    """
+    modlmap = enmap.modlmap(shape,wcs)
+    min_ell = modlmap[modlmap>0].min()
+    return int(min_ell)
+
+
+
 def resolution(shape,wcs):
     res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
     return res
