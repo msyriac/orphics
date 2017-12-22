@@ -26,7 +26,6 @@ class Stats(object):
     def __init__(self,comm=None,root=0,loopover=None,tag_start=333):
         """
         comm - MPI.COMM_WORLD object
-        num_each - 1d array or list where the ith element indicates number of tasks assigned to ith core
         tag_start - MPI comm tags start at this integer
         """
 
