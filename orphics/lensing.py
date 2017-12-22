@@ -161,7 +161,7 @@ class QuadNorm(object):
         self.shape = shape
         self.wcs = wcs
         self.verbose = verbose
-        self.Ny,self.Nx = shape
+        self.Ny,self.Nx = shape[-2:]
         self.lxMap,self.lyMap,self.modLMap,thetaMap,lx,ly = maps.get_ft_attributes(shape,wcs)
         self.lxHatMap = self.lxMap*np.nan_to_num(1. / self.modLMap)
         self.lyHatMap = self.lyMap*np.nan_to_num(1. / self.modLMap)
