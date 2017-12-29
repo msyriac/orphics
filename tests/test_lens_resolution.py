@@ -19,7 +19,7 @@ lens_func = lambda x: lensing.nfw_kappa(mass,x,cc,zL=0.7,concentration=3.2,overd
 #sigma = 1.0 * np.pi/180./60.
 #lens_func = lambda x: 0.2 * np.exp(-x**2./sigma**2./2.)
 
-rshape,rwcs = maps.rect_geometry(width_arcmin=20.,px_res_arcmin=0.01)
+rshape,rwcs = maps.rect_geometry(width_arcmin=5.,px_res_arcmin=0.001)
 fshape,fwcs = maps.rect_geometry(width_arcmin=20.,px_res_arcmin=0.1)
 cshape,cwcs = maps.rect_geometry(width_arcmin=20.,px_res_arcmin=0.5)
 rmodrmap = enmap.modrmap(rshape,rwcs)
@@ -57,9 +57,13 @@ pos = enmap.posmap(rshape,rwcs) + grad_phi
 ralpha_pix = enmap.sky2pix(rshape,rwcs,pos, safe=False)
 
 hunlensed = enmap.enmap(resample.resample_fft(unlensed.copy(),rshape),rwcs)
+enmap.write_map("unlensed_0.001arc.fits",hunlensed)
+
 hlensed = enlensing.displace_map(hunlensed, ralpha_pix, order=lens_order,mode=mode)
+enmap.write_map("lensed_0.001arc.fits",hlensed)
 lensed0 = enmap.enmap(resample.resample_fft(hlensed,cshape),cwcs)
 
+sys.exit()
 
 
 # ckappa = lens_func(cmodrmap) 
@@ -71,6 +75,10 @@ lensed0 = enmap.enmap(resample.resample_fft(hlensed,cshape),cwcs)
 
 print(lensed.shape)
 print(lensed0.shape)
+
+enmap.write_map("lensed_lowres.fits",lensed)
+enmap.write_map("lensed_highres.fits",lensed0)
+enmap.write_map("unlensed_lowres.fits",unlensed)
 
 io.plot_img(rkappa,"lres_test_00.png")
 io.plot_img(lensed0,"lres_test_0.png")
