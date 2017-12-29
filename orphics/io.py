@@ -78,13 +78,16 @@ def join_nums(nums):
     
 ### CONFIG FILES
     
-def load_path_config():
-    if os.path.exists('input/paths_local.ini'):
-        return config_from_file('input/paths_local.ini')
-    elif os.path.exists('input/paths.ini'):
-        return config_from_file('input/paths.ini')
+def load_path_config(filename=None):
+    if filename is not None:
+        return config_from_file(filename)
     else:
-        raise IOError
+        if os.path.exists('input/paths_local.ini'):
+            return config_from_file('input/paths_local.ini')
+        elif os.path.exists('input/paths.ini'):
+            return config_from_file('input/paths.ini')
+        else:
+            raise IOError
     
     
 def config_from_file(filename):

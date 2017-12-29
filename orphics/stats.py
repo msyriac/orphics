@@ -12,8 +12,9 @@ def sm_update(Ainv, u, v=None, e=None):
         g = np.dot(Ainv, u) / (e + np.dot(v.T, np.dot(Ainv, u)))			
         return (Ainv / e) - np.dot(g, np.dot(v.T, Ainv/e))
     else:
-        return Ainv - np.dot(Ainv, np.dot(np.dot(u,v.T), Ainv)) / ( 1 + np.dot(v.T, np.dot(Ainv, u)))
-
+        vT = v.T
+        ans = Ainv - np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / ( 1 + np.dot(vT, np.dot(Ainv, u)))
+        return ans
 
 def cov2corr(cov):
     # slow and stupid!

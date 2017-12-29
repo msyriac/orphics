@@ -69,7 +69,8 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
         vwidth = height_arcmin/2.
     arcmin =  utils.arcmin
     degree =  utils.degree
-    shape, wcs = enmap.geometry(pos=[[-vwidth*arcmin+yoffset_degree*degree,-hwidth*arcmin+xoffset_degree*degree],[vwidth*arcmin+yoffset_degree*degree,hwidth*arcmin+xoffset_degree*degree]], res=px_res_arcmin*arcmin, proj=proj)
+    pos = [[-vwidth*arcmin+yoffset_degree*degree,-hwidth*arcmin+xoffset_degree*degree],[vwidth*arcmin+yoffset_degree*degree,hwidth*arcmin+xoffset_degree*degree]]
+    shape, wcs = enmap.geometry(pos=pos, res=px_res_arcmin*arcmin, proj=proj)
     if pol: shape = (3,)+shape
     return shape, wcs
 
@@ -344,13 +345,18 @@ def diagonal_cov(power2d):
     return Cflat.reshape((ny,nx,ny,nx))
 
 
+def ncov(shape,wcs,noise_uk_arcmin):
+    noise_uK_rad = noise_uk_arcmin*np.pi/180./60.
+    normfact = np.sqrt(np.prod(enmap.pixsize(shape,wcs)))
+    noise_uK_pixel = noise_uK_rad/normfact
+    return np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
+
 def pixcov(shape,wcs,fourierCov):
     fourierCov = fourierCov.astype(np.float32, copy=False)
     bny,bnx = shape
     from numpy.fft import fft2,ifft2
 
     pcov = fft2((ifft2(fourierCov,axes=(-4,-3))),axes=(-2,-1)).real
-    #pcov = fftfast.fft((fftfast.ifft2(fourierCov,axes=(-4,-3))),axes=(-2,-1)).real
     return pcov*bnx*bny/enmap.area(shape,wcs)
 
 def get_lnlike(covinv,instamp):
@@ -1347,20 +1353,32 @@ class InterpStack(object):
         dec_rad = np.deg2rad(dec)
 
         box = self._box_from_ra_dec(ra_rad,dec_rad)
-        print(ra_rad*180./np.pi,dec_rad*180./np.pi,box*180./np.pi)
-        selection = slice_from_box(shape,wcs,box)
-        print(selection)
-        #submap = enmap.read_fits(imap_file,box=box)#sel=selection)
-        sys.exit()
-        submap = enmap.read_fits(imap_file,sel=selection)
-        io.plot_img(submap,io.dout_dir+"scut.png",high_res=True)
+        # print(ra_rad*180./np.pi,dec_rad*180./np.pi,box*180./np.pi)
+        # selection = slice_from_box(shape,wcs,box)
+        # print(selection)
+        submap = enmap.read_fits(imap_file,box=box)#sel=selection)
+        print(submap.shape)
+        # sys.exit()
+        # submap = enmap.read_fits(imap_file,sel=selection)
+        # io.plot_img(submap,io.dout_dir+"scut.png",high_res=True)
+
+        # try:
+        #     self.count +=1
+        # except:
+        #     self.count = 0
+
+        # print(ra,dec)
+        # io.plot_img(submap,io.dout_dir+"stest_qwert_"+str(self.count)+".png")
+
+
+        
         return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
 
     def _box_from_ra_dec(self,ra_rad,dec_rad):
 
         
         # CAR
-        coord_width = np.deg2rad(self.arc_width/np.cos(dec_rad)/60.)
+        coord_width = np.deg2rad(self.arc_width/60.)#np.cos(dec_rad)/60.)
         coord_height = np.deg2rad(self.arc_width/60.)
 
         box = np.array([[dec_rad-coord_height/2.,ra_rad-coord_width/2.],[dec_rad+coord_height/2.,ra_rad+coord_width/2.]])

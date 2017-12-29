@@ -1,5 +1,6 @@
 from __future__ import print_function
 import camb
+import warnings
 from math import pi
 from camb import model, initialpower
 import numpy as np
@@ -15,36 +16,37 @@ except:
 import time, re
 
 defaultConstants = {'TCMB': 2.7255
-,'G_CGS': 6.67259e-08
-,'MSUN_CGS': 1.98900e+33
-,'MPC2CM': 3.085678e+24
-,'ERRTOL': 1e-12
-,'K_CGS': 1.3806488e-16
-,'H_CGS': 6.62608e-27
-,'C': 2.99792e+10
-,'A_ps': 3.1
-,'A_g': 0.9
-,'nu0': 150.
-,'n_g': -0.7
-,'al_g': 3.8
-,'al_ps': -0.5
-,'Td': 9.7
-,'al_cib': 2.2
-,'A_cibp': 6.9
-,'A_cibc': 4.9
-,'n_cib': 1.2
-,'A_tsz': 5.6
-,'ell0sec': 3000.
+                    ,'G_CGS': 6.67259e-08
+                    ,'MSUN_CGS': 1.98900e+33
+                    ,'MPC2CM': 3.085678e+24
+                    ,'ERRTOL': 1e-12
+                    ,'K_CGS': 1.3806488e-16
+                    ,'H_CGS': 6.62608e-27
+                    ,'C': 2.99792e+10
+                    ,'A_ps': 3.1
+                    ,'A_g': 0.9
+                    ,'nu0': 150.
+                    ,'n_g': -0.7
+                    ,'al_g': 3.8
+                    ,'al_ps': -0.5
+                    ,'Td': 9.7
+                    ,'al_cib': 2.2
+                    ,'A_cibp': 6.9
+                    ,'A_cibc': 4.9
+                    ,'n_cib': 1.2
+                    ,'A_tsz': 5.6
+                    ,'ell0sec': 3000.
 }
 
 
 defaultCosmology = {'omch2': 0.12470
-,'ombh2': 0.02230
-,'H0': 67.0
-,'ns': 0.96
-,'As': 2.2e-9
-,'mnu': 0.0
-,'w0': -1.0
+                    ,'ombh2': 0.02230
+                    ,'H0': 67.0
+                    ,'ns': 0.96
+                    ,'As': 2.2e-9
+                    ,'mnu': 0.0
+                    ,'w0': -1.0
+                    ,'tau':0.06
 }
 
 
@@ -54,7 +56,7 @@ class Cosmology(object):
     Intended to be inherited by other classes like LimberCosmology and 
     ClusterCosmology
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True):
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True):
 
         cosmo = paramDict
         self.paramDict = paramDict
@@ -80,11 +82,19 @@ class Cosmology(object):
         except:
             self.ombh2 = cosmo['ob']*self.H0*self.H0/100./100.
             self.ob = cosmo['ob']
+
+
+        try:
+            self.tau = cosmo['tau']
+        except:
+            self.tau = defaultCosmology['tau']
+            warnings.warn("No tau specified; assuming default of "+str(self.tau))
+            
             
         self.mnu = cosmo['mnu']
         self.w0 = cosmo['w0']
         self.pars = camb.CAMBparams()
-        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu,) # add tau
+        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau)
         self.pars.set_dark_energy(w=self.w0)
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
@@ -104,10 +114,10 @@ class Cosmology(object):
             self.clttfunc = interp1d(ells,cltts,bounds_error=False,fill_value=0.)
 
         elif not(skipCls):
-            print("Generating theory Cls...")
+            if verbose: print("Generating theory Cls...")
             self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
             self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
-            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless)
+            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless,verbose=verbose)
             self.clttfunc = lambda ell: theory.lCl('TT',ell)
             self.theory = theory
 
@@ -384,7 +394,7 @@ def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,
     return ps*tmul
 
         
-def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True):
+def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True,verbose=True):
     '''
 
     The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
@@ -412,7 +422,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         assert pickling
         clfile = "output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl"
         cmbmat = pickle.load(open(clfile,'rb'))
-        print("Loaded cached Cls from ", clfile)
+        if verbose: print("Loaded cached Cls from ", clfile)
     except:
         cmbmat = results.get_cmb_power_spectra(pars)
         if pickling:
@@ -442,7 +452,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
         assert pickling
         clfile = "output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt"
         clphi = np.loadtxt(clfile)
-        print("Loaded cached Cls from ", clfile)
+        if verbose: print("Loaded cached Cls from ", clfile)
     except:
         lensArr = results.get_lens_potential_cls(lmax=kellmax)
         clphi = lensArr[2:,0]

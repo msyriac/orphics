@@ -51,6 +51,7 @@ modrmap = enmap.modrmap(shape,wcs)
 oshape,owcs = enmap.scale_geometry(shape,wcs,args.pix/bpix)
 omodlmap = enmap.modlmap(oshape,owcs)
 omodrmap = enmap.modrmap(oshape,owcs)
+
 if rank==0:
     print(bshape,bwcs)
     print(shape,wcs)
@@ -233,7 +234,7 @@ if rank==0:
         kappa_true = maps.filter_map(lensing.nfw_kappa(kamp_true*1e15,omodrmap,cc,overdensity=200.,critical=True,atClusterZ=True),kmask)
         
     cents, ktrue1d = binner.bin(kappa_true)
-
+    
     arcs,ks = np.loadtxt("input/hdv.csv",unpack=True,delimiter=",")
     
     pl = io.Plotter()
@@ -241,7 +242,8 @@ if rank==0:
     pl.add(arcs,ks,lw=2,alpha=0.5,label="hdv profile")
     pl.add_err(cents,recon1d,recon1d_err,ls="--",label="recon")
     pl.hline()
-    pl.legend()
+    pl.legend(loc='upper right')
+    pl._ax.set_ylim(-0.01,0.2)
     pl.done(pout_dir+"recon1d.png")
 
 
