@@ -1,6 +1,20 @@
 from __future__ import print_function
 import numpy as np
 
+def sm_update(Ainv, u, v=None, e=None):
+    """Compute the value of (A + uv^T)^-1 given A^-1, u, and v. 
+    Uses the Sherman-Morrison formula."""
+
+    v = u.copy() if v is None else v
+    u = u.reshape((len(u),1))
+    v = v.reshape((len(v),1))
+    if e is not None:
+        g = np.dot(Ainv, u) / (e + np.dot(v.T, np.dot(Ainv, u)))			
+        return (Ainv / e) - np.dot(g, np.dot(v.T, Ainv/e))
+    else:
+        return Ainv - np.dot(Ainv, np.dot(np.dot(u,v.T), Ainv)) / ( 1 + np.dot(v.T, np.dot(Ainv, u)))
+
+
 def cov2corr(cov):
     # slow and stupid!
     
@@ -81,7 +95,6 @@ class Stats(object):
         """
         Collect from all MPI cores and calculate stacks.
         """
-        import numpy as np
 
         if self.rank in self.loopover:
 
