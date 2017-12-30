@@ -125,7 +125,7 @@ for i in range(N):
     if (i+1)%10==0: print(i+1)
 
     # Get sim maps (npol,ny,nx) array
-    imaps = mg.get_map(scalar=False,iau=iau)*mask
+    imaps = mg.get_map(scalar=False,iau=iau) #*mask
 
 
 

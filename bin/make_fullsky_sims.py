@@ -27,7 +27,7 @@ dtype= {32:np.float32, 64:np.float64}[args.bits]
 seed = args.seed if args.seed is not None else np.random.randint(0,100000000)
 lmax = args.lmax or None
 maplmax = args.maplmax if args.maplmax is not None else lmax
-
+io.dout_dir = args.path
 
 Nsims = args.nsim
 
