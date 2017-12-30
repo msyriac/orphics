@@ -14,7 +14,6 @@ parser.add_argument("path", type=str,help='Output path prefix')
 parser.add_argument("theory", type=str,help='Theory CAMB Cl lensPotential file name')
 parser.add_argument("-N", "--nsim",     type=int,  default=1,help="A description")
 parser.add_argument("-r", "--res",     type=float,  default=1.0,help="Pixel size in arcminutes")
-parser.add_argument("-p", "--prof",     type=str,  default="car",help="Projection")
 parser.add_argument("-B", "--bits",     type=int, default=32)
 parser.add_argument("-s", "--seed",     type=int,  default=None)
 parser.add_argument("-l", "--lmax",     type=int,  default=8000)
@@ -105,11 +104,11 @@ if rank==0:
     tlte = theory.lCl('TE',dlells)
     tlee = theory.lCl('EE',dlells)
     tlbb = theory.lCl('BB',dlells)
-    kk_val = theory.gCl('kk',dlells)
-
+    
     
     duells = np.arange(ushape[1])
     kells = np.arange(kshape[0])
+    kk_val = theory.gCl('kk',kells)
     tkk = ps[0,0,:duells.size] *(duells*(duells+1.))**2./4.
     tute = ps[1,2,:duells.size]
     tuee = ps[2,2,:duells.size]
@@ -117,89 +116,111 @@ if rank==0:
     tutt = ps[1,1,:duells.size]
     
     # unlensed TT/EE
-    pl = io.Plotter(yscale='log',xscale='log')
+    pl = io.Plotter(yscale='log',xscale='log',xlabel="$\\ell$",ylabel="$\\ell^2 C_{\\ell}$")
     pl.add(duells,(tutt*duells**2.),lw=2,color='k')
     pl.add(duells,(tuee*duells**2.),lw=2,color='k')
     pl.add(duells,(ucls[0]*duells**2.))
     pl.add(duells,(ucls[1]*duells**2.))
-    pl._ax.set_xlim(2,7000)
+    pl._ax.set_xlim(2,6000)
+    pl._ax.set_ylim(1e-6,1e6)
     #pl.done(args.path+"_tt_ee.png")
     pl.done(io.dout_dir+"_unlensed_tt_ee.png")
 
     # unlensed TE
-    pl = io.Plotter()
+    pl = io.Plotter(xlabel="$\\ell$",ylabel="$\\ell^2 C_{\\ell}$")
     pl.add(duells,(tute*duells**2.),lw=2,color='k')
     pl.add(duells,(ucls[3]*duells**2.))
-    pl._ax.set_xlim(2,7000)
+    pl._ax.set_xlim(2,6000)
     pl.hline()
     #pl.done(args.path+"_tt_ee.png")
     pl.done(io.dout_dir+"_unlensed_te.png")
 
     # unlensed BB / null
-    pl = io.Plotter()
+    pl = io.Plotter(xlabel="$\\ell$",ylabel="$C_{\\ell}$")
     pl.add(duells,(tubb),lw=2,color='k')
     pl.add(duells,(ucls[2]))
     pl.add(duells,(ucls[4]))
     pl.add(duells,(ucls[5]))
-    pl._ax.set_xlim(2,7000)
+    pl._ax.set_xlim(2,6000)
+    minval = np.min(np.stack((ucls[2],ucls[4],ucls[5],tubb)))
+    maxval = np.max(np.stack((ucls[2],ucls[4],ucls[5],tubb)))
+    pl._ax.set_ylim(minval,maxval)
     pl.hline()
     #pl.done(args.path+"_tt_ee.png")
     pl.done(io.dout_dir+"_unlensed_bb_nulls.png")
 
     # kk
-    pl = io.Plotter(yscale='log',xscale='log')
+    pl = io.Plotter(yscale='log',xscale='log',xlabel="$L$",ylabel="$C_L$")
     pl.add(duells,(tkk),lw=2,color='k')
-    pl.add(dlells,(kk_val),lw=2,ls="--",color='k')
+    pl.add(kells,(kk_val),lw=2,ls="--",color='k')
     pl.add(kells,(kcls))
     pl._ax.set_xlim(2,7000)
     #pl.done(args.path+"_tt_ee.png")
+    pl._ax.set_ylim(1e-11,1e-6)
     pl.done(io.dout_dir+"_kk.png")
 
 
     # lensed TT/EE/BB
-    pl = io.Plotter(yscale='log',xscale='log')
+    pl = io.Plotter(yscale='log',xscale='log',xlabel="$\\ell$",ylabel="$\\ell^2 C_{\\ell}$")
     pl.add(dlells,(tltt*dlells**2.),lw=2,color='k')
     pl.add(dlells,(tlee*dlells**2.),lw=2,color='k')
     pl.add(dlells,(lcls[0]*dlells**2.))
     pl.add(dlells,(lcls[1]*dlells**2.))
     pl.add(dlells,(tlbb*dlells**2.),lw=2,color='k')
     pl.add(dlells,(lcls[2]*dlells**2.))
-    pl._ax.set_xlim(2,7000)
+    pl._ax.set_xlim(2,6000)
     #pl.done(args.path+"_tt_ee.png")
     pl.done(io.dout_dir+"_lensed_tt_ee.png")
 
     # lensed TE
-    pl = io.Plotter()
+    pl = io.Plotter(xlabel="$\\ell$",ylabel="$\\ell^2 C_{\\ell}$")
     pl.add(dlells,(tlte*dlells**2.),lw=2,color='k')
     pl.add(dlells,(lcls[3]*dlells**2.))
     pl.hline()
-    pl._ax.set_xlim(2,7000)
+    pl._ax.set_xlim(2,6000)
     #pl.done(args.path+"_tt_ee.png")
     pl.done(io.dout_dir+"_lensed_te.png")
 
     # lensed nulls
-    pl = io.Plotter()
+    pl = io.Plotter(xlabel="$\\ell$",ylabel="$C_{\\ell}$")
     pl.add(dlells,(lcls[4]))
     pl.add(dlells,(lcls[5]))
-    pl._ax.set_xlim(2,7000)
+    pl._ax.set_xlim(2,6000)
+    minval = np.min(np.stack((lcls[4],lcls[5])))
+    maxval = np.max(np.stack((lcls[4],lcls[5])))
+    pl._ax.set_ylim(minval,maxval)
     pl.hline()
     #pl.done(args.path+"_tt_ee.png")
     pl.done(io.dout_dir+"_lensed_nulls.png")
 
 
     # diffs
-    pl = io.Plotter()
+    pl = io.Plotter(xlabel="$\\ell$",ylabel="$\\frac{\Delta C_{\\ell}}{C_{\\ell}}$")
     pl.add(duells,(ucls[0]-tutt)/tutt,alpha=0.3,ls="--",color="C0")
     pl.add(duells,(ucls[1]-tuee)/tuee,alpha=0.3,ls="--",color="C1")
     pl.add(duells,(ucls[2]-tubb)/tubb,alpha=0.3,ls="--",color="C2")
-    pl.add(duells,(ucls[3]-tute)/tute,alpha=0.3,ls="--",color="C3")
     pl.add(dlells,(lcls[0]-tltt)/tltt,alpha=0.8,color="C0",label="tt")
     pl.add(dlells,(lcls[1]-tlee)/tlee,alpha=0.8,color="C1",label="ee")
     pl.add(dlells,(lcls[2]-tlbb)/tlbb,alpha=0.8,color="C2",label="bb")
-    pl.add(dlells,(lcls[3]-tlte)/tlte,alpha=0.8,color="C3",label="te")
+    pl.add(kells,(kcls-kk_val)/kk_val,alpha=0.8,color="C3",label="kk")
+
+    
     pl._ax.set_xlim(1,7000)
-    pl._ax.set_ylim(-0.1,0.1)
+    pl._ax.set_ylim(-0.02,0.02)
     pl.hline()
     pl.legend(loc='lower right')
     #pl.done(args.path+"_tt_ee.png")
     pl.done(io.dout_dir+"_diffs.png")
+
+
+
+    pl = io.Plotter(xlabel="$\\ell$",ylabel="$\Delta C_{\\ell}$")
+    pl.add(duells,(ucls[3]-tute),alpha=0.3,ls="--",color="C3")
+    pl.add(dlells,(lcls[3]-tlte),alpha=0.8,color="C3",label="te")
+    pl._ax.set_xlim(1,7000)
+    pl._ax.set_ylim(np.min(tlte),np.max(tlte))
+    pl.hline()
+    pl.legend(loc='lower right')
+    #pl.done(args.path+"_tt_ee.png")
+    pl.done(io.dout_dir+"_diffs_te.png")
+
