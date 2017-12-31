@@ -752,6 +752,7 @@ class NoiseModel(object):
             shape = splits[0].shape
             wcs = splits[0].wcs
 
+        
             if wmap is None: wmap = enmap.ones(shape[-2:],wcs)
             if mask is None: mask = np.ones(shape[-2:])
             if kmask is None: kmask = np.ones(shape[-2:])
@@ -847,12 +848,13 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0):
     # Get fourier transforms of I,Q,U
     ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
 
-    # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
     kteb_splits = []
+    # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
     for ksplit in ksplits:
         kteb_splits.append( ksplit.copy())
-        kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
-
+        if (splits[0].ndim==3 and splits[0].shape[0]==3):
+            kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
+            
     # get auto power of I,Q,U
     auto = sum([fourier_calc.power2d(kmap=ksplit)[0] for ksplit in ksplits])/Nsplits
 
@@ -1297,13 +1299,19 @@ class Stacker(object):
 
 
     
-def cutout(imap,ra,dec,arcmin_width):   
+def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1):
+    Ny,Nx = imap.shape
+
+
+    if (iy is None) or (ix is None):
+        iy,ix = imap.sky2pix(coords=(dec,ra))
+    
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
-    iy,ix = imap.sky2pix(coords=(dec,ra))
+    if int(iy-Npix/2)<pad or int(ix-Npix/2)<pad or int(iy+Npix/2)>(Ny-pad) or int(ix+Npix/2)>(Nx-pad): return None
     cutout = imap[int(iy-Npix/2):int(iy+Npix/2),int(ix-Npix/2):int(ix+Npix/2)]
+
     shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
-    assert shape==cutout.shape
     return enmap.ndmap(cutout,wcs)
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):

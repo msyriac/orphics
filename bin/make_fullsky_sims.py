@@ -3,7 +3,7 @@ from orphics.stats import bin2D, Stats
 from enlib import enmap, bench, curvedsky, lensing, powspec, mapsim
 from orphics import cosmology, io, maps
 import numpy as np
-import sys
+import sys, os,traceback
 from orphics.mpi import MPI,mpi_distribute
 import healpy as hp
 import argparse
@@ -49,18 +49,39 @@ shape = (args.ncomp,)+shape
 
 def save(suffix,imap,index):
     enmap.write_fits(args.path+"_"+suffix+"_"+str(index).zfill(int(np.log10(args.nsim))+1)+".fits",imap)
+def load(suffix,index):
+    return enmap.read_fits(args.path+"_"+suffix+"_"+str(index).zfill(int(np.log10(args.nsim))+1)+".fits")
+
+
 
 for k,index in enumerate(my_tasks):
 
+
     if rank==0: print("Rank 0 doing task ", k, " / ", len(my_tasks), "...")
 
-    with bench.show("lensing"):
-        lensed,kappa,unlensed = lensing.rand_map(shape, wcs, ps, lmax=lmax, maplmax=maplmax, seed=(seed,index), verbose=True if rank==0 else False, dtype=dtype,output="lku")
+    try:
+        
+        lensed = load("lensed",index)
+        unlensed = load("unlensed",index)
+        kappa = load("kappa",index)
+        if rank==0:
+            print("Rank 0 successfully loaded saved files.")
 
-    save("lensed",lensed,index)
-    save("unlensed",unlensed,index)
-    save("kappa",kappa,index)
-    
+        lensed.wcs = wcs   # WCS is being saved wrong?! See orphics/scripts/enlib-issue.ipynb
+        unlensed.wcs = wcs
+        kappa.wcs = wcs
+        
+    except:
+        # if rank==0:
+        #     traceback.print_exc()
+        with bench.show("lensing"):
+            lensed,kappa,unlensed = lensing.rand_map(shape, wcs, ps, lmax=lmax, maplmax=maplmax,
+                                                     seed=(seed,index), verbose=True if rank==0 else False, dtype=dtype,output="lku")
+
+        save("lensed",lensed,index)
+        save("unlensed",unlensed,index)
+        save("kappa",kappa,index)
+
     l_alm = curvedsky.map2alm(lensed,lmax=lmax)
     u_alm = curvedsky.map2alm(unlensed,lmax=lmax)
     k_alm = curvedsky.map2alm(kappa,lmax=lmax)
@@ -199,10 +220,10 @@ if rank==0:
     pl.add(duells,(ucls[0]-tutt)/tutt,alpha=0.3,ls="--",color="C0")
     pl.add(duells,(ucls[1]-tuee)/tuee,alpha=0.3,ls="--",color="C1")
     pl.add(duells,(ucls[2]-tubb)/tubb,alpha=0.3,ls="--",color="C2")
+    pl.add(kells,(kcls-kk_val)/kk_val,alpha=0.3,ls="--",color="C3",label="kk")
     pl.add(dlells,(lcls[0]-tltt)/tltt,alpha=0.8,color="C0",label="tt")
     pl.add(dlells,(lcls[1]-tlee)/tlee,alpha=0.8,color="C1",label="ee")
     pl.add(dlells,(lcls[2]-tlbb)/tlbb,alpha=0.8,color="C2",label="bb")
-    pl.add(kells,(kcls-kk_val)/kk_val,alpha=0.8,color="C3",label="kk")
 
     
     pl._ax.set_xlim(1,7000)

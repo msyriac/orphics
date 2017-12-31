@@ -2,6 +2,15 @@ import numpy as np
 from enlib import enmap, coordinates
 import healpy as hp
 
+def select_region(ra_col,dec_col,other_cols,ra_min,ra_max,dec_min,dec_max):
+    ret_cols = []
+    for other_col in other_cols:
+        ret_cols.append(other_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)])
+
+    ra_ret = ra_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)]
+    dec_ret = dec_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)]
+    return ra_ret,dec_ret,ret_cols
+
 def dndz(z,z0=1./3.):
     ans = (z**2.)* np.exp(-1.0*z/z0)/ (2.*z0**3.)
     return ans    
@@ -22,12 +31,13 @@ def random_catalog(shape,wcs,N,edge_avoid_deg=0.):
 
 class CatMapper(object):
 
-    def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None):
+    def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None,verbose=True):
 
+        self.verbose = verbose
         if nside is not None:
-            print( "Calculating pixels...")
+            if verbose: print( "Calculating pixels...")
             self.pixs = hp.ang2pix(nside,ras_deg,decs_deg,lonlat=True)
-            print( "Done with pixels...")
+            if verbose: print( "Done with pixels...")
             self.nside = nside
             self.shape = hp.nside2npix(nside)
             self.curved = True
@@ -35,16 +45,16 @@ class CatMapper(object):
             coords = np.vstack((decs_deg,ras_deg))*np.pi/180.
             self.shape = shape
             self.wcs = wcs
-            print( "Calculating pixels...")
+            if verbose: print( "Calculating pixels...")
             self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
-            print( "Done with pixels...")
+            if verbose: print( "Done with pixels...")
             self.curved = False
         self.counts = self.get_map()
         if not self.curved:
             self.counts = enmap.enmap(self.counts,self.wcs)
 
     def get_map(self,weights=None):
-        print("Calculating histogram...")
+        if self.verbose: print("Calculating histogram...")
         if self.curved:
             return np.histogram(self.pixs,bins=self.shape,weights=weights,range=[0,self.shape])[0].astype(np.float32)
         else:
@@ -74,7 +84,7 @@ class CatMapper(object):
 
 class BOSSMapper(CatMapper):
 
-    def __init__(self,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None,shape=None,wcs=None,nside=None):
+    def __init__(self,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None,shape=None,wcs=None,nside=None,verbose=True):
         from astropy.io import fits
 
         ras = []
@@ -86,19 +96,19 @@ class BOSSMapper(CatMapper):
             decs += cat.data['DEC'].tolist()
             f.close()
             
-        CatMapper.__init__(self,ras,decs,shape,wcs,nside)
+        CatMapper.__init__(self,ras,decs,shape,wcs,nside,verbose=verbose)
         if random_files is not None:
             self.rand_map = 0.
             #ras = []
             #decs = []
             for random_file in random_files:
-                print ("Opening fits...")
+                if verbose: print ("Opening fits...")
                 f = fits.open(random_file)
-                print ("Done opening fits...")
+                if verbose: print ("Done opening fits...")
                 cat = f[1] #.copy()
                 ras = cat.data['RA'] #.tolist()
                 decs = cat.data['DEC'] #.tolist()
-                rcat = CatMapper(ras,decs,shape,wcs,nside)
+                rcat = CatMapper(ras,decs,shape,wcs,nside,verbose=verbose)
                 self.rand_map += rcat.counts
                 del rcat
                 del ras
@@ -109,14 +119,14 @@ class BOSSMapper(CatMapper):
 
     def update_mask(self,rand_sigma_arcmin=2.,rand_threshold=1e-3):
         if rand_sigma_arcmin>1.e-3:
-            print( "Smoothing...")
+            if self.verbose: print( "Smoothing...")
             if self.curved:
                 smap = hp.smoothing(self.rand_map,sigma=rand_sigma_arcmin*np.pi/180./60.)
             else:
                 smap = enmap.smooth_gauss(self.rand_map,rand_sigma_arcmin*np.pi/180./60.)
-            print( "Done smoothing...")
+            if self.verbose: print( "Done smoothing...")
         else:
-            smap = self.rand_map
+            if self.verbose: smap = self.rand_map
 
         self.mask = np.zeros(self.shape)
         self.mask[smap>rand_threshold] = 1

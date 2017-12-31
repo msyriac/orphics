@@ -1358,10 +1358,10 @@ class Estimator(object):
             except:
                 pass
 
-    def kappa_from_map(self,XY,T2DData,E2DData=None,B2DData=None,T2DDataY=None,E2DDataY=None,B2DDataY=None,alreadyFTed=False):
+    def kappa_from_map(self,XY,T2DData,E2DData=None,B2DData=None,T2DDataY=None,E2DDataY=None,B2DDataY=None,alreadyFTed=False,returnFt=False):
         self.updateTEB_X(T2DData,E2DData,B2DData,alreadyFTed)
         self.updateTEB_Y(T2DDataY,E2DDataY,B2DDataY,alreadyFTed)
-        return self.get_kappa(XY)
+        return self.get_kappa(XY,returnFt=returnFt)
         
         
     def fmask_func(self,arr):
