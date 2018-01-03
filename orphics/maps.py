@@ -1236,6 +1236,27 @@ class SigurdCoaddReader(ACTMapReader):
         beam_file = self.beam_root+self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
+
+
+class SigurdBNReader(SigurdCoaddReader):
+    
+    def __init__(self,config_yaml_path):
+        SigurdCoaddReader.__init__(self,config_yaml_path)
+        eg_file = self._fstring(split=-1,freq="150",day_night="daynight",planck=True)
+        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
+
+    def _fstring(self,split,array,freq="150",day_night="night",weight=False):
+        # Change this function if the map naming scheme changes
+        splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)
+        weightstr = "div" if weight else "map0500"
+        return self.map_root+"mr2/s15/boss_north/s15_boss_"+array+"_f"+freq+"_"+day_night+"_nohwp"+splitstr+"_sky_"+weightstr+"_mono.fits"
+
+
+    def get_beam(self,freq="150",day_night="daynight",planck=True):
+        beam_file = self.beam_root+self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['beam']
+        ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
+        return ls, bells
+
     
 class SimoneC7V5Reader(ACTMapReader):
     
