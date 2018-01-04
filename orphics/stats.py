@@ -20,7 +20,7 @@ class CinvUpdater(object):
         
         det_update = 1.+(amplitude**2.)*self.det_unnormalized[index]
         cinv_updated = self.cinvs[index] - (amplitude**2.)*( self.update_unnormalized[index]/ det_update)
-        return  cinv_updated , det_update*self.logdets[index]
+        return  cinv_updated , np.log(det_update)+self.logdets[index]
 
         
 
@@ -30,10 +30,13 @@ def sm_update(Ainv, u, v=None):
     Uses the Sherman-Morrison formula."""
 
     v = u.copy() if v is None else v
-    u = u.reshape((len(u),))
-    v = v.reshape((len(v),))
+    u = u.reshape((len(u),1))
+    v = v.reshape((len(v),1))
     vT = v.T
-    det_update = 1.+np.dot(vT, np.dot(Ainv, u))
+    
+    ldot = np.dot(vT, np.dot(Ainv, u))
+    assert ldot.size==1
+    det_update = 1.+ldot.ravel()[0]
 
     ans = Ainv - (np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / det_update)
     return ans, det_update

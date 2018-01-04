@@ -89,7 +89,6 @@ lens_order = 5
 
 famps = np.linspace(fmin,fmax,fnum)
 fg = kappa * 50. 
-# cupdater = stats.CinvUpdater(cinvs,logdets,maps.filter_map(fg,kbeam).ravel())
 fg_true = maps.filter_map(fg.copy()*ftrue,kbeam)
 
 
@@ -115,22 +114,19 @@ for k in range(len(bkamps)):
         os.environ["OMP_NUM_THREADS"] = num_cores
 
         Tcov = cov + Ncov + 5000 #+ np.outer(fg_true.ravel(),fg_true.ravel())# !!!
-        Tcov_test = cov + Ncov + 5000 + np.outer(fg_true.ravel(),fg_true.ravel())# !!!
+        # Tcov_test = cov + Ncov + 5000 + np.outer(fg_true.ravel(),fg_true.ravel())# !!!
         with bench.show("covwork"):
             s,logdet = np.linalg.slogdet(Tcov)
             assert s>0
             cinv = np.linalg.inv(Tcov).astype(np.float64)
-            s,logdet_test = np.linalg.slogdet(Tcov_test)
-            cinv_test = np.linalg.inv(Tcov_test).astype(np.float64)
+            # s,logdet_test = np.linalg.slogdet(Tcov_test)
+            # cinv_test = np.linalg.inv(Tcov_test).astype(np.float64)
 
-        # cinv_updated, det_updated = cupdater.get_cinv(k,ftrue) # !!!
-        # cinv = cinv_updated
-        # logdet = det_updated
-        cinv, det_update = stats.sm_update(cinv, fg_true.ravel())
-        logdet *= det_update
-        print(logdet,logdet_test)
-        io.plot_img(cinv-cinv_test,pout_dir+"cinvdiff.png")
-        sys.exit()
+        # cinv, det_update = stats.sm_update(cinv, fg_true.ravel())
+        # logdet += np.log(det_update)
+        # print(logdet,logdet_test)
+        # io.plot_img(cinv-cinv_test,pout_dir+"cinvdiff.png")
+        # sys.exit()
         #print(cinv,logdet)
 
         os.environ["OMP_NUM_THREADS"] = old_cores
@@ -147,6 +143,9 @@ for k in range(len(bkamps)):
     logdets.append(logdet)
 
 
+# cupdater = stats.CinvUpdater(cinvs,logdets,maps.filter_map(fg,kbeam).ravel())
+
+    
 if rank==0: print("Starting sims...")
 # Stats
 Nsims = args.Nclusters
@@ -164,7 +163,7 @@ for i,task in enumerate(my_tasks):
     unlensed = mg.get_map()
     noise_map = ng.get_map()
     lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-    tot_beamed = maps.filter_map(lensed,kbeam) + fg_true
+    tot_beamed = maps.filter_map(lensed,kbeam) #+ fg_true
     stamp = tot_beamed  + noise_map
     if task==0:
         io.plot_img(unlensed,pout_dir + "0_unlensed.png")
@@ -200,9 +199,6 @@ mstats.get_stats()
 mstats.get_stacks()
 
 if rank==0:
-    # Bayesian
-    blnlikes = mstats.vectors["totlikes"].sum(axis=0)
-    blnlikes -= blnlikes.max()
 
 
     # lnlike2d = mstats.stacks["lnlike2d"] * mstats.stack_count["lnlike2d"]
@@ -222,6 +218,25 @@ if rank==0:
     # pl.add(range(len(slice_y)),slice_y)
     # pl.done(pout_dir+"slice_y.png")
 
+    # lnlike2d -= lnlike2d.max()
+    # margelike = np.log(np.exp(lnlike2d).sum(axis=1))
+    
+    # pl = io.Plotter()
+    # pl.add(range(len(slice_y)),margelike)
+    # pl.done(pout_dir+"margelike.png")
+
+
+
+    # Bayesian
+    # print(margelike)
+    # bkamps = bkamps[np.isfinite(margelike)]
+    # blnlikes = margelike[np.isfinite(margelike)] # !!!!
+    
+    blnlikes = mstats.vectors["totlikes"].sum(axis=0)
+    
+    blnlikes -= blnlikes.max()
+
+    
     
     pl1 = io.Plotter(xlabel="$A$",ylabel="$\\mathrm{ln}\\mathcal{L}$")
     
@@ -258,6 +273,8 @@ if rank==0:
     pl2.add(nkamps,np.exp(-(nkamps-mean)**2./2./sigma**2.),label="BE likelihood from chisquare fit")
     # pl2.add(bkamps,like,label="BE likelihood")
 
+    
+    io.save_cols("nofg_unmarginalized.txt",(nkamps,np.exp(-(nkamps-mean)**2./2./sigma**2.)))
 
     pl2.vline(x=kamp_true,ls="--")
     pl2.legend(loc='upper left')
