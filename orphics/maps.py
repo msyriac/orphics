@@ -12,7 +12,7 @@ class MatchedFilter(object):
         area = enmap.area(shape,wcs)
         self.normfact = area / (np.prod(shape))**2
         if noise_power is not None: self.n2d = noise_power
-        self.ktemp = enmap.fft(template,normalize=False)
+        if template is not None: self.ktemp = enmap.fft(template,normalize=False)
 
         
 
