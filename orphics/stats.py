@@ -30,8 +30,8 @@ def sm_update(Ainv, u, v=None):
     Uses the Sherman-Morrison formula."""
 
     v = u.copy() if v is None else v
-    u = u.reshape((len(u),))
-    v = v.reshape((len(v),))
+    u = u.reshape((len(u),1))
+    v = v.reshape((len(v),1))
     vT = v.T
     det_update = 1.+np.dot(vT, np.dot(Ainv, u))
 
