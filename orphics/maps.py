@@ -16,7 +16,7 @@ class MatchedFilter(object):
 
         
 
-    def apply(imap=None,kmap=None,template=None,ktemplate=None,noise_power=None):
+    def apply(self,imap=None,kmap=None,template=None,ktemplate=None,noise_power=None):
         if kmap is None:
             kmap = enmap.fft(imap,normalize=False)
         else:
