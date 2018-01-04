@@ -1,20 +1,42 @@
 from __future__ import print_function
 import numpy as np
 
-def sm_update(Ainv, u, v=None, e=None):
+class CinvUpdater(object):
+
+    def __init__(self,cinvs,logdets,profile):
+        self.cinvs = cinvs
+        self.logdets = logdets
+
+        u = profile.reshape((len(profile),1))
+        v = u.copy()
+        vT = v.T
+        self.update_unnormalized = []
+        self.det_unnormalized = []
+        for Ainv in cinvs:
+            self.update_unnormalized.append( np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) )
+            self.det_unnormalized.append( np.dot(vT, np.dot(Ainv, u)) )
+
+    def get_cinv(self,index,amplitude):
+        
+        det_update = 1.+(amplitude**2.)*self.det_unnormalized[index]
+        cinv_updated = self.cinvs[index] - (amplitude**2.)*( self.update_unnormalized[index]/ det_update)
+        return  cinv_updated , det_update*self.logdets[index]
+
+        
+
+
+def sm_update(Ainv, u, v=None):
     """Compute the value of (A + uv^T)^-1 given A^-1, u, and v. 
     Uses the Sherman-Morrison formula."""
 
     v = u.copy() if v is None else v
-    u = u.reshape((len(u),1))
-    v = v.reshape((len(v),1))
-    if e is not None:
-        g = np.dot(Ainv, u) / (e + np.dot(v.T, np.dot(Ainv, u)))			
-        return (Ainv / e) - np.dot(g, np.dot(v.T, Ainv/e))
-    else:
-        vT = v.T
-        ans = Ainv - np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / ( 1 + np.dot(vT, np.dot(Ainv, u)))
-        return ans
+    u = u.reshape((len(u),))
+    v = v.reshape((len(v),))
+    vT = v.T
+    det_update = 1.+np.dot(vT, np.dot(Ainv, u))
+
+    ans = Ainv - (np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / det_update)
+    return ans, det_update
 
 def cov2corr(cov):
     # slow and stupid!

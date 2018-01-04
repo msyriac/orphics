@@ -16,7 +16,7 @@ parser.add_argument("Amp", type=float,help='Amplitude of mass wrt 1e15.')
 parser.add_argument("-a", "--arc",     type=float,  default=10.,help="Stamp width (arcmin).")
 parser.add_argument("-p", "--pix",     type=float,  default=0.5,help="Pix width (arcmin).")
 parser.add_argument("-n", "--noise",     type=float,  default=1.0,help="Noise (uK-arcmin).")
-parser.add_argument("-f", "--foregrounds",     type=str,  default="-1,1,20,0.2",help="Foreground amplitudes specified as a list fmin,fmax,fnum,ftrue.")
+parser.add_argument("-f", "--foregrounds",     type=str,  default="0,1,20,0.2",help="Foreground amplitudes specified as a list fmin,fmax,fnum,ftrue.")
 #parser.add_argument("-f", "--flag", action='store_true',help='A flag.')
 args = parser.parse_args()
 fmin,fmax,fnum,ftrue = [float(x) for x in args.foregrounds.split(',')]
@@ -44,9 +44,6 @@ bmodrmap = enmap.modrmap(bshape,bwcs)
 
 
 
-if rank==0:
-    print(bshape,bwcs)
-
 
 
 # Noise model
@@ -57,45 +54,8 @@ Ncov = np.diag([(noise_uK_pixel)**2.]*np.prod(bshape))
 
 kbeam = maps.gauss_beam(bbeam,bmodlmap)
 
-# Load covs
-bkamps = np.loadtxt(GridName+"/amps.txt",unpack=True) #[:1] # !!!
-if rank==0: print("Amplitudes: ",bkamps)
-cov_file = lambda x: GridName+"/cov_"+str(x)+".npy"
-cinvs = []
-logdets = []
-for k in range(len(bkamps)):
-    if rank==0:
+        
 
-        print("Loading cov",k," / ",len(bkamps),"...")
-        cov = np.load(cov_file(k))
-
-        try:
-            old_cores = os.environ["OMP_NUM_THREADS"]
-        except:
-            old_cores = "1"
-        import multiprocessing
-        num_cores= str(multiprocessing.cpu_count())
-        os.environ["OMP_NUM_THREADS"] = num_cores
-
-        Tcov = cov + Ncov + 5000 # !!!
-        with bench.show("covwork"):
-            s,logdet = np.linalg.slogdet(Tcov)
-            assert s>0
-            cinv = np.linalg.inv(Tcov).astype(np.float64)
-
-
-        os.environ["OMP_NUM_THREADS"] = old_cores
-
-
-        for core in range(1,numcores):
-            comm.Send([cinv, mpi.MPI.DOUBLE], dest=core, tag=77)
-            comm.send(logdet, dest=core, tag=88)
-    else:
-        cinv = np.empty((np.prod(bshape),np.prod(bshape)), dtype=np.float64)
-        comm.Recv([cinv, mpi.MPI.DOUBLE], source=0, tag=77)
-        logdet = comm.recv(source=0, tag=88)
-    cinvs.append(cinv)
-    logdets.append(logdet)
 
 
 # Theory
@@ -125,6 +85,68 @@ alpha_pix = enmap.sky2pix(bshape,bwcs,pos, safe=False)
 lens_order = 5
 
 
+### FG PROFS
+
+famps = np.linspace(fmin,fmax,fnum)
+fg = kappa * 50. 
+# cupdater = stats.CinvUpdater(cinvs,logdets,maps.filter_map(fg,kbeam).ravel())
+fg_true = maps.filter_map(fg.copy()*ftrue,kbeam)
+
+
+
+# Load covs
+bkamps = np.loadtxt(GridName+"/amps.txt",unpack=True) #[:1] # !!!
+if rank==0: print("Amplitudes: ",bkamps)
+cov_file = lambda x: GridName+"/cov_"+str(x)+".npy"
+cinvs = []
+logdets = []
+for k in range(len(bkamps)):
+    if rank==0:
+
+        print("Loading cov",k," / ",len(bkamps),"...")
+        cov = np.load(cov_file(k))
+
+        try:
+            old_cores = os.environ["OMP_NUM_THREADS"]
+        except:
+            old_cores = "1"
+        import multiprocessing
+        num_cores= str(multiprocessing.cpu_count())
+        os.environ["OMP_NUM_THREADS"] = num_cores
+
+        Tcov = cov + Ncov + 5000 #+ np.outer(fg_true.ravel(),fg_true.ravel())# !!!
+        Tcov_test = cov + Ncov + 5000 + np.outer(fg_true.ravel(),fg_true.ravel())# !!!
+        with bench.show("covwork"):
+            s,logdet = np.linalg.slogdet(Tcov)
+            assert s>0
+            cinv = np.linalg.inv(Tcov).astype(np.float64)
+            s,logdet_test = np.linalg.slogdet(Tcov_test)
+            cinv_test = np.linalg.inv(Tcov_test).astype(np.float64)
+
+        # cinv_updated, det_updated = cupdater.get_cinv(k,ftrue) # !!!
+        # cinv = cinv_updated
+        # logdet = det_updated
+        cinv, det_update = stats.sm_update(cinv, fg_true.ravel())
+        logdet *= det_update
+        print(logdet,logdet_test)
+        io.plot_img(cinv-cinv_test,pout_dir+"cinvdiff.png")
+        sys.exit()
+        #print(cinv,logdet)
+
+        os.environ["OMP_NUM_THREADS"] = old_cores
+
+
+        for core in range(1,numcores):
+            comm.Send([cinv, mpi.MPI.DOUBLE], dest=core, tag=77)
+            comm.send(logdet, dest=core, tag=88)
+    else:
+        cinv = np.empty((np.prod(bshape),np.prod(bshape)), dtype=np.float64)
+        comm.Recv([cinv, mpi.MPI.DOUBLE], source=0, tag=77)
+        logdet = comm.recv(source=0, tag=88)
+    cinvs.append(cinv)
+    logdets.append(logdet)
+
+
 if rank==0: print("Starting sims...")
 # Stats
 Nsims = args.Nclusters
@@ -142,14 +164,13 @@ for i,task in enumerate(my_tasks):
     unlensed = mg.get_map()
     noise_map = ng.get_map()
     lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-    fg = kappa * 50. * ftrue
-    tot_beamed = maps.filter_map(lensed+fg,kbeam)
+    tot_beamed = maps.filter_map(lensed,kbeam) + fg_true
     stamp = tot_beamed  + noise_map
     if task==0:
         io.plot_img(unlensed,pout_dir + "0_unlensed.png")
         io.plot_img(lensed,pout_dir + "1_lensed.png")
         io.plot_img(fg,pout_dir + "2_fg.png")
-        io.plot_img(stamp,pout_dir + "2_tot.png")
+        io.plot_img(stamp,pout_dir + "3_tot.png")
 
     # Bayesian
 
@@ -162,8 +183,21 @@ for i,task in enumerate(my_tasks):
     mstats.add_to_stats("totlikes",nlnlikes)
 
 
-mstats.get_stats(verbose=False)
-mstats.get_stacks(verbose=False)
+    # lnlikes2d = np.zeros((bkamps.size,famps.size))
+    # for k,kamp in enumerate(bkamps):
+    #     for j,famp in enumerate(famps):
+    #         cinv_updated, det_updated = cupdater.get_cinv(k,famp)
+    #         lnlike = maps.get_lnlike(cinv_updated,stamp) + det_updated
+    #         lnlikes2d[k,j] = lnlike
+    
+    # mstats.add_to_stack("lnlike2d",-0.5*lnlikes2d)
+    
+
+
+if rank==0:
+    print("Waiting for other cores...")
+mstats.get_stats()
+mstats.get_stacks()
 
 if rank==0:
     # Bayesian
@@ -171,6 +205,22 @@ if rank==0:
     blnlikes -= blnlikes.max()
 
 
+    # lnlike2d = mstats.stacks["lnlike2d"] * mstats.stack_count["lnlike2d"]
+    # lnlike2d -= lnlike2d.max()
+    # io.plot_img(lnlike2d,pout_dir + "4_lnlike2d.png")
+    # io.plot_img(np.exp(lnlike2d),pout_dir + "4_like2d.png")
+
+    # ny,nx = lnlike2d.shape
+    # slice_x = lnlike2d[ny/2,:]
+    # slice_y = lnlike2d[:,0]
+    
+    # pl = io.Plotter()
+    # pl.add(range(len(slice_x)),slice_x)
+    # pl.done(pout_dir+"slice_x.png")
+
+    # pl = io.Plotter()
+    # pl.add(range(len(slice_y)),slice_y)
+    # pl.done(pout_dir+"slice_y.png")
 
     
     pl1 = io.Plotter(xlabel="$A$",ylabel="$\\mathrm{ln}\\mathcal{L}$")
