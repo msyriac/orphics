@@ -31,7 +31,7 @@ class MatchedFilter(object):
         phi_un = np.nansum(ktemp.conj()*ksim*self.normfact/n2d).real 
         phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact/n2d).real 
 
-    return phi_un*phi_var, phi_var
+        return phi_un*phi_var, phi_var
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
