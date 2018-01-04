@@ -6,6 +6,34 @@ import yaml,six
 from orphics import io
 
 
+class MatchedFilter(object):
+
+    def __init__(self,shape,wcs,template=None,noise_power=None):
+        area = enmap.area(shape,wcs)
+        self.normfact = area / (np.prod(shape))**2
+        if noise_power is not None: self.n2d = noise_power
+        self.ktemp = enmap.fft(template,normalize=False)
+
+        
+
+    def apply(imap=None,kmap=None,template=None,ktemplate=None,noise_power=None):
+        if kmap is None:
+            kmap = enmap.fft(imap,normalize=False)
+        else:
+            assert imap is None
+        
+        n2d = self.n2d if noise_power is None else noise_power
+        if ktemplate is None:
+            ktemp = self.ktemp if template is None else enmap.fft(template,normalize=False)
+        else:
+            ktemp = ktemplate
+            
+        phi_un = np.nansum(ktemp.conj()*ksim*self.normfact/n2d).real 
+        phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact/n2d).real 
+
+    return phi_un*phi_var, phi_var
+
+
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 def slice_from_box(shape, wcs, box, inclusive=False):
     """slice_from_box(shape, wcs, box, inclusive=False)
