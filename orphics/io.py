@@ -57,6 +57,15 @@ def get_logger(logname)        :
     return logger    
     
 ### FILE I/O
+
+def dict_from_section(config,section_name):
+    try:
+        del config._sections[section_name]['__name__']
+    except:
+        pass
+    return dict([a, list_from_config(config,section_name,a)[0]] for a, x in list(config._sections[section_name].items()))
+
+
     
 def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
     comm.Barrier()

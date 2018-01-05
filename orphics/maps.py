@@ -4,7 +4,8 @@ from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
 from orphics import io
-
+import math
+from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 class MatchedFilter(object):
 
@@ -1350,15 +1351,16 @@ class Stacker(object):
     
 def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1):
     Ny,Nx = imap.shape
-
+    #fround = lambda x : int(math.floor(x))
+    fround = lambda x : int(x)
 
     if (iy is None) or (ix is None):
         iy,ix = imap.sky2pix(coords=(dec,ra))
     
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
-    if int(iy-Npix/2)<pad or int(ix-Npix/2)<pad or int(iy+Npix/2)>(Ny-pad) or int(ix+Npix/2)>(Nx-pad): return None
-    cutout = imap[int(iy-Npix/2):int(iy+Npix/2),int(ix-Npix/2):int(ix+Npix/2)]
+    if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
+    cutout = imap[fround(iy-Npix/2):fround(iy+Npix/2),fround(ix-Npix/2):fround(ix+Npix/2)]
 
     shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
     return enmap.ndmap(cutout,wcs)
@@ -1469,3 +1471,24 @@ class InterpStack(object):
         
 
 
+
+
+
+def interpolate_grid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3,**kwargs):
+    '''
+    if inGrid is [j,i]
+    Assumes inY is along j axis
+    Assumes inX is along i axis
+    Similarly for outY/X
+    '''
+
+    if regular:
+        interp_spline = RectBivariateSpline(inY,inX,inGrid,kx=kx,ky=ky,**kwargs)
+        outGrid = interp_spline(outY,outX)
+    else:
+        interp_spline = interp2d(inX,inY,inGrid,kind=kind,**kwargs)
+        outGrid = interp_spline(outX,outY)
+    
+
+    return outGrid
+    
