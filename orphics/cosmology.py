@@ -94,7 +94,9 @@ class Cosmology(object):
         self.mnu = cosmo['mnu']
         self.w0 = cosmo['w0']
         self.pars = camb.CAMBparams()
+        self.pars.Reion.Reionization = 0
         self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau)
+        self.pars.Reion.Reionization = 0
         self.pars.set_dark_energy(w=self.w0)
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 

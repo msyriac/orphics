@@ -1198,6 +1198,17 @@ class ACTMapReader(object):
             self.boxes[key] = bounds_from_list(io.list_from_string(self._cfg['patches'][key]))
 
 
+    def sel_from_region(self,region,shape=None,wcs=None):
+        if shape is None: shape = self.shape
+        if wcs is None: wcs = self.wcs
+        if region is None:
+            selection = None
+        elif isinstance(region, six.string_types):
+            selection = self.boxes[region] #enmap.slice_from_box(shape,wcs,self.boxes[region])
+        else:
+            selection = region #enmap.slice_from_box(shape,wcs,region)
+        return selection
+    
     def patch_bounds(self,patch):
         return (np.array([float(x) for x in self._cfg['patches'][patch].split(',')])*np.pi/180.).reshape((2,2))
         
@@ -1215,16 +1226,6 @@ class SigurdCoaddReader(ACTMapReader):
         planckstr = "_planck" if planck else ""
         return freq+planckstr+"_"+day_night
 
-    def sel_from_region(self,region,shape=None,wcs=None):
-        if shape is None: shape = self.shape
-        if wcs is None: wcs = self.wcs
-        if region is None:
-            selection = None
-        elif isinstance(region, six.string_types):
-            selection = self.boxes[region] #enmap.slice_from_box(shape,wcs,self.boxes[region])
-        else:
-            selection = region #enmap.slice_from_box(shape,wcs,region)
-        return selection
 
     def get_ptsrc_mask(self,region=None):
         selection = self.sel_from_region(region)
@@ -1267,22 +1268,37 @@ class SigurdCoaddReader(ACTMapReader):
         return ls, bells
 
 
-class SigurdBNReader(SigurdCoaddReader):
+class SigurdBNReader(ACTMapReader):
     
     def __init__(self,config_yaml_path):
-        SigurdCoaddReader.__init__(self,config_yaml_path)
-        eg_file = self._fstring(split=-1,freq="150",day_night="daynight",planck=True)
+        ACTMapReader.__init__(self,config_yaml_path)
+        eg_file = self._fstring(split=-1,season="s15",array="pa1",freq="150",day_night="night")
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
 
-    def _fstring(self,split,array,freq="150",day_night="night",weight=False):
+    def get_map(self,split,season,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
+
+        patch = "boss"
+        fstr = self._fstring(split,season,array,freq,day_night,weight)
+        cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
+        selection = self.sel_from_region(region)
+        fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
+
+        if get_identifier:
+            identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
+            return fmap,identifier
+        else:
+            return fmap
+        
+    def _fstring(self,split,season,array,freq="150",day_night="night",weight=False):
         # Change this function if the map naming scheme changes
-        splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)
+        splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)+"_"
         weightstr = "div" if weight else "map0500"
-        return self.map_root+"mr2/s15/boss_north/s15_boss_"+array+"_f"+freq+"_"+day_night+"_nohwp"+splitstr+"_sky_"+weightstr+"_mono.fits"
+        return self.map_root+"mr2/"+season+"/boss_north/"+season+"_boss_"+array+"_f"+freq+"_"+day_night+"_nohwp"+splitstr+"sky_"+weightstr+"_mono.fits"
 
 
-    def get_beam(self,freq="150",day_night="daynight",planck=True):
-        beam_file = self.beam_root+self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['beam']
+    def get_beam(self,season,array,freq="150",day_night="night"):
+        patch = "boss"
+        beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
 
