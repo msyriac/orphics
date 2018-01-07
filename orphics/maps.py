@@ -4,7 +4,8 @@ from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
 from orphics import io
-
+import math
+from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 class MatchedFilter(object):
 
@@ -1197,6 +1198,17 @@ class ACTMapReader(object):
             self.boxes[key] = bounds_from_list(io.list_from_string(self._cfg['patches'][key]))
 
 
+    def sel_from_region(self,region,shape=None,wcs=None):
+        if shape is None: shape = self.shape
+        if wcs is None: wcs = self.wcs
+        if region is None:
+            selection = None
+        elif isinstance(region, six.string_types):
+            selection = self.boxes[region] #enmap.slice_from_box(shape,wcs,self.boxes[region])
+        else:
+            selection = region #enmap.slice_from_box(shape,wcs,region)
+        return selection
+    
     def patch_bounds(self,patch):
         return (np.array([float(x) for x in self._cfg['patches'][patch].split(',')])*np.pi/180.).reshape((2,2))
         
@@ -1214,16 +1226,6 @@ class SigurdCoaddReader(ACTMapReader):
         planckstr = "_planck" if planck else ""
         return freq+planckstr+"_"+day_night
 
-    def sel_from_region(self,region,shape=None,wcs=None):
-        if shape is None: shape = self.shape
-        if wcs is None: wcs = self.wcs
-        if region is None:
-            selection = None
-        elif isinstance(region, six.string_types):
-            selection = self.boxes[region] #enmap.slice_from_box(shape,wcs,self.boxes[region])
-        else:
-            selection = region #enmap.slice_from_box(shape,wcs,region)
-        return selection
 
     def get_ptsrc_mask(self,region=None):
         selection = self.sel_from_region(region)
@@ -1266,22 +1268,37 @@ class SigurdCoaddReader(ACTMapReader):
         return ls, bells
 
 
-class SigurdBNReader(SigurdCoaddReader):
+class SigurdBNReader(ACTMapReader):
     
     def __init__(self,config_yaml_path):
-        SigurdCoaddReader.__init__(self,config_yaml_path)
-        eg_file = self._fstring(split=-1,freq="150",day_night="daynight",planck=True)
+        ACTMapReader.__init__(self,config_yaml_path)
+        eg_file = self._fstring(split=-1,season="s15",array="pa1",freq="150",day_night="night")
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
 
-    def _fstring(self,split,array,freq="150",day_night="night",weight=False):
+    def get_map(self,split,season,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
+
+        patch = "boss"
+        fstr = self._fstring(split,season,array,freq,day_night,weight)
+        cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
+        selection = self.sel_from_region(region)
+        fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
+
+        if get_identifier:
+            identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
+            return fmap,identifier
+        else:
+            return fmap
+        
+    def _fstring(self,split,season,array,freq="150",day_night="night",weight=False):
         # Change this function if the map naming scheme changes
-        splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)
+        splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)+"_"
         weightstr = "div" if weight else "map0500"
-        return self.map_root+"mr2/s15/boss_north/s15_boss_"+array+"_f"+freq+"_"+day_night+"_nohwp"+splitstr+"_sky_"+weightstr+"_mono.fits"
+        return self.map_root+"mr2/"+season+"/boss_north/"+season+"_boss_"+array+"_f"+freq+"_"+day_night+"_nohwp"+splitstr+"sky_"+weightstr+"_mono.fits"
 
 
-    def get_beam(self,freq="150",day_night="daynight",planck=True):
-        beam_file = self.beam_root+self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['beam']
+    def get_beam(self,season,array,freq="150",day_night="night"):
+        patch = "boss"
+        beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
 
@@ -1350,15 +1367,16 @@ class Stacker(object):
     
 def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1):
     Ny,Nx = imap.shape
-
+    #fround = lambda x : int(math.floor(x))
+    fround = lambda x : int(x)
 
     if (iy is None) or (ix is None):
         iy,ix = imap.sky2pix(coords=(dec,ra))
     
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
-    if int(iy-Npix/2)<pad or int(ix-Npix/2)<pad or int(iy+Npix/2)>(Ny-pad) or int(ix+Npix/2)>(Nx-pad): return None
-    cutout = imap[int(iy-Npix/2):int(iy+Npix/2),int(ix-Npix/2):int(ix+Npix/2)]
+    if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
+    cutout = imap[fround(iy-Npix/2):fround(iy+Npix/2),fround(ix-Npix/2):fround(ix+Npix/2)]
 
     shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
     return enmap.ndmap(cutout,wcs)
@@ -1469,3 +1487,24 @@ class InterpStack(object):
         
 
 
+
+
+
+def interpolate_grid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3,**kwargs):
+    '''
+    if inGrid is [j,i]
+    Assumes inY is along j axis
+    Assumes inX is along i axis
+    Similarly for outY/X
+    '''
+
+    if regular:
+        interp_spline = RectBivariateSpline(inY,inX,inGrid,kx=kx,ky=ky,**kwargs)
+        outGrid = interp_spline(outY,outX)
+    else:
+        interp_spline = interp2d(inX,inY,inGrid,kind=kind,**kwargs)
+        outGrid = interp_spline(outX,outY)
+    
+
+    return outGrid
+    
