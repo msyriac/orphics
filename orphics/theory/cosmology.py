@@ -62,11 +62,18 @@ class Cosmology(object):
         except:
             self.ombh2 = cosmo['ob']*self.H0*self.H0/100./100.
             self.ob = cosmo['ob']
+
+        try:
+            self.tau = cosmo['tau']
+        except:
+            self.tau = defaultCosmology['tau']
+            warnings.warn("No tau specified; assuming default of "+str(self.tau))
+            
             
         self.mnu = cosmo['mnu']
         self.w0 = cosmo['w0']
         self.pars = camb.CAMBparams()
-        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu,) # add tau
+        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau) # add tau
         self.pars.set_dark_energy(w=self.w0)
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 

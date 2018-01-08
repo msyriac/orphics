@@ -1,6 +1,19 @@
 import numpy as np
 from enlib import enmap, coordinates
+import healpy as hp
 
+def select_region(ra_col,dec_col,other_cols,ra_min,ra_max,dec_min,dec_max):
+    ret_cols = []
+    for other_col in other_cols:
+        ret_cols.append(other_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)])
+
+    ra_ret = ra_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)]
+    dec_ret = dec_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)]
+    return ra_ret,dec_ret,ret_cols
+
+def dndz(z,z0=1./3.):
+    ans = (z**2.)* np.exp(-1.0*z/z0)/ (2.*z0**3.)
+    return ans    
 
 def random_catalog(shape,wcs,N,edge_avoid_deg=0.):
 
@@ -15,70 +28,63 @@ def random_catalog(shape,wcs,N,edge_avoid_deg=0.):
 
     return ras,decs
 
-class HealpixCatMapper(object):
-
-    def __init__(self,nside,ras_deg,decs_deg):
-        import healpy as hp
-        print( "Calculating pixels...")
-        self.pixs = hp.ang2pix(nside,ras_deg,decs_deg,lonlat=True)
-        print( "Done with pixels...")
-        self.nside = nside
-        self.npix = hp.nside2npix(nside)
-        self.counts = self.get_map()
-
-    def get_map(self,weights=None):
-        print("Calculating histogram...")
-        return np.histogram(self.pixs,bins=self.npix,weights=weights,range=[0,self.npix])[0]
-
-    def _counts(self):
-        cts = self.counts.copy()
-        cts[self.mask<0.9] = np.nan
-        self.ngals = np.nansum(cts)
-        self.nmean = np.nanmean(cts)
-        area_sqdeg = enmap.area(self.shape,self.wcs)*(180./np.pi)**2.
-        self.frac = self.mask.sum()*1./self.mask.size
-        self.area_sqdeg = self.frac*area_sqdeg
-        self.ngal_per_arcminsq  = self.ngals/(self.area_sqdeg*60.*60.)
-
-    def get_delta(self):
-        return (self.counts/self.nmean-1.)
-    
-
 
 class CatMapper(object):
 
-    def __init__(self,shape,wcs,ras_deg,decs_deg):
-        coords = np.vstack((decs_deg,ras_deg))*np.pi/180.
-        self.shape = shape
-        self.wcs = wcs
-        print( "Calculating pixels...")
-        self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
-        print( "Done with pixels...")
+    def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None,verbose=True):
+
+        self.verbose = verbose
+        if nside is not None:
+            if verbose: print( "Calculating pixels...")
+            self.pixs = hp.ang2pix(nside,ras_deg,decs_deg,lonlat=True)
+            if verbose: print( "Done with pixels...")
+            self.nside = nside
+            self.shape = hp.nside2npix(nside)
+            self.curved = True
+        else:
+            coords = np.vstack((decs_deg,ras_deg))*np.pi/180.
+            self.shape = shape
+            self.wcs = wcs
+            if verbose: print( "Calculating pixels...")
+            self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
+            if verbose: print( "Done with pixels...")
+            self.curved = False
         self.counts = self.get_map()
+        if not self.curved:
+            self.counts = enmap.enmap(self.counts,self.wcs)
 
     def get_map(self,weights=None):
-        Ny,Nx = self.shape
-        print("Calculating histogram...")
-        return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
+        if self.verbose: print("Calculating histogram...")
+        if self.curved:
+            return np.histogram(self.pixs,bins=self.shape,weights=weights,range=[0,self.shape])[0].astype(np.float32)
+        else:
+            Ny,Nx = self.shape
+            return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
 
     def _counts(self):
         cts = self.counts.copy()
         cts[self.mask<0.9] = np.nan
         self.ngals = np.nansum(cts)
         self.nmean = np.nanmean(cts)
-        area_sqdeg = enmap.area(self.shape,self.wcs)*(180./np.pi)**2.
+        if self.curved:
+            area_sqdeg = 4.*np.pi*(180./np.pi)**2.
+        else:
+            area_sqdeg = enmap.area(self.shape,self.wcs)*(180./np.pi)**2.
         self.frac = self.mask.sum()*1./self.mask.size
         self.area_sqdeg = self.frac*area_sqdeg
         self.ngal_per_arcminsq  = self.ngals/(self.area_sqdeg*60.*60.)
 
     def get_delta(self):
-        return (self.counts/self.nmean-1.)
+        delta = (self.counts/self.nmean-1.)
+        if not self.curved:
+            delta = enmap.enmap(delta,self.wcs)
+        return delta
     
 
 
 class BOSSMapper(CatMapper):
 
-    def __init__(self,shape,wcs,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None):
+    def __init__(self,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None,shape=None,wcs=None,nside=None,verbose=True):
         from astropy.io import fits
 
         ras = []
@@ -90,19 +96,19 @@ class BOSSMapper(CatMapper):
             decs += cat.data['DEC'].tolist()
             f.close()
             
-        CatMapper.__init__(self,shape,wcs,ras,decs)
+        CatMapper.__init__(self,ras,decs,shape,wcs,nside,verbose=verbose)
         if random_files is not None:
             self.rand_map = 0.
             #ras = []
             #decs = []
             for random_file in random_files:
-                print ("Opening fits...")
+                if verbose: print ("Opening fits...")
                 f = fits.open(random_file)
-                print ("Done opening fits...")
+                if verbose: print ("Done opening fits...")
                 cat = f[1] #.copy()
                 ras = cat.data['RA'] #.tolist()
                 decs = cat.data['DEC'] #.tolist()
-                rcat = CatMapper(shape,wcs,ras,decs)
+                rcat = CatMapper(ras,decs,shape,wcs,nside,verbose=verbose)
                 self.rand_map += rcat.counts
                 del rcat
                 del ras
@@ -113,31 +119,44 @@ class BOSSMapper(CatMapper):
 
     def update_mask(self,rand_sigma_arcmin=2.,rand_threshold=1e-3):
         if rand_sigma_arcmin>1.e-3:
-            print( "Smoothing...")
-            smap = enmap.smooth_gauss(self.rand_map,rand_sigma_arcmin*np.pi/180./60.)
-            print( "Done smoothing...")
+            if self.verbose: print( "Smoothing...")
+            if self.curved:
+                smap = hp.smoothing(self.rand_map,sigma=rand_sigma_arcmin*np.pi/180./60.)
+            else:
+                smap = enmap.smooth_gauss(self.rand_map,rand_sigma_arcmin*np.pi/180./60.)
+            if self.verbose: print( "Done smoothing...")
         else:
-            smap = self.rand_map
-            
+            if self.verbose: smap = self.rand_map
+
         self.mask = np.zeros(self.shape)
         self.mask[smap>rand_threshold] = 1
+        if not self.curved:
+            self.mask = enmap.enmap(self.mask,self.wcs)
         self._counts()
             
     
 class HSCMapper(CatMapper):
 
-    def __init__(self,shape,wcs,cat_fits,pz_fits=None,zmin=None,zmax=None,mask_threshold=4.):
-        from astropy.io import fits
-        f = fits.open(cat_fits)
-        self.cat = f[1].copy()
-        f.close()
+    def __init__(self,cat_file=None,pz_file=None,zmin=None,zmax=None,mask_threshold=4.,shape=None,wcs=None,nside=None):
+        if cat_file[-5:]==".fits":
+            from astropy.io import fits
+            f = fits.open(cat_file)
+            self.cat = f[1].copy()
+            f.close()
+        elif cat_file[-4:]==".hdf" or cat_file[-3:]==".h5":
+            import h5py,pandas as pd
+            df = pd.read_hdf(cat_file)
+            class Temp:
+                pass
+            self.cat = Temp()
+            self.cat.data = df
         ras = self.cat.data['ira']
         decs = self.cat.data['idec']
         self.wts = self.cat.data['ishape_hsm_regauss_derived_weight']
-        if pz_fits is not None:
+        if pz_file is not None:
             raise NotImplementedError
 
-        CatMapper.__init__(self,shape,wcs,ras,decs)
+        CatMapper.__init__(self,ras,decs,shape,wcs,nside)
         self.hsc_wts = self.get_map(weights=self.wts)
         self.mean_wt = np.nan_to_num(self.hsc_wts/self.counts)
         self.update_mask(mask_threshold)
@@ -146,6 +165,8 @@ class HSCMapper(CatMapper):
         mask = np.zeros(self.shape)
         mask[self.mean_wt>mask_threshold] = 1
         self.mask = mask
+        if not self.curved:
+            self.mask = enmap.enmap(self.mask,self.wcs)
         self._counts()
 
         
@@ -171,6 +192,10 @@ class HSCMapper(CatMapper):
         g1map = np.nan_to_num(hsc_e1/2./hsc_resp/(1.+hsc_m)/hsc_wts) - np.nan_to_num(hsc_c1/(1.+hsc_m))
         g2map = np.nan_to_num(hsc_e2/2./hsc_resp/(1.+hsc_m)/hsc_wts) - np.nan_to_num(hsc_c2/(1.+hsc_m))
 
+        if not self.curved:
+            g1map = enmap.enmap(g1map,self.wcs)
+            g2map = enmap.enmap(g2map,self.wcs)
+            
         return g1map,g2map
 
 def split_samples(in_samples,split_points):

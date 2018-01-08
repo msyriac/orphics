@@ -14,27 +14,67 @@ from enlib import lensing as enlensing
 import time
 import cPickle as pickle
 
-def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None):
+
+    
+
+def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,
     returns the lensed covmat for a given pixel displacement model.
 
     ucov -- (Npix,Npix) array where Npix = Ny*Nx
     alpha_pix -- (2,Ny,Nx) array of lensing displacements in pixel units
+    kbeam -- (Ny,Nx) array of 2d beam wavenumbers
+
+    """
+
+    shape = alpha_pix.shape[-2:]
+    Scov = ucov.copy()
+    for i in range(ucov.shape[0]):
+        unlensed = Scov[i,:].copy().reshape(shape)
+        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        Scov[i,:] = lensed.ravel()
+    for j in range(ucov.shape[1]):
+        unlensed = Scov[:,j].copy().reshape(shape)
+        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        Scov[:,j] = lensed.ravel()
+
+    if (bshape is not None) and (bshape!=shape):
+        ny,nx = shape
+        Scov = Scov.reshape((ny,nx,ny,nx))
+        bny,bnx = bshape
+        sy = int(ny/2.-bny/2.)
+        ey = int(ny/2.+bny/2.)
+        sx = int(nx/2.-bnx/2.)
+        ex = int(nx/2.+bnx/2.)
+        Scov = Scov[sy:ey,sx:ex,sy:ey,sx:ex].reshape((np.prod(bshape),np.prod(bshape)))
+    return Scov
+
+
+
+
+def beam_cov(ucov,kbeam):
+    """Given the pix-pix covariance matrix for the lensed CMB,
+    returns the beamed covmat. The beam can be a ratio of beams to
+    readjust the beam in a given matrix.
+
+    ucov -- (Npix,Npix) array where Npix = Ny*Nx
+    kbeam -- (Ny,Nx) array of 2d beam wavenumbers
 
     """
     Scov = ucov.copy()
     shape = alpha_pix.shape[-2:]
     for i in range(Scov.shape[0]):
-        unlensed = Scov[i,:].copy().reshape(shape) 
-        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        lensed = Scov[i,:].copy().reshape(shape) 
+        lensed = maps.filter_map(lensed,kbeam)
         Scov[i,:] = lensed.ravel()
     for j in range(Scov.shape[1]):
-        unlensed = Scov[:,j].copy().reshape(shape)
-        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        lensed = Scov[:,j].copy().reshape(shape)
+        lensed = maps.filter_map(lensed,kbeam)
         Scov[:,j] = lensed.ravel()
     return Scov
+
 
 def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False):
     if noise2d is None: noise2d = np.zeros(shape[-2:])
@@ -124,7 +164,7 @@ class QuadNorm(object):
         self.shape = shape
         self.wcs = wcs
         self.verbose = verbose
-        self.Ny,self.Nx = shape
+        self.Ny,self.Nx = shape[-2:]
         self.lxMap,self.lyMap,self.modLMap,thetaMap,lx,ly = maps.get_ft_attributes(shape,wcs)
         self.lxHatMap = self.lxMap*np.nan_to_num(1. / self.modLMap)
         self.lyHatMap = self.lyMap*np.nan_to_num(1. / self.modLMap)
@@ -1321,10 +1361,10 @@ class Estimator(object):
             except:
                 pass
 
-    def kappa_from_map(self,XY,T2DData,E2DData=None,B2DData=None,alreadyFTed=False):
+    def kappa_from_map(self,XY,T2DData,E2DData=None,B2DData=None,T2DDataY=None,E2DDataY=None,B2DDataY=None,alreadyFTed=False,returnFt=False):
         self.updateTEB_X(T2DData,E2DData,B2DData,alreadyFTed)
-        self.updateTEB_Y()
-        return self.get_kappa(XY)
+        self.updateTEB_Y(T2DDataY,E2DDataY,B2DDataY,alreadyFTed)
+        return self.get_kappa(XY,returnFt=returnFt)
         
         
     def fmask_func(self,arr):
@@ -1522,5 +1562,31 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
     consts = const12 * const3 * const4 * const5
     kappa = consts * kappaU
 
+    if thetaArc.shape[0]%2==1 and thetaArc.shape[1]%2==1:
+        Ny,Nx = thetaArc.shape
+        cx = int(Nx/2.)
+        cy = int(Ny/2.)
+        kappa[cy,cx] = kappa[cy-1,cx]
+        
 
     return kappa, r500
+
+
+def Nlmv(Nleach,pols,centers,nlkk,bin_edges):
+    # Nleach: dict of (ls,Nls) for each polComb
+    # pols: list of polCombs to include
+    # centers,nlkk: additonal Nl to add
+    
+    Nlmvinv = 0.
+    for polComb in pols:
+        ls,Nls = Nleach[polComb]
+        nlfunc = interp1d(ls,Nls,bounds_error=False,fill_value=np.inf)
+        Nleval = nlfunc(bin_edges)
+        Nlmvinv += np.nan_to_num(1./Nleval)
+        
+    if nlkk is not None:
+        nlfunc = interp1d(centers,nlkk,bounds_error=False,fill_value=np.inf)
+        Nleval = nlfunc(bin_edges)
+        Nlmvinv += np.nan_to_num(1./Nleval)
+        
+    return np.nan_to_num(1./Nlmvinv)

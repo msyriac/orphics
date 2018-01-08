@@ -12,6 +12,7 @@ from enlib.fft import fft,ifft
 import itertools
 import orphics.tools.io as io
 
+import orphics.maps as maps
 from enlib import enmap
 try:
     from enlib import lensing
@@ -439,8 +440,8 @@ class PatchArray(object):
         self.clkk = pclkk.copy()
         pclkk = pclkk.reshape((1,1,pclkk.size))
         #self.pclkk.resize((1,self.pclkk.size))
-        self.ugenerator = enmap.MapGen(self.shape,self.wcs,psu)
-        self.kgenerator = enmap.MapGen(self.shape[-2:],self.wcs,pclkk)
+        self.ugenerator = maps.MapGen(self.shape,self.wcs,psu)
+        self.kgenerator = maps.MapGen(self.shape[-2:],self.wcs,pclkk)
 
 
     def update_kappa(self,kappa):
@@ -507,7 +508,7 @@ class PatchArray(object):
         ps_noise[2,2] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
         noisecov = ps_noise
         self.is_2d_noise = False
-        self.ngenerator = enmap.MapGen(self.shape,self.wcs,noisecov)
+        self.ngenerator = maps.MapGen(self.shape,self.wcs,noisecov)
 
             
     def add_noise_2d(self,nT,nP=None):
@@ -521,7 +522,7 @@ class PatchArray(object):
         ps_noise[2,2] = nP
         noisecov = ps_noise
         self.is_2d_noise = True
-        self.ngenerator = enmap.MapGen(self.shape,self.wcs,noisecov)
+        self.ngenerator = maps.MapGen(self.shape,self.wcs,noisecov)
 
 
     def get_noise_sim(self,seed=None,scalar=False):

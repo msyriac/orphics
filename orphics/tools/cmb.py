@@ -1,6 +1,6 @@
 from __future__ import print_function
 import re
-from orphics.tools.io import bcolors
+from orphics.io import bcolors
 import numpy as np
 from scipy.interpolate import interp1d
 import time

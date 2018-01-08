@@ -2,17 +2,73 @@ from __future__ import print_function
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import os,sys
+import os,sys,logging,time
 from orphics import mpi
+import contextlib
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
 except:
     dout_dir = "."
 
+class DummyFile(object):
+    def write(self, x): pass
+
+@contextlib.contextmanager
+def nostdout():
+    save_stdout = sys.stdout
+    sys.stdout = DummyFile()
+    yield
+    sys.stdout = save_stdout
+
+
+## LOGGING
+
+class LoggerWriter:
+    def __init__(self, level):
+        # self.level is really like using log.debug(message)
+        # at least in my case
+        self.level = level
+
+    def write(self, message):
+        # if statement reduces the amount of newlines that are
+        # printed to the logger
+        if message != '\n':
+            self.level(message)
+
+    def flush(self):
+        # create a flush method so things can be flushed when
+        # the system wants to. Not sure if simply 'printing'
+        # sys.stderr is the correct way to do it, but it seemed
+        # to work properly for me.
+        self.level(sys.stderr)
+
+    
+def get_logger(logname)        :
+    logging.basicConfig(filename=logname+str(time.time()*10)+".log",level=logging.DEBUG,format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',datefmt='%m-%d %H:%M',filemode='w')
+    console = logging.StreamHandler()
+    console.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
+    logger = logging.getLogger('')
+    sys.stdout = LoggerWriter(logger.debug)
+    sys.stderr = LoggerWriter(logger.warning)
+    return logger    
+    
 ### FILE I/O
+
+def dict_from_section(config,section_name):
+    try:
+        del config._sections[section_name]['__name__']
+    except:
+        pass
+    return dict([a, list_from_config(config,section_name,a)[0]] for a, x in list(config._sections[section_name].items()))
+
+
     
 def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
+    comm.Barrier()
     if comm.Get_rank()==0: 
         if not os.path.exists(dirpath):
             os.makedirs(dirpath)
@@ -31,13 +87,16 @@ def join_nums(nums):
     
 ### CONFIG FILES
     
-def load_path_config():
-    if os.path.exists('input/paths_local.ini'):
-        return config_from_file('input/paths_local.ini')
-    elif os.path.exists('input/paths.ini'):
-        return config_from_file('input/paths.ini')
+def load_path_config(filename=None):
+    if filename is not None:
+        return config_from_file(filename)
     else:
-        raise IOError
+        if os.path.exists('input/paths_local.ini'):
+            return config_from_file('input/paths_local.ini')
+        elif os.path.exists('input/paths.ini'):
+            return config_from_file('input/paths.ini')
+        else:
+            raise IOError
     
     
 def config_from_file(filename):
@@ -87,7 +146,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True
         pl.done(filename,verbose=verbose)
 
 
-def high_res_plot_img(array,filename,down=None,verbose=True,overwrite=True,crange=None):
+def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None):
     if not(overwrite):
         if os.path.isfile(filename): return
     try:
@@ -103,8 +162,11 @@ def high_res_plot_img(array,filename,down=None,verbose=True,overwrite=True,crang
     else:
         downmap = enmap.enmap(array)[None]
     img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
-    img.save(filename)
-    if verbose: print(bcolors.OKGREEN+"Saved high-res plot to", filename+bcolors.ENDC)
+    if filename is None:
+        img.show()
+    else:
+        img.save(filename)
+        if verbose: print(bcolors.OKGREEN+"Saved high-res plot to", filename+bcolors.ENDC)
 
 
 class Plotter(object):

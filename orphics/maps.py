@@ -4,9 +4,75 @@ from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
 from orphics import io
+import math
+from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
+
+class MatchedFilter(object):
+
+    def __init__(self,shape,wcs,template=None,noise_power=None):
+        area = enmap.area(shape,wcs)
+        self.normfact = area / (np.prod(shape))**2
+        if noise_power is not None: self.n2d = noise_power
+        if template is not None: self.ktemp = enmap.fft(template,normalize=False)
+
+        
+
+    def apply(self,imap=None,kmap=None,template=None,ktemplate=None,noise_power=None):
+        if kmap is None:
+            kmap = enmap.fft(imap,normalize=False)
+        else:
+            assert imap is None
+        
+        n2d = self.n2d if noise_power is None else noise_power
+        if ktemplate is None:
+            ktemp = self.ktemp if template is None else enmap.fft(template,normalize=False)
+        else:
+            ktemp = ktemplate
+            
+        phi_un = np.nansum(ktemp.conj()*kmap*self.normfact/n2d).real 
+        phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact/n2d).real 
+
+        return phi_un*phi_var, phi_var
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
+def slice_from_box(shape, wcs, box, inclusive=False):
+    """slice_from_box(shape, wcs, box, inclusive=False)
+    Extract the part of the map inside the given box as a selection
+    without returning the data.
+    Parameters
+    ----------
+    box : array_like
+	    The [[fromy,fromx],[toy,tox]] bounding box to select.
+	    The resulting map will have a bounding box as close
+	    as possible to this, but will differ slightly due to
+	    the finite pixel size.
+    inclusive : boolean
+		Whether to include pixels that are only partially
+		inside the bounding box. Default: False."""
+    ibox = enmap.subinds(shape, wcs, box, inclusive)
+    print(shape,ibox)
+    islice = utils.sbox2slice(ibox.T)
+    return islice
+    
+def cutup(shape,numy,numx,pad=0):
+    Ny,Nx = shape
+    pixs_y = np.linspace(0,shape[-2],num=numy+1,endpoint=True)	
+    pixs_x = np.linspace(0,shape[-1],num=numx+1,endpoint=True)
+    num_boxes = numy*numx
+    boxes = np.zeros((num_boxes,2,2))
+    boxes[:,0,0] = np.tile(pixs_y[:-1],numx) - pad
+    boxes[:,0,0][boxes[:,0,0]<0] = 0
+    boxes[:,1,0] = np.tile(pixs_y[1:],numx) + pad
+    boxes[:,1,0][boxes[:,1,0]>(Ny-1)] = Ny-1
+    boxes[:,0,1] = np.repeat(pixs_x[:-1],numy) - pad
+    boxes[:,0,1][boxes[:,0,1]<0] = 0
+    boxes[:,1,1] = np.repeat(pixs_x[1:],numy) + pad
+    boxes[:,1,1][boxes[:,1,1]>(Nx-1)] = Nx-1
+    boxes = boxes.astype(np.int)
+
+    return boxes
+
 
 def bounds_from_list(blist):
     """Given blist = [dec0,ra0,dec1,ra1] in degrees
@@ -32,7 +98,8 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
         vwidth = height_arcmin/2.
     arcmin =  utils.arcmin
     degree =  utils.degree
-    shape, wcs = enmap.geometry(pos=[[-vwidth*arcmin+yoffset_degree*degree,-hwidth*arcmin+xoffset_degree*degree],[vwidth*arcmin+yoffset_degree*degree,hwidth*arcmin+xoffset_degree*degree]], res=px_res_arcmin*arcmin, proj=proj)
+    pos = [[-vwidth*arcmin+yoffset_degree*degree,-hwidth*arcmin+xoffset_degree*degree],[vwidth*arcmin+yoffset_degree*degree,hwidth*arcmin+xoffset_degree*degree]]
+    shape, wcs = enmap.geometry(pos=pos, res=px_res_arcmin*arcmin, proj=proj)
     if pol: shape = (3,)+shape
     return shape, wcs
 
@@ -163,7 +230,7 @@ class MapRotatorEquator(MapRotator):
         else:
             recommended_pix = pix_target_override_arcmin
             
-        shape_target,wcs_target = enmap.rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
+        shape_target,wcs_target = rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
                                                       height_arcmin=height_multiplier*patch_height*60.,
                                                       px_res_arcmin=recommended_pix,yoffset_degree=0.,proj=proj)
 
@@ -175,7 +242,7 @@ class MapRotatorEquator(MapRotator):
         if downsample:
             dpix = downsample_pix_arcmin if downsample_pix_arcmin is not None else self.source_pix
 
-            self.shape_final,self.wcs_final = enmap.rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
+            self.shape_final,self.wcs_final = rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
                                               height_arcmin=height_multiplier*patch_height*60.,
                                               px_res_arcmin=dpix,yoffset_degree=0.,proj=proj)
         else:
@@ -249,6 +316,11 @@ def rotate_map(imap,shape_target=None,wcs_target=None,pix_target=None,**kwargs):
                     
 ### REAL AND FOURIER SPACE ATTRIBUTES
 
+def angmap(shape,wcs,iau=False):
+    sgn = -1 if iau else 1
+    lmap = enmap.lmap(shape,wcs)
+    return sgn*np.arctan2(-lmap[1], lmap[0])
+
 def get_ft_attributes(shape,wcs):
     shape = shape[-2:]
     Ny, Nx = shape
@@ -302,13 +374,18 @@ def diagonal_cov(power2d):
     return Cflat.reshape((ny,nx,ny,nx))
 
 
+def ncov(shape,wcs,noise_uk_arcmin):
+    noise_uK_rad = noise_uk_arcmin*np.pi/180./60.
+    normfact = np.sqrt(np.prod(enmap.pixsize(shape,wcs)))
+    noise_uK_pixel = noise_uK_rad/normfact
+    return np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
+
 def pixcov(shape,wcs,fourierCov):
     fourierCov = fourierCov.astype(np.float32, copy=False)
     bny,bnx = shape
     from numpy.fft import fft2,ifft2
 
     pcov = fft2((ifft2(fourierCov,axes=(-4,-3))),axes=(-2,-1)).real
-    #pcov = fftfast.fft((fftfast.ifft2(fourierCov,axes=(-4,-3))),axes=(-2,-1)).real
     return pcov*bnx*bny/enmap.area(shape,wcs)
 
 def get_lnlike(covinv,instamp):
@@ -319,14 +396,26 @@ def get_lnlike(covinv,instamp):
     assert ans.size==1
     return ans[0,0]
 
-def pixcov_sim(shape,wcs,ps,Nsims,seed=None,mean_sub=True):
-    mg = MapGen(shape,wcs,ps)
+def pixcov_sim(shape,wcs,ps,Nsims,seed=None,mean_sub=True,pad=0):
+    if pad>0:
+        retmap = enmap.pad(enmap.zeros(shape,wcs), pad, return_slice=False, wrap=False)
+        oshape,owcs = retmap.shape,retmap.wcs
+    else:
+        oshape,owcs = shape,wcs
+        
+    
+    mg = MapGen(oshape,owcs,ps)
     np.random.seed(seed)
     umaps = []
     for i in range(Nsims):
         cmb = mg.get_map()
         if mean_sub: cmb -= cmb.mean()
-        umaps.append(cmb.ravel())
+
+        if pad>0:
+            ocmb = enmap.extract(cmb, shape, wcs)
+        else:
+            ocmb = cmb
+        umaps.append(ocmb.ravel())
         
     pixcov = np.cov(np.array(umaps).T)
     return pixcov
@@ -346,6 +435,17 @@ def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
     taper = cosine_window(Ny,Nx,lenApodY=int(taper_percent*min(Ny,Nx)/100.),lenApodX=int(taper_percent*min(Ny,Nx)/100.),padY=int(pad_percent*min(Ny,Nx)/100.),padX=int(pad_percent*min(Ny,Nx)/100.))*weight
     w2 = np.mean(taper**2.)
     return taper,w2
+
+def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,weight=None):
+    Ny,Nx = shape[-2:]
+    if weight is None: weight = np.ones(shape[-2:])
+    res = resolution(shape,wcs)
+    pix_apod = int(taper_width_degrees*np.pi/180./res)
+    pix_pad = int(pad_width_degrees*np.pi/180./res)
+    taper = cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod,padY=pix_pad,padX=pix_pad)*weight
+    w2 = np.mean(taper**2.)
+    return taper,w2
+
 
 def cosine_window(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
     win=np.ones((Ny,Nx))
@@ -535,6 +635,17 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
     return cinv
 
 
+def minimum_ell(shape,wcs):
+    """
+    Returns the lowest angular wavenumber of an ndmap
+    rounded down to the nearest integer.
+    """
+    modlmap = enmap.modlmap(shape,wcs)
+    min_ell = modlmap[modlmap>0].min()
+    return int(min_ell)
+
+
+
 def resolution(shape,wcs):
     res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
     return res
@@ -670,6 +781,7 @@ class NoiseModel(object):
             shape = splits[0].shape
             wcs = splits[0].wcs
 
+        
             if wmap is None: wmap = enmap.ones(shape[-2:],wcs)
             if mask is None: mask = np.ones(shape[-2:])
             if kmask is None: kmask = np.ones(shape[-2:])
@@ -765,12 +877,13 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0):
     # Get fourier transforms of I,Q,U
     ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
 
-    # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
     kteb_splits = []
+    # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
     for ksplit in ksplits:
         kteb_splits.append( ksplit.copy())
-        kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
-
+        if (splits[0].ndim==3 and splits[0].shape[0]==3):
+            kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
+            
     # get auto power of I,Q,U
     auto = sum([fourier_calc.power2d(kmap=ksplit)[0] for ksplit in ksplits])/Nsplits
 
@@ -909,15 +1022,13 @@ def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
         imap = enmap.zeros(shape,wcs)
         Ny,Nx = shape
 
-        inds = np.indices([Nx,Ny])
-        x = inds[0].ravel()
-        y = inds[1].ravel()
+        pixmap = enmap.pixmap(shape,wcs)
+        y = pixmap[0,...].T.ravel()
+        x = pixmap[1,...].T.ravel()
+        posmap = enmap.posmap(shape,wcs)
 
-        # Not as slow as you'd expect
-        posmap = enmap.pix2sky(shape,wcs,np.vstack((y,x)))*180./np.pi
-
-        ph = posmap[1,:]
-        th = posmap[0,:]
+        ph = posmap[1,...].T.ravel()
+        th = posmap[0,...].T.ravel()
 
         if hp_coords.lower() not in eq_coords:
                 # This is still the slowest part. If there are faster coord transform libraries, let me know!
@@ -930,9 +1041,7 @@ def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
                 thOut = th
                 phOut = ph
 
-        phOut *= np.pi/180
-        thOut = 90. - thOut #polar angle is 0 at north pole
-        thOut *= np.pi/180
+        thOut = np.pi/2. - thOut #polar angle is 0 at north pole
 
         # Not as slow as you'd expect
         if interpolate:
@@ -941,7 +1050,7 @@ def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
                 ind = hp.ang2pix( hp.get_nside(hp_map), thOut, phOut )
                 imap[:] = 0.
                 imap[[y,x]]=hp_map[ind]
-                
+
                 
                 
         return enmap.ndmap(imap,wcs)
@@ -1089,6 +1198,17 @@ class ACTMapReader(object):
             self.boxes[key] = bounds_from_list(io.list_from_string(self._cfg['patches'][key]))
 
 
+    def sel_from_region(self,region,shape=None,wcs=None):
+        if shape is None: shape = self.shape
+        if wcs is None: wcs = self.wcs
+        if region is None:
+            selection = None
+        elif isinstance(region, six.string_types):
+            selection = self.boxes[region] #enmap.slice_from_box(shape,wcs,self.boxes[region])
+        else:
+            selection = region #enmap.slice_from_box(shape,wcs,region)
+        return selection
+    
     def patch_bounds(self,patch):
         return (np.array([float(x) for x in self._cfg['patches'][patch].split(',')])*np.pi/180.).reshape((2,2))
         
@@ -1106,27 +1226,17 @@ class SigurdCoaddReader(ACTMapReader):
         planckstr = "_planck" if planck else ""
         return freq+planckstr+"_"+day_night
 
-    def sel_from_region(self,region,shape=None,wcs=None):
-        if shape is None: shape = self.shape
-        if wcs is None: wcs = self.wcs
-        if region is None:
-            selection = None
-        elif isinstance(region, six.string_types):
-            selection = enmap.slice_from_box(shape,wcs,self.boxes[region])
-        else:
-            selection = enmap.slice_from_box(shape,wcs,region)
-        return selection
 
     def get_ptsrc_mask(self,region=None):
         selection = self.sel_from_region(region)
         fstr = self.map_root+"s16/coadd/pointSourceMask_full_all.fits"
-        fmap = enmap.read_fits(fstr,sel=selection)
+        fmap = enmap.read_fits(fstr,box=selection)
         return fmap
     
     def get_survey_mask(self,region=None):
         selection = self.sel_from_region(region)
         self.map_root+"s16/coadd/surveyMask_full_all.fits"
-        fmap = enmap.read_fits(fstr,sel=selection)
+        fmap = enmap.read_fits(fstr,box=selection)
         return fmap
     
     def get_map(self,split,freq="150",day_night="daynight",planck=True,region=None,weight=False,get_identifier=False):
@@ -1136,7 +1246,7 @@ class SigurdCoaddReader(ACTMapReader):
         cal = float(self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['cal']) if not(weight) else 1.
 
         selection = self.sel_from_region(region)
-        fmap = enmap.read_fits(fstr,sel=selection)*np.sqrt(cal)
+        fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
 
         if get_identifier:
             identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
@@ -1156,6 +1266,42 @@ class SigurdCoaddReader(ACTMapReader):
         beam_file = self.beam_root+self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
+
+
+class SigurdBNReader(ACTMapReader):
+    
+    def __init__(self,config_yaml_path):
+        ACTMapReader.__init__(self,config_yaml_path)
+        eg_file = self._fstring(split=-1,season="s15",array="pa1",freq="150",day_night="night")
+        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
+
+    def get_map(self,split,season,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
+
+        patch = "boss"
+        fstr = self._fstring(split,season,array,freq,day_night,weight)
+        cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
+        selection = self.sel_from_region(region)
+        fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
+
+        if get_identifier:
+            identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
+            return fmap,identifier
+        else:
+            return fmap
+        
+    def _fstring(self,split,season,array,freq="150",day_night="night",weight=False):
+        # Change this function if the map naming scheme changes
+        splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)+"_"
+        weightstr = "div" if weight else "map0500"
+        return self.map_root+"mr2/"+season+"/boss_north/"+season+"_boss_"+array+"_f"+freq+"_"+day_night+"_nohwp"+splitstr+"sky_"+weightstr+"_mono.fits"
+
+
+    def get_beam(self,season,array,freq="150",day_night="night"):
+        patch = "boss"
+        beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
+        ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
+        return ls, bells
+
     
 class SimoneC7V5Reader(ACTMapReader):
     
@@ -1219,13 +1365,20 @@ class Stacker(object):
 
 
     
-def cutout(imap,ra,dec,arcmin_width):   
+def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1):
+    Ny,Nx = imap.shape
+    #fround = lambda x : int(math.floor(x))
+    fround = lambda x : int(x)
+
+    if (iy is None) or (ix is None):
+        iy,ix = imap.sky2pix(coords=(dec,ra))
+    
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
-    iy,ix = imap.sky2pix(coords=(dec,ra))
-    cutout = imap[int(iy-Npix/2):int(iy+Npix/2),int(ix-Npix/2):int(ix+Npix/2)]
+    if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
+    cutout = imap[fround(iy-Npix/2):fround(iy+Npix/2),fround(ix-Npix/2):fround(ix+Npix/2)]
+
     shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
-    assert shape==cutout.shape
     return enmap.ndmap(cutout,wcs)
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
@@ -1234,7 +1387,8 @@ def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
     if modrmap is None: modrmap = stamp.modrmap()
     mean = stamp[np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean()
     stamp -= mean
-    flux = stamp[modrmap<aperture_radius].sum()
+    pix_scale=resolution(stamp.shape,stamp.wcs)*(180*60)/np.pi
+    flux = stamp[modrmap<aperture_radius].sum()*pix_scale**2
     return flux * enmap.area(stamp.shape,stamp.wcs )/ np.prod(stamp.shape[-2:])**2.
 
 
@@ -1262,17 +1416,54 @@ class InterpStack(object):
 
 
     def cutout(self,imap,ra,dec,**kwargs):
-        from enlib import coordinates
-        
         ra_rad = np.deg2rad(ra)
         dec_rad = np.deg2rad(dec)
+
+        box = self._box_from_ra_dec(ra_rad,dec_rad)
+        submap = imap.submap(box,inclusive=True)
+        return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
+    
+    def cutout_from_file(self,imap_file,shape,wcs,ra,dec,**kwargs):
+        ra_rad = np.deg2rad(ra)
+        dec_rad = np.deg2rad(dec)
+
+        box = self._box_from_ra_dec(ra_rad,dec_rad)
+        # print(ra_rad*180./np.pi,dec_rad*180./np.pi,box*180./np.pi)
+        # selection = slice_from_box(shape,wcs,box)
+        # print(selection)
+        submap = enmap.read_fits(imap_file,box=box)#sel=selection)
+        print(submap.shape)
+        # sys.exit()
+        # submap = enmap.read_fits(imap_file,sel=selection)
+        # io.plot_img(submap,io.dout_dir+"scut.png",high_res=True)
+
+        # try:
+        #     self.count +=1
+        # except:
+        #     self.count = 0
+
+        # print(ra,dec)
+        # io.plot_img(submap,io.dout_dir+"stest_qwert_"+str(self.count)+".png")
+
+
+        
+        return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
+
+    def _box_from_ra_dec(self,ra_rad,dec_rad):
+
         
         # CAR
-        coord_width = np.deg2rad(self.arc_width/np.cos(dec_rad)/60.)
+        coord_width = np.deg2rad(self.arc_width/60.)#np.cos(dec_rad)/60.)
         coord_height = np.deg2rad(self.arc_width/60.)
 
         box = np.array([[dec_rad-coord_height/2.,ra_rad-coord_width/2.],[dec_rad+coord_height/2.,ra_rad+coord_width/2.]])
-        submap = imap.submap(box,inclusive=True)
+
+        return box
+
+        
+    def _rot_cut(self,submap,ra_rad,dec_rad,**kwargs):
+        from enlib import coordinates
+    
         if submap.shape[0]<1 or submap.shape[1]<1:
             return None
         
@@ -1289,8 +1480,31 @@ class InterpStack(object):
         pix_new = enmap.sky2pix(submap.shape,submap.wcs,new_pos)
 
         rotmap = enmap.at(submap,pix_new,unit="pix",**kwargs)
-        assert rotmap.shape==self.shape_target
+        assert rotmap.shape[-2:]==self.shape_target[-2:]
+
+        
         return rotmap
         
 
 
+
+
+
+def interpolate_grid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3,**kwargs):
+    '''
+    if inGrid is [j,i]
+    Assumes inY is along j axis
+    Assumes inX is along i axis
+    Similarly for outY/X
+    '''
+
+    if regular:
+        interp_spline = RectBivariateSpline(inY,inX,inGrid,kx=kx,ky=ky,**kwargs)
+        outGrid = interp_spline(outY,outX)
+    else:
+        interp_spline = interp2d(inX,inY,inGrid,kind=kind,**kwargs)
+        outGrid = interp_spline(outX,outY)
+    
+
+    return outGrid
+    

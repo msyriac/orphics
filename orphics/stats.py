@@ -1,6 +1,58 @@
 from __future__ import print_function
 import numpy as np
+import time
 
+class CinvUpdater(object):
+
+    def __init__(self,cinvs,logdets,profile):
+        self.cinvs = cinvs
+        self.logdets = logdets
+
+        u = profile.reshape((len(profile),1))
+        v = u.copy()
+        vT = v.T
+        self.update_unnormalized = []
+        self.det_unnormalized = []
+        for Ainv in cinvs:
+            self.update_unnormalized.append( np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) )
+            self.det_unnormalized.append( np.dot(vT, np.dot(Ainv, u)) )
+
+    def get_cinv(self,index,amplitude):
+        
+        det_update = 1.+(amplitude**2.)*self.det_unnormalized[index]
+        cinv_updated = self.cinvs[index] - (amplitude**2.)*( self.update_unnormalized[index]/ det_update)
+        return  cinv_updated , np.log(det_update)+self.logdets[index]
+
+        
+
+
+def sm_update(Ainv, u, v=None):
+    """Compute the value of (A + uv^T)^-1 given A^-1, u, and v. 
+    Uses the Sherman-Morrison formula."""
+
+    v = u.copy() if v is None else v
+    u = u.reshape((len(u),1))
+    v = v.reshape((len(v),1))
+    vT = v.T
+    
+    ldot = np.dot(vT, np.dot(Ainv, u))
+    assert ldot.size==1
+    det_update = 1.+ldot.ravel()[0]
+
+    ans = Ainv - (np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / det_update)
+    return ans, det_update
+
+def cov2corr(cov):
+    # slow and stupid!
+    
+    d = np.diag(cov)
+    stddev = np.sqrt(d)
+    corr = cov.copy()*0.
+    for i in range(cov.shape[0]):
+        for j in range(cov.shape[0]):
+            corr[i,j] = cov[i,j]/stddev[i]/stddev[j]
+
+    return corr
 
 class Stats(object):
     """
@@ -15,7 +67,6 @@ class Stats(object):
     def __init__(self,comm=None,root=0,loopover=None,tag_start=333):
         """
         comm - MPI.COMM_WORLD object
-        num_each - 1d array or list where the ith element indicates number of tasks assigned to ith core
         tag_start - MPI comm tags start at this integer
         """
 
@@ -71,7 +122,6 @@ class Stats(object):
         """
         Collect from all MPI cores and calculate stacks.
         """
-        import numpy as np
 
         if self.rank in self.loopover:
 
@@ -223,3 +273,18 @@ def get_stats(binned_vectors):
 
         
     return ret
+
+
+
+def timeit(method):
+
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()
+
+        print('%r %2.2f sec' % \
+              (method.__name__,te-ts))
+        return result
+
+    return timed

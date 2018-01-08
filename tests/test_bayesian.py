@@ -15,6 +15,8 @@ parser.add_argument("GridNum", type=int,help='Number of amplitudes.')
 parser.add_argument("-a", "--arc",     type=float,  default=10.,help="Stamp width (arcmin).")
 parser.add_argument("-p", "--pix",     type=float,  default=0.5,help="Pix width (arcmin).")
 parser.add_argument("-b", "--beam",     type=float,  default=1.0,help="Beam (arcmin).")
+parser.add_argument("-s", "--simulate-cutout", action='store_true',help='Simulate unlensed cutouts instead of analytic covmat.')
+parser.add_argument("-f", "--buffer-factor",     type=int,  default=2,help="Buffer factor for stamp.")
 #parser.add_argument("-f", "--flag", action='store_true',help='A flag.')
 args = parser.parse_args()
 
@@ -38,22 +40,25 @@ theory = cosmology.loadTheorySpectraFromCAMB(theory_file_root,unlensedEqualsLens
 shape, wcs = maps.rect_geometry(width_arcmin=args.arc,px_res_arcmin=args.pix,pol=False)
 modlmap = enmap.modlmap(shape,wcs)
 modrmap = enmap.modrmap(shape,wcs)
-
+bshape, bwcs = maps.rect_geometry(width_arcmin=args.arc*args.buffer_factor,px_res_arcmin=args.pix,pol=False)
+bmodlmap = enmap.modlmap(bshape,bwcs)
+bmodrmap = enmap.modrmap(bshape,bwcs)
 # Unlensed signal
-power2d = theory.uCl('TT',modlmap)
-fcov = maps.diagonal_cov(power2d)
-Ucov = maps.pixcov(shape,wcs,fcov).reshape(np.prod(shape),np.prod(shape))
+    
+power2d = theory.uCl('TT',bmodlmap)
+bfcov = maps.diagonal_cov(power2d)
+sny,snx = shape
+ny,nx = bshape
+Ucov = maps.pixcov(bshape,bwcs,bfcov)
+Ucov = Ucov.reshape(np.prod(bshape),np.prod(bshape))
 
 # Noise model
-kbeam = maps.gauss_beam(args.beam,modlmap)
+kbeam = maps.gauss_beam(args.beam,bmodlmap)
 
 
 # Lens template
-kappa_template = lensing.nfw_kappa(1e15,modrmap,cc)
-phi,_ = lensing.kappa_to_phi(kappa_template,modlmap,return_fphi=True)
-grad_phi = enmap.grad(phi)
 lens_order = 5
-posmap = enmap.posmap(shape,wcs)
+posmap = enmap.posmap(bshape,bwcs)
 
 
 # Lens grid
@@ -77,12 +82,17 @@ cov_name = lambda x: GridName+"/cov_"+str(x)+".npy"
 if rank==0: print("Rank 0 starting ...")
 for k,my_task in enumerate(my_tasks):
     kamp = kamps[my_task]
-    pos = posmap + kamp*grad_phi
-    alpha_pix = enmap.sky2pix(shape,wcs,pos, safe=False)
+
+
+    kappa_template = lensing.nfw_kappa(kamp*1e15,bmodrmap,cc,overdensity=200.,critical=True,atClusterZ=True)
+    phi,_ = lensing.kappa_to_phi(kappa_template,bmodlmap,return_fphi=True)
+    grad_phi = enmap.grad(phi)
+    pos = posmap + grad_phi
+    alpha_pix = enmap.sky2pix(bshape,bwcs,pos, safe=False)
 
 
     def do_the_thing():
-        return lensing.lens_cov(Ucov,alpha_pix,lens_order=lens_order,kbeam=kbeam)
+        return lensing.lens_cov(Ucov,alpha_pix,lens_order=lens_order,kbeam=kbeam,bshape=shape)
 
     if rank==0:
         with bench.show("rank 0 lensing cov"):
