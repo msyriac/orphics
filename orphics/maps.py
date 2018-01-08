@@ -17,21 +17,21 @@ class MatchedFilter(object):
 
         
 
-    def apply(self,imap=None,kmap=None,template=None,ktemplate=None,noise_power=None):
+    def apply(self,imap=None,kmap=None,template=None,ktemplate=None,noise_power=None,kmask=None):
         if kmap is None:
             kmap = enmap.fft(imap,normalize=False)
         else:
             assert imap is None
-        
+
+        if kmask is None: kmask = kmap.copy()*0.+1.
         n2d = self.n2d if noise_power is None else noise_power
         if ktemplate is None:
             ktemp = self.ktemp if template is None else enmap.fft(template,normalize=False)
         else:
             ktemp = ktemplate
             
-        phi_un = np.nansum(ktemp.conj()*kmap*self.normfact/n2d).real 
-        phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact/n2d).real 
-
+        phi_un = np.nansum(ktemp.conj()*kmap*self.normfact*kmask/n2d).real 
+        phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact*kmask/n2d).real 
         return phi_un*phi_var, phi_var
 
 
@@ -811,7 +811,7 @@ class NoiseModel(object):
             self.shape = shape
             self.wcs = wcs
         self.ngen = MapGen(self.shape,self.wcs,self.noise2d)
-        #self.noise_modulation = 1./np.sqrt(self.wmap)/np.sqrt(np.mean((1./self.wmap)))
+        # self.noise_modulation = 1./np.sqrt(self.wmap)/np.sqrt(np.mean((1./self.wmap)))
         wt = 1./np.sqrt(self.wmap)
         wtw2 = np.mean(1./wt**2.)
         self.noise_modulation = wt*np.sqrt(wtw2)
@@ -852,8 +852,9 @@ class NoiseModel(object):
         
         
 
-    def get_noise_sim(self,seed=None):
-        return self.ngen.get_map(seed=seed,scalar=True) * self.noise_modulation
+    def get_noise_sim(self,seed=None,noise_mod=True):
+        nval = self.noise_modulation if noise_mod else 1.
+        return self.ngen.get_map(seed=seed,scalar=True) * nval
         
     def add_beam_1d(self,ells,beam_1d_transform):
         modlmap = enmap.modlmap(self.shape[-2:],self.wcs)
@@ -1367,8 +1368,8 @@ class Stacker(object):
     
 def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1):
     Ny,Nx = imap.shape
-    #fround = lambda x : int(math.floor(x))
-    fround = lambda x : int(x)
+    fround = lambda x : int(math.floor(x))
+    #fround = lambda x : int(x)
 
     if (iy is None) or (ix is None):
         iy,ix = imap.sky2pix(coords=(dec,ra))
