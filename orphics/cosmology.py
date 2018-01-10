@@ -846,3 +846,29 @@ class LensForecast:
 
         return percentR,snR,maxlike
            
+def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless=False,TCMB=2.7255e6):
+    '''Beam deconvolved noise in whatever units rms_noise is in.                         
+    e.g. If rms_noise is in uK-arcmin, returns noise in uK**2.                           
+    '''
+    atmFactor = atm_factor(ell,lknee,alpha)
+    rms = rms_noise * (1./60.)*(np.pi/180.)
+    tht_fwhm = np.deg2rad(fwhm / 60.)
+
+    nfact = white_noise_with_atm_func(ell,rms_noise,lknee,alpha,dimensionless,TCMB)
+
+    ans = nfact * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
+    return ans
+
+
+def atm_factor(ell,lknee,alpha):
+    if lknee>1.e-3:
+        atmFactor = (lknee/ell)**(-alpha)
+    else:
+        atmFactor = 0.
+    return atmFactor
+
+def white_noise_with_atm_func(ell,uk_arcmin,lknee,alpha,dimensionless,TCMB=2.7255e6):
+    atmFactor = atm_factor(ell,lknee,alpha)
+    noiseWhite = ell*0.+(uk_arcmin*np.pi / (180. * 60))**2.
+    dfact = (1./TCMB**2.) if dimensionless else 1.
+    return (atmFactor+1.)*noiseWhite*dfact
