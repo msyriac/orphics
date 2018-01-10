@@ -1,8 +1,25 @@
+'''
+Utilities for dealing with galaxy catalogs, projecting catalogs into pixelated maps, etc.
+'''
+
+
 import numpy as np
 from enlib import enmap, coordinates
 import healpy as hp
 
+
+def dndz(z,z0=1./3.):
+    """A simple 1-parameter dndz parameterization.
+    """
+    ans = (z**2.)* np.exp(-1.0*z/z0)/ (2.*z0**3.)
+    return ans    
+
+
 def select_region(ra_col,dec_col,other_cols,ra_min,ra_max,dec_min,dec_max):
+    """Given ra,decs in ra_col,dec_col and a list of other lists with the
+    same size as ra_col and dec_col, return newly selected ras,decs + other
+    columns bounded by specified minimum and maximum ra and dec.
+    """
     ret_cols = []
     for other_col in other_cols:
         ret_cols.append(other_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)])
@@ -11,9 +28,6 @@ def select_region(ra_col,dec_col,other_cols,ra_min,ra_max,dec_min,dec_max):
     dec_ret = dec_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)]
     return ra_ret,dec_ret,ret_cols
 
-def dndz(z,z0=1./3.):
-    ans = (z**2.)* np.exp(-1.0*z/z0)/ (2.*z0**3.)
-    return ans    
 
 def random_catalog(shape,wcs,N,edge_avoid_deg=0.):
 
@@ -30,6 +44,13 @@ def random_catalog(shape,wcs,N,edge_avoid_deg=0.):
 
 
 class CatMapper(object):
+    """Base class for a number of interfaces with galaxy catalogs. Given a geometry
+    (either in enlib shape,wcs form or as healpix nside), converts the contents
+    of the catalog to pixel positions and bins it into pixelated maps.
+
+    Currently
+
+    """
 
     def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None,verbose=True):
 
