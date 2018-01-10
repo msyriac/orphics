@@ -216,9 +216,14 @@ class bin2D(object):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
         self.digitized = np.digitize(np.ndarray.flatten(modrmap), bin_edges,right=True)
         self.bin_edges = bin_edges
-    def bin(self,data2d):
-        data = np.ndarray.flatten(data2d)
-        return self.centers,np.array([np.nanmean(data[self.digitized == i]) for i in range(1, len(self.bin_edges))])
+    def bin(self,data2d,weights=None):
+        if weights is None:
+            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/np.bincount(self.digitized)[1:-1]
+        else:
+            weights = self.digitized*0.+weights
+            res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/np.bincount(self.digitized,weights.reshape(-1))[1:-1]
+        return self.centers,res
+
 
     
 def bin_in_annuli(data2d, modrmap, bin_edges):
