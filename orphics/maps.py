@@ -7,39 +7,13 @@ from orphics import io
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
-class MatchedFilter(object):
-
-    def __init__(self,shape,wcs,template=None,noise_power=None):
-        area = enmap.area(shape,wcs)
-        self.normfact = area / (np.prod(shape))**2
-        if noise_power is not None: self.n2d = noise_power
-        if template is not None: self.ktemp = enmap.fft(template,normalize=False)
-
-        
-
-    def apply(self,imap=None,kmap=None,template=None,ktemplate=None,noise_power=None,kmask=None):
-        if kmap is None:
-            kmap = enmap.fft(imap,normalize=False)
-        else:
-            assert imap is None
-
-        if kmask is None: kmask = kmap.copy()*0.+1.
-        n2d = self.n2d if noise_power is None else noise_power
-        if ktemplate is None:
-            ktemp = self.ktemp if template is None else enmap.fft(template,normalize=False)
-        else:
-            ktemp = ktemplate
-            
-        phi_un = np.nansum(ktemp.conj()*kmap*self.normfact*kmask/n2d).real 
-        phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact*kmask/n2d).real 
-        return phi_un*phi_var, phi_var
-
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 def slice_from_box(shape, wcs, box, inclusive=False):
     """slice_from_box(shape, wcs, box, inclusive=False)
     Extract the part of the map inside the given box as a selection
-    without returning the data.
+    without returning the data. Does not work for boxes
+    that straddle boundaries of maps. Use enmap.submap instead.
     Parameters
     ----------
     box : array_like
@@ -448,6 +422,7 @@ def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,wei
 
 
 def cosine_window(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
+    # Based on a routine by Thibaut Louis
     win=np.ones((Ny,Nx))
     
     i = np.arange(Nx) 
@@ -1509,3 +1484,32 @@ def interpolate_grid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=
 
     return outGrid
     
+
+
+class MatchedFilter(object):
+
+    def __init__(self,shape,wcs,template=None,noise_power=None):
+        area = enmap.area(shape,wcs)
+        self.normfact = area / (np.prod(shape))**2
+        if noise_power is not None: self.n2d = noise_power
+        if template is not None: self.ktemp = enmap.fft(template,normalize=False)
+
+        
+
+    def apply(self,imap=None,kmap=None,template=None,ktemplate=None,noise_power=None,kmask=None):
+        if kmap is None:
+            kmap = enmap.fft(imap,normalize=False)
+        else:
+            assert imap is None
+
+        if kmask is None: kmask = kmap.copy()*0.+1.
+        n2d = self.n2d if noise_power is None else noise_power
+        if ktemplate is None:
+            ktemp = self.ktemp if template is None else enmap.fft(template,normalize=False)
+        else:
+            ktemp = ktemplate
+            
+        phi_un = np.nansum(ktemp.conj()*kmap*self.normfact*kmask/n2d).real 
+        phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact*kmask/n2d).real 
+        return phi_un*phi_var, phi_var
+
