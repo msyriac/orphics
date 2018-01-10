@@ -323,6 +323,10 @@ def get_real_attributes(shape,wcs):
     Ny, Nx = shape[-2:]
     pixScaleY, pixScaleX = enmap.pixshape(shape,wcs)
     
+    return get_real_attributes_generic(Ny,Nx,pixScaleY,pixScaleX)
+
+def get_real_attributes_generic(Ny,Nx,pixScaleY,pixScaleX):
+    
     xx =  (np.arange(Nx)-Nx/2.+0.5)*pixScaleX
     yy =  (np.arange(Ny)-Ny/2.+0.5)*pixScaleY
     
@@ -336,7 +340,6 @@ def get_real_attributes(shape,wcs):
     xMap, yMap = np.meshgrid(xx, yy)  # is this the right order?
 
     return xMap,yMap,modRMap,xx,yy
-
 
 
 ## MAXLIKE
