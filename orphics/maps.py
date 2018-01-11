@@ -1344,21 +1344,28 @@ class Stacker(object):
 
 
     
-def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1):
+def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False):
     Ny,Nx = imap.shape
-    fround = lambda x : int(math.floor(x))
+
+    # see enmap.sky2pix for "corner" options
+    if corner:
+        fround = lambda x : int(math.floor(x))
+    else:
+        fround = lambda x : int(np.round(x))
     #fround = lambda x : int(x)
 
     if (iy is None) or (ix is None):
-        iy,ix = imap.sky2pix(coords=(dec,ra))
+        iy,ix = imap.sky2pix(coords=(dec,ra),corner=corner)
     
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
     if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
-    cutout = imap[fround(iy-Npix/2):fround(iy+Npix/2),fround(ix-Npix/2):fround(ix+Npix/2)]
+    cutout = imap[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
+    #cutout = imap[fround(iy-Npix/2):fround(iy+Npix/2),fround(ix-Npix/2):fround(ix+Npix/2)]
 
     shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
     return enmap.ndmap(cutout,wcs)
+
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
     # inputs in radians
