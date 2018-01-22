@@ -1,6 +1,71 @@
 from __future__ import print_function
 import numpy as np
 import time
+import itertools
+import scipy
+
+class OQE(object):
+    """Optimal Quadratic Estimator for likelihoods that
+    are Gaussian in the model parameters.
+
+    Given a fiducial covariance matrix for the data and derivatives
+    of the covariance matrix w.r.t. each parameter of interest,
+    this class precalculates things like the Fisher matrix when
+    initialized.
+
+    Subsequently, given a data vector, it returns the OQEstimate
+    as a dictionary in the parameters. 
+    """
+    def __init__(self,fid_cov,dcov_dict,fid_params_dict):
+
+        self.params = dcov_dict.keys()
+        self.fids = fid_params_dict
+        Nparams = len(self.params)
+        self.Cinv = self._inv(fid_cov)
+
+        self.biases = {}
+        self.ps = {}
+        for param in self.params:
+            self.ps[param] = np.dot(self.Cinv,dcov_dict[param])
+            self.biases[param] = np.trace(self.ps[param])
+
+        self.Fisher = np.zeros((Nparams,Nparams))
+        param_combs = itertools.combinations_with_replacement(self.params,2)
+        for param1,param2 in param_combs:
+            i = self.params.index(param1)
+            j = self.params.index(param2)
+            self.Fisher[i,j] = 0.5 * np.trace(np.dot(self.ps[param1],self.ps[param2]))
+            if j!=i: self.Fisher[j,i] = self.Fisher[i,j]
+
+        self.Finv = self._inv(self.Fisher)
+
+        self.marg_errors = np.diagonal(self.Finv)**(1./2.)
+        print(self.marg_errors)
+
+    def sigma(self):
+        return dict(zip(self.params,self.marg_errors.tolist()))
+
+    def estimate(self,data):
+        vec = []
+        for param in self.params:
+            fcore = np.dot(np.dot(data.T,np.dot(self.ps[param],self.Cinv)),data)
+            bsubbed = fcore - self.biases[param]
+            assert bsubbed.size == 1
+            vec.append(bsubbed)
+        vec = np.asarray(vec)
+        ans = 0.5 * np.dot(self.Finv,vec)
+        ans = dict(zip(self.params,ans.tolist()))
+        res = {}
+        for param in self.params:
+            res[param] = self.fids[param] + ans[param]
+        return res
+
+        
+    def _inv(self,cov):
+        #return np.linalg.pinv(cov)
+        #return scipy.linalg.pinv2(cov)
+        return np.linalg.inv(cov)
+
 
 class CinvUpdater(object):
 

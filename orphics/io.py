@@ -5,6 +5,7 @@ import numpy as np
 import os,sys,logging,time
 from orphics import mpi
 import contextlib
+import itertools
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
@@ -309,3 +310,186 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+
+
+class FisherPlots(object):
+    def __init__(self):
+        self.fishers = {}
+        self.fidDicts = {}
+        self.paramLists = {}
+        self.paramLatexLists = {}
+        xx = np.array(np.arange(360) / 180. * np.pi)
+        self.circl = np.array([np.cos(xx),np.sin(xx)])
+
+    def addSection(self,section,paramList,paramLatexList,fidDict):
+        self.fishers[section] = {}
+        self.fidDicts[section] = fidDict
+        self.paramLists[section] = paramList
+        self.paramLatexLists[section] = paramLatexList
+
+    def addFisher(self,section,setName,fisherMat,gaussOnly=False):
+        self.fishers[section][setName] = (gaussOnly,fisherMat)
+
+    def plot1d(self,section,paramName,frange,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",labsize=12,labloc='upper left',xmultiplier=1.,labelXSuffix=""):
+
+        fval = self.fidDicts[section][paramName]
+        i = self.paramLists[section].index(paramName)
+        paramlabel = '$'+self.paramLatexLists[section][i]+'$' 
+
+        pl = Plotter()
+        errs = {}
+        hasLabels = False
+        for setName,col,ls,lab in zip(setNames,cols,lss,labels):
+            if lab is not None: hasLabels = True
+            gaussOnly, fisher = self.fishers[section][setName]
+            if gaussOnly:
+                ErrSigmaSq = fisher**2.
+            else:
+                Finv = np.linalg.inv(fisher)
+                ErrSigmaSq = Finv[i,i]
+            gaussFunc = lambda x: np.exp(-(x-fval)**2./2./ErrSigmaSq)
+            pl.add(frange*xmultiplier,gaussFunc(frange),color=col,ls=ls,label=lab,lw=2)
+
+        pl._ax.tick_params(size=14,width=3,labelsize = 16)
+        pl._ax.set_xlabel(paramlabel+labelXSuffix,fontsize=24,weight='bold')
+        if hasLabels: pl.legendOn(labsize=labsize,loc=labloc)
+        pl.done(saveFile)
+
+
+    def startFig(self,**kwargs):
+        self.fig = plt.figure(**kwargs)
+        self.ax = self.fig.add_subplot(1,1,1)
+
+    def plotPair(self,section,paramXYPair,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),levels=[2.],xlims=None,ylims=None,loc='center',alphas=None,**kwargs):
+        if alphas is None: alphas = [1]*len(setNames)
+        paramX,paramY = paramXYPair
+
+        xval = self.fidDicts[section][paramX]
+        yval = self.fidDicts[section][paramY]
+        i = self.paramLists[section].index(paramX)
+        j = self.paramLists[section].index(paramY)
+
+        thk = 3
+        #xx = np.array(np.arange(360) / 180. * np.pi)
+        circl = self.circl #np.array([np.cos(xx),np.sin(xx)])
+
+
+        paramlabely = '$'+self.paramLatexLists[section][j]+'$' 
+        paramlabelx = '$'+self.paramLatexLists[section][i]+'$'
+        
+        matplotlib.rc('axes', linewidth=thk)
+        matplotlib.rc('axes', labelcolor='k')
+        #plt.figure(figsize=(6,5.5))
+
+        fig=self.fig #
+        ax = self.ax 
+
+        plt.tick_params(size=14,width=thk,labelsize = 16)
+
+        if cols is None: cols = itertools.repeat(None)
+
+        for setName,col,ls,lab,alpha in zip(setNames,cols,lss,labels,alphas):
+            gaussOnly, fisher = self.fishers[section][setName]
+            Finv = np.linalg.inv(fisher)
+            chi211 = Finv[i,i]
+            chi222 = Finv[j,j]
+            chi212 = Finv[i,j]
+        
+            chisq = np.array([[chi211,chi212],[chi212,chi222]])
+
+            Lmat = np.linalg.cholesky(chisq)
+            ansout = np.dot(1.52*Lmat,circl)
+            ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab,alpha=alpha)
+        
+
+
+
+
+        ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
+        ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
+
+        if xlims is not None: ax.set_xlim(*xlims)
+        if ylims is not None: ax.set_ylim(*ylims)
+        
+        
+        labsize = 12
+        #loc = 'upper right'
+        #loc = 'center'
+        handles, labels = ax.get_legend_handles_labels()
+        legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
+
+    def done(self,saveFile):
+        plt.savefig(saveFile, bbox_inches='tight',format='png')
+        print(bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
+
+
+    def plotTri(self,section,paramList,setNames,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),saveFile="default.png",levels=[2.],xlims=None,ylims=None,loc='upper right',centerMarker=True,TwoSig=False,**kwargs):
+
+        circl = self.circl
+        numpars = len(paramList)
+        thk = 3
+
+        matplotlib.rc('axes', linewidth=thk)
+        fig=plt.figure(figsize=(4*numpars,4*numpars),**kwargs)
+        
+        if cols is None: cols = itertools.repeat(None)
+
+        for setName,col,ls,lab in zip(setNames,cols,lss,labels):
+            gaussOnly, fisher = self.fishers[section][setName]
+            Finv = np.linalg.inv(fisher)
+            for i in range(0,numpars):
+                for j in range(i+1,numpars):
+                    count = 1+(j-1)*(numpars-1) + i
+
+                    paramX = paramList[i]
+                    paramY = paramList[j]
+
+                    p = self.paramLists[section].index(paramX)
+                    q = self.paramLists[section].index(paramY)
+
+                    chi211 = Finv[p,p]
+                    chi222 = Finv[q,q]
+                    chi212 = Finv[p,q]
+
+                    # a sigma8 hack
+                    if "S8" in paramX:
+                        xval = 0.8
+                        paramlabelx = '$\sigma_8(z_{'+paramX[3:]+'})$'
+                    else:
+                        xval = self.fidDicts[section][paramX]
+                        paramlabelx = '$'+self.paramLatexLists[section][p]+'$'
+                    if "S8" in paramY:
+                        yval = 0.8
+                        paramlabely = '$\sigma_8(z_{'+paramY[3:]+'})$'
+                    else:
+                        yval = self.fidDicts[section][paramY]
+                        paramlabely = '$'+self.paramLatexLists[section][q]+'$' 
+
+                    if paramX=="S8All": paramlabelx = '$\sigma_8$'
+                    if paramY=="S8All": paramlabely = '$\sigma_8$'
+                        
+                    chisq = np.array([[chi211,chi212],[chi212,chi222]])
+                    Lmat = np.linalg.cholesky(chisq)
+                    ansout = np.dot(1.52*Lmat,circl)
+                    ansout2 = np.dot(2.0*1.52*Lmat,circl)
+                    
+                    
+                    ax = fig.add_subplot(numpars-1,numpars-1,count)
+                    plt.tick_params(size=14,width=thk,labelsize = 11)
+                    if centerMarker: ax.plot(xval,yval,'xk',mew=thk)
+                    ax.plot(ansout[0,:]+xval,ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab)
+                    if TwoSig:
+                        ax.plot(ansout2[0,:]+xval,ansout2[1,:]+yval,linewidth=thk,color=col,ls=ls)
+                    if (i==0):#(count ==1):
+                        ax.set_ylabel(paramlabely, fontsize=32,weight='bold')
+                    if (j == (numpars-1)):
+                        ax.set_xlabel(paramlabelx, fontsize=32,weight='bold')
+                    
+        
+        labsize = 48
+        handles, labels = ax.get_legend_handles_labels()
+        legend = fig.legend(handles, labels,prop={'size':labsize},numpoints=1,frameon = 0,loc=loc, bbox_to_anchor = (-0.1,-0.1,1,1),bbox_transform = plt.gcf().transFigure,**kwargs) #
+
+        plt.savefig(saveFile, bbox_inches='tight',format='png')
+        print(bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
+    
