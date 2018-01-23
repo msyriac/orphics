@@ -96,6 +96,7 @@ class Cosmology(object):
             
             
         self.mnu = cosmo['mnu']
+        print(self.mnu)
         self.w0 = cosmo['w0']
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0

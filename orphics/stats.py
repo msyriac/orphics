@@ -4,6 +4,129 @@ import time
 import itertools
 import scipy
 
+try:
+    import pandas as pd
+except:
+    import warnings
+    warnings.warn("Could not find pandas. Install using pip; FisherMatrix will not work otherwise")
+
+def check_fisher_sanity(fmat,param_list):
+    Ny,Nx = fmat.shape
+    assert Ny==Nx
+    assert Ny==len(param_list)
+    assert len(param_list)==len(set(param_list))
+
+
+class FisherMatrix(pd.DataFrame):
+    """
+    A Fisher Matrix object that subclasses pandas.DataFrame.
+    This is essentially just a structured array that
+    has identical column and row labels.
+
+    You can initialize an empty one like:
+    >> params = ['H0','om','sigma8']
+    >> F = FisherMatrix(np.zeros((len(params),len(params))),params)
+    
+    where params is a list of parameter names,
+    You can set individual elements like:
+    
+    >> F['s8']['H0'] = 1.
+
+    Once you've populated the entries, you can do things like:
+    >> Ftot = F1 + F2
+    i.e. add Fisher matrices. The nice property here is that you needn't
+    have initialized these objects with the same list of parameters!
+    They can, for example, have mutually exclusive parameters, in which
+    case you end up with some reordering of a block diagonal Fisher matrix.
+    In the general case, of two overlapping parameter lists that don't
+    have the same ordering, pandas will make sure the objects are added
+    correctly.
+
+    WARNING: No other operation other than addition is overloaded. Subtraction
+    for instance will give unpredictable behaviour. (Will likely introduce
+    NaNs) But you shouldn't be subtracting Fisher matrixes anyway!
+
+    You can add a gaussian prior to a parameter:
+    >> F.add_prior('H0',2.0)
+
+    You can drop an entire parameter (which removes that row and column):
+    >> F.delete('s8')
+    which does it in place.
+
+    If you want to preserve the original before copying, you can
+    >> Forig = F.copy()
+
+    You can get marginalize errors on each parameter as a dict:
+    >> sigmas = F.marge_errs()
+
+
+    """
+
+    
+    def __init__(self,fmat,param_list,skip_inv=False):
+        check_fisher_sanity(fmat,param_list)
+        pd.DataFrame.__init__(self,fmat,columns=param_list,index=param_list)
+        self.params = param_list
+            
+        cols = self.columns.tolist()
+        ind = self.index.tolist()
+        assert set(self.params)==set(cols)
+        assert set(self.params)==set(ind)
+
+        self._changed = True
+        if not(skip_inv):
+            self._update()
+
+            
+    def copy(self, order='K'):
+        self._update()
+	f = FisherMatrix(pd.DataFrame.copy(self), list(self.params),skip_inv=True)
+        f._finv = self._finv
+        f._changed = False
+        return f
+
+    def _update(self):
+        if self._changed:
+            self._finv = np.linalg.inv(self.as_matrix())
+            self._changed = False
+        
+    def __radd__(self,other):
+        return self.add(other)
+
+    def __add__(self,other):
+        return self.add(other)
+
+    def add(self,other):
+        new_fpd = pd.DataFrame.add(self,other,fill_value=0)
+        return FisherMatrix(new_fpd.as_matrix(),new_fpd.columns.tolist())
+
+    def add_prior(self,param,prior):
+        self[param][param] += 1./prior**2.
+        self._changed = True
+        
+    def marge_errs(self):
+        self._update()
+        errs = np.diagonal(self._finv)**(0.5)
+        return dict(zip(self.params,errs))
+    
+    def delete(self,params):
+        self.drop(labels=params,axis=0,inplace=True)
+        self.drop(labels=params,axis=1,inplace=True)
+        self.params = self.columns.tolist()
+        assert set(self.index.tolist())==set(self.params)
+        self._changed = True
+
+    def marge_var_2param(self,param1,param2):
+        self._update()
+        i = self.params.index(param1)
+        j = self.params.index(param2)
+        chi211 = self._finv[i,i]
+        chi222 = self._finv[j,j]
+        chi212 = self._finv[i,j]
+        
+        return np.array([[chi211,chi212],[chi212,chi222]])
+        
+
 class OQE(object):
     """Optimal Quadratic Estimator for likelihoods that
     are Gaussian in the model parameters.
