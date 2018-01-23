@@ -44,7 +44,7 @@ class FisherMatrix(pd.DataFrame):
 
     WARNING: No other operation other than addition is overloaded. Subtraction
     for instance will give unpredictable behaviour. (Will likely introduce
-    NaNs) But you shouldn't be subtracting Fisher matrixes anyway!
+    NaNs) But you shouldn't be subtracting Fisher matrices anyway!
 
     You can add a gaussian prior to a parameter:
     >> F.add_prior('H0',2.0)
