@@ -57,21 +57,27 @@ class FisherMatrix(pd.DataFrame):
     >> Forig = F.copy()
 
     You can get marginalize errors on each parameter as a dict:
-    >> sigmas = F.marge_errs()
+    >> sigmas = F.sigmas()
 
 
     """
 
     
-    def __init__(self,fmat,param_list,skip_inv=False):
+    def __init__(self,fmat,param_list,delete_params=None,prior_dict=None,skip_inv=False):
         check_fisher_sanity(fmat,param_list)
-        pd.DataFrame.__init__(self,fmat,columns=param_list,index=param_list)
+        pd.DataFrame.__init__(self,fmat.copy(),columns=param_list,index=param_list)
         self.params = param_list
             
         cols = self.columns.tolist()
         ind = self.index.tolist()
         assert set(self.params)==set(cols)
         assert set(self.params)==set(ind)
+
+        if delete_params is not None:
+            self.delete(delete_params)
+        if prior_dict is not None:
+            for prior in prior_dict.keys():
+                self.add_prior(prior,prior_dict[prior])
 
         self._changed = True
         if not(skip_inv):
@@ -91,20 +97,23 @@ class FisherMatrix(pd.DataFrame):
             self._changed = False
         
     def __radd__(self,other):
-        return self.add(other)
+        return self._add(other,radd=True)
 
     def __add__(self,other):
-        return self.add(other)
+        return self._add(other,radd=False)
 
-    def add(self,other):
-        new_fpd = pd.DataFrame.add(self,other,fill_value=0)
-        return FisherMatrix(new_fpd.as_matrix(),new_fpd.columns.tolist())
+    def _add(self,other,radd=False):
+        if radd:
+            new_fpd = pd.DataFrame.radd(self,other.copy(),fill_value=0)
+        else:
+            new_fpd = pd.DataFrame.add(self,other.copy(),fill_value=0)
+        return FisherMatrix(np.nan_to_num(new_fpd.as_matrix()),new_fpd.columns.tolist())
 
     def add_prior(self,param,prior):
         self[param][param] += 1./prior**2.
         self._changed = True
         
-    def marge_errs(self):
+    def sigmas(self):
         self._update()
         errs = np.diagonal(self._finv)**(0.5)
         return dict(zip(self.params,errs))
