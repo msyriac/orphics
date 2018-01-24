@@ -96,7 +96,6 @@ class Cosmology(object):
             
             
         self.mnu = cosmo['mnu']
-        print(self.mnu)
         self.w0 = cosmo['w0']
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
@@ -146,10 +145,13 @@ class Cosmology(object):
         if not(skipPower): self._initPower(pkgrid_override)
 
         self.deltac = 1.42
-        self.Omega_m = (self.ombh2+self.omch2)/self.h**2.
+        self.Omega_m = (self.ombh2+self.omch2)/self.h**2.  # DOESN'T INCLUDE NEUTRINOS
+        self.Omega_m_all = (self.ombh2+self.omch2+self.omnuh2)/self.h**2.
+        self.Omega_de = 1.-self.Omega_m_all
+        self.fnu = (self.omnuh2)/(self.ombh2+self.omch2+self.omnuh2)
+        self.kfs_approx_func = lambda a : 0.04 * (a**2.) * np.sqrt(self.Omega_m_all*(a**(-3.))+self.Omega_de) * (self.mnu/0.05) * self.h  # Eq 3.20 S4 science book, in Mpc no h factor
         self.Omega_k = 0.
         self.wa = 0.
-        self.Omega_de = 1.-self.Omega_m
 
         # some useful numbers
         self._cSpeedKmPerSec = 299792.458
