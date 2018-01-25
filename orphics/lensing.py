@@ -811,7 +811,7 @@ class QuadNorm(object):
 
 
 class NlGenerator(object):
-    def __init__(self,shape,wcs,theorySpectra,bin_edges=None,gradCut=None,TCMB=2.725e6,bigell=9000,lensedEqualsUnlensed=False):
+    def __init__(self,shape,wcs,theorySpectra,bin_edges=None,gradCut=None,TCMB=2.725e6,bigell=9000,lensedEqualsUnlensed=False,unlensedEqualsLensed=False):
         self.shape = shape
         self.wcs = wcs
         self.N = QuadNorm(shape,wcs,gradCut=gradCut,bigell=bigell)
