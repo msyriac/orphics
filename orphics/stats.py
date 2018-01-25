@@ -53,10 +53,10 @@ class FisherMatrix(pd.DataFrame):
     >> F.delete('s8')
     which does it in place.
 
-    If you want to preserve the original before copying, you can
+    If you want to preserve the original before modifying, you can
     >> Forig = F.copy()
 
-    You can get marginalize errors on each parameter as a dict:
+    You can get marginalized errors on each parameter as a dict:
     >> sigmas = F.sigmas()
 
 
