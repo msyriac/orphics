@@ -201,6 +201,15 @@ class Cosmology(object):
 
         if not(skip_growth): self._init_growth_rate()
 
+    def growth_scale_dependent(self,ks,z,comp):
+        growthfn = self.results.get_redshift_evolution(ks, z, [comp])  #Extract the linear growth function from CAMB.
+        growthfn0 = self.results.get_redshift_evolution(ks, 0, [comp])  
+ 
+        gcomp = growthfn/growthfn0
+        return gcomp
+
+
+        
     def _initPower(self,pkgrid_override=None):
         print("initializing power...")
         if pkgrid_override is None:
@@ -228,6 +237,31 @@ class Cosmology(object):
 
         
 
+    def Fstar(self,z,xe=1):
+        '''
+        Get the norm of the kSZ temperature at redshift z
+        '''
+
+        TcmbMuK = self.pars.TCMB*1.e6
+
+        ne0 = self.ne0z(z)
+        return TcmbMuK*self.thompson_SI*ne0*(1.+z)**2./self.meterToMegaparsec  *xe  #*np.exp(-self.tau)
+
+
+    def ne0z(self,z):
+        '''
+        Average electron density today but with
+        Helium II reionization at z<3
+        '''
+
+        if z>3.: 
+            NHe=1.
+        else:
+            NHe=2.
+
+        ne0_SI = (1.-(4.-NHe)*self.pars.YHe/4.)*self.ombh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI
+
+        return ne0_SI
         
     def transfer(self, k, type='eisenhu_osc'):
         w_m = self.omch2 + self.ombh2 #self.Omega_m * self.h**2
