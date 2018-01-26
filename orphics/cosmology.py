@@ -132,7 +132,7 @@ class Cosmology(object):
             if not(low_acc):
                 self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
                 self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
-            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless,verbose=verbose)
+            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless,verbose=verbose,prefix="_low_acc_"+str(low_acc))
             self.clttfunc = lambda ell: theory.lCl('TT',ell)
             self.theory = theory
 
@@ -623,7 +623,7 @@ def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,
     return ps*tmul
 
         
-def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True,verbose=True):
+def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True,verbose=True,prefix=""):
     '''
 
     The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
@@ -649,7 +649,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
     try:
         assert pickling
-        clfile = "output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl"
+        clfile = "output/clsAll"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl"
         cmbmat = pickle.load(open(clfile,'rb'))
         if verbose: print("Loaded cached Cls from ", clfile)
     except:
@@ -659,7 +659,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
             directory = "output/"
             if not os.path.exists(directory):
                 os.makedirs(directory)
-            pickle.dump(cmbmat,open("output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
+            pickle.dump(cmbmat,open("output/clsAll"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
 
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
@@ -679,7 +679,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
     try:
         assert pickling
-        clfile = "output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt"
+        clfile = "output/clphi"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt"
         clphi = np.loadtxt(clfile)
         if verbose: print("Loaded cached Cls from ", clfile)
     except:
@@ -690,7 +690,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
             directory = "output/"
             if not os.path.exists(directory):
                 os.makedirs(directory)
-            np.savetxt("output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt",clphi)
+            np.savetxt("output/clphi"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt",clphi)
 
     clkk = clphi* (2.*np.pi/4.)
     ells = np.arange(2,len(clkk)+2,1)
