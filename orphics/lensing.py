@@ -811,8 +811,9 @@ class QuadNorm(object):
 
 
 class NlGenerator(object):
-    def __init__(self,shape,wcs,theorySpectra,bin_edges=None,gradCut=None,TCMB=2.725e6,bigell=9000,lensedEqualsUnlensed=False):
-
+    def __init__(self,shape,wcs,theorySpectra,bin_edges=None,gradCut=None,TCMB=2.725e6,bigell=9000,lensedEqualsUnlensed=False,unlensedEqualsLensed=False):
+        self.shape = shape
+        self.wcs = wcs
         self.N = QuadNorm(shape,wcs,gradCut=gradCut,bigell=bigell)
         self.TCMB = TCMB
 
@@ -1006,7 +1007,7 @@ class NlGenerator(object):
 
         origBB = self.N.lClFid2d['BB'].copy()
         delensBinner =  bin2D(self.N.modLMap, bin_edges)
-        ellsOrig, oclbb = delensBinner.bin(origBB)
+        ellsOrig, oclbb = delensBinner.bin(origBB.real)
         oclbb = sanitizePower(oclbb)
         origclbb = oclbb.copy()
 
@@ -1020,7 +1021,7 @@ class NlGenerator(object):
         while ctol>dTolPercentage:
             bNlsinv = 0.
             polPass = list(polCombs)
-            if verbose: print(("Performing iteration ", inum+1))
+            if verbose: print("Performing iteration ", inum+1)
             for pol in ['EB','TB']:
                 if not(pol in polCombs): continue
                 Al2d = self.N.getNlkk2d(pol,halo)
@@ -1044,7 +1045,7 @@ class NlGenerator(object):
                 old = np.nanmean(oclbb)
                 ctol = np.abs(old-new)*100./new
                 ctolLens = np.abs(oldLens-newLens)*100./newLens
-                if verbose: print(("Percentage difference between iterations is ",ctol, " compared to requested tolerance of ", dTolPercentage,". Diff of Nlkks is ",ctolLens))
+                if verbose: print("Percentage difference between iterations is ",ctol, " compared to requested tolerance of ", dTolPercentage,". Diff of Nlkks is ",ctolLens)
             oldNl = nlkk.copy()
             oclbb = dclbb.copy()
             inum += 1
@@ -1081,7 +1082,7 @@ class NlGenerator(object):
         #pl = Plotter(scaleY='log',scaleX='log')
         #pl = Plotter(scaleY='log')
         while ctol>dTolPercentage:
-            if verbose: print(("Performing iteration ", inum+1))
+            if verbose: print("Performing iteration ", inum+1)
             Al2d = self.N.getNlkk2d(xy,halo)
             centers, nlkk = delensBinner.bin(self.N.Nlkk[xy])
             nlkk = sanitizePower(nlkk)
@@ -1092,7 +1093,7 @@ class NlGenerator(object):
                 new = np.nanmean(nlkk)
                 old = np.nanmean(oldNl)
                 ctol = np.abs(old-new)*100./new
-                if verbose: print(("Percentage difference between iterations is ",ctol, " compared to requested tolerance of ", dTolPercentage))
+                if verbose: print("Percentage difference between iterations is ",ctol, " compared to requested tolerance of ", dTolPercentage)
             oldNl = nlkk.copy()
             inum += 1
             #pl.add(centers,nlkk)

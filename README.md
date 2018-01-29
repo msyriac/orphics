@@ -32,3 +32,6 @@ For example, if you wanted to calculate Limber approximation power spectra, you 
 ``
 from orphics.cosmology import LimberCosmology
 ``
+### Known Issues
+
+- If your interactive sessions are rudely killed by an MPI error, disable MPI by exporting the environment variable `DISABLE_MPI=true` as needed.
