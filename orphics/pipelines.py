@@ -41,13 +41,13 @@ class RotTestPipeline(object):
         self.wdeg = wdeg
         self.hdeg = hdeg
 
-	degree =  u.degree
+        degree =  u.degree
         vwidth = hdeg/2.
         hwidth = wdeg/2.
 
         # Box locations to slice from
-	self.pos_south=np.array([[-vwidth+yoffset,-hwidth],[vwidth+yoffset,hwidth]])*degree
-	self.pos_eq=np.array([[-vwidth,-hwidth],[vwidth,hwidth]])*degree
+        self.pos_south=np.array([[-vwidth+yoffset,-hwidth],[vwidth+yoffset,hwidth]])*degree
+        self.pos_eq=np.array([[-vwidth,-hwidth],[vwidth,hwidth]])*degree
 
 
         # Get MPI comm
@@ -352,7 +352,3 @@ class RotTestPipeline(object):
         pl.hline()
         pl._ax.set_ylim(-0.4,0.4)
         pl.done(io.dout_dir+"clkkdiffrecon_theory_auto.png")
-        
-
-
-        
