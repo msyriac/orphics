@@ -401,8 +401,8 @@ class LimberCosmology(Cosmology):
 
     pkgrid_override can be a RectBivariateSpline object such that camb.PK.P(z,k,grid=True) returns the same as pkgrid_override(k,z)
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.):
-        Cosmology.__init__(self,paramDict,constDict,lmax,clTTFixFile,skipCls,pickling,fill_zero,skipPower,pkgrid_override,kmax=kmax,nonlinear=nonlinear,zmax=zmax)
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False):
+        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=False,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc)
 
         
 
