@@ -106,76 +106,80 @@ class MapGen(object):
         
 
 class FourierCalc(object):
+    """
+    Once you know the shape and wcs of an ndmap, you can pre-calculate some things
+    to speed up fourier transforms and power spectra.
+    """
+
+    def __init__(self,shape,wcs,iau=True):
+        """Initialize with a geometry shape and wcs."""
+        
+        self.shape = shape
+        self.wcs = wcs
+        self.normfact = enmap.area(self.shape,self.wcs )/ np.prod(self.shape[-2:])**2.         
+        if len(shape) > 2 and shape[-3] > 1:
+            self.rot = enmap.queb_rotmat(enmap.lmap(shape,wcs),iau=iau)
+
+    def iqu2teb(self,emap, nthread=0, normalize=True, rot=True):
+        """Performs the 2d FFT of the enmap pixels, returning a complex enmap.
+        Similar to harm2map, but uses a pre-calculated self.rot matrix.
         """
-        Once you know the shape and wcs of an ndmap, you can pre-calculate some things
-        to speed up fourier transforms and power spectra.
+        emap = enmap.samewcs(enmap.fft(emap,nthread=nthread,normalize=normalize), emap)
+        if emap.ndim > 2 and emap.shape[-3] > 1 and rot:
+            emap[...,-2:,:,:] = enmap.map_mul(self.rot, emap[...,-2:,:,:])
+        return emap
+
+
+    def f2power(self,kmap1,kmap2,pixel_units=False):
+        """Similar to power2d, but assumes both maps are already FFTed """
+        norm = 1. if pixel_units else self.normfact
+        return np.real(np.conjugate(kmap1)*kmap2)*norm
+
+    def f1power(self,map1,kmap2,pixel_units=False,nthread=0):
+        """Similar to power2d, but assumes map2 is already FFTed """
+        kmap1 = self.iqu2teb(map1,nthread,normalize=False)
+        norm = 1. if pixel_units else self.normfact
+        return np.real(np.conjugate(kmap1)*kmap2)*norm,kmap1
+
+    def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None):
+        """
+        Calculate the power spectrum of emap crossed with emap2 (=emap if None)
+        Returns in radians^2 by default unles pixel_units specified
         """
 
-        def __init__(self,shape,wcs,iau=True):
-                self.shape = shape
-                self.wcs = wcs
-                self.normfact = enmap.area(self.shape,self.wcs )/ np.prod(self.shape[-2:])**2.         
-                if len(shape) > 2 and shape[-3] > 1:
-                        self.rot = enmap.queb_rotmat(enmap.lmap(shape,wcs),iau=iau)
+        if kmap is not None:
+            lteb1 = kmap
+            ndim = kmap.ndim
+            if ndim>2 : ncomp = kmap.shape[-3]
+        else:
+            lteb1 = self.iqu2teb(emap,nthread,normalize=False,rot=rot)
+            ndim = emap.ndim
+            if ndim>2 : ncomp = emap.shape[-3]
 
-        def iqu2teb(self,emap, nthread=0, normalize=True, rot=True):
-                """Performs the 2d FFT of the enmap pixels, returning a complex enmap.
-                Similar to harm2map, but uses a pre-calculated self.rot matrix.
-                """
-                emap = enmap.samewcs(enmap.fft(emap,nthread=nthread,normalize=normalize), emap)
-                if emap.ndim > 2 and emap.shape[-3] > 1 and rot:
-                        emap[...,-2:,:,:] = enmap.map_mul(self.rot, emap[...,-2:,:,:])
-                return emap
-
-
-        def f2power(self,kmap1,kmap2,pixel_units=False):
-                norm = 1. if pixel_units else self.normfact
-                return np.real(np.conjugate(kmap1)*kmap2)*norm
-
-        def f1power(self,map1,kmap2,pixel_units=False,nthread=0):
-                kmap1 = self.iqu2teb(map1,nthread,normalize=False)
-                norm = 1. if pixel_units else self.normfact
-                return np.real(np.conjugate(kmap1)*kmap2)*norm,kmap1
-
-        def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None):
-                """
-                Calculate the power spectrum of emap crossed with emap2 (=emap if None)
-                Returns in radians^2 by default unles pixel_units specified
-                """
-
-                if kmap is not None:
-                        lteb1 = kmap
-                        ndim = kmap.ndim
-                        if ndim>2 : ncomp = kmap.shape[-3]
-                else:
-                        lteb1 = self.iqu2teb(emap,nthread,normalize=False,rot=rot)
-                        ndim = emap.ndim
-                        if ndim>2 : ncomp = emap.shape[-3]
-
-                if kmap2 is not None:
-                        lteb2 = kmap2
-                else:
-                        lteb2 = self.iqu2teb(emap2,nthread,normalize=False,rot=rot) if emap2 is not None else lteb1
+        if kmap2 is not None:
+            lteb2 = kmap2
+        else:
+            lteb2 = self.iqu2teb(emap2,nthread,normalize=False,rot=rot) if emap2 is not None else lteb1
                 
-                assert lteb1.shape==lteb2.shape
+        assert lteb1.shape==lteb2.shape
                 
-                if ndim > 2 and ncomp > 1:
-                        retpow = np.empty((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]))
-                        for i in range(ncomp):
-                                retpow[i,i] = self.f2power(lteb1[i],lteb2[i],pixel_units)
-                        if not(skip_cross):
-                                for i in range(ncomp):
-                                        for j in range(i+1,ncomp):
-                                                retpow[i,j] = self.f2power(lteb1[i],lteb2[j],pixel_units)
-                                                retpow[j,i] = retpow[i,j]
-                        return retpow,lteb1,lteb2
-                else:
-                        if lteb1.ndim>2:
-                                lteb1 = lteb1[0]
-                        if lteb2.ndim>2:
-                                lteb2 = lteb2[0]
-                        p2d = self.f2power(lteb1,lteb2,pixel_units)
-                        return p2d,lteb1,lteb2
+        if ndim > 2 and ncomp > 1:
+            retpow = np.empty((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]))
+            for i in range(ncomp):
+                retpow[i,i] = self.f2power(lteb1[i],lteb2[i],pixel_units)
+                if not(skip_cross):
+                    for i in range(ncomp):
+                        for j in range(i+1,ncomp):
+                            retpow[i,j] = self.f2power(lteb1[i],lteb2[j],pixel_units)
+                            retpow[j,i] = retpow[i,j]
+            return retpow,lteb1,lteb2
+        else:
+            if lteb1.ndim>2:
+                lteb1 = lteb1[0]
+            if lteb2.ndim>2:
+                lteb2 = lteb2[0]
+            p2d = self.f2power(lteb1,lteb2,pixel_units)
+            return p2d,lteb1,lteb2
 
 
 
