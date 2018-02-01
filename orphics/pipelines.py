@@ -13,15 +13,22 @@ import healpy as hp
 @contextlib.contextmanager
 def ignore():
     yield None
+
+
     
 class RotTestPipeline(object):
+    """A pipeline for testing the effect of projection distortions and removing them with rotations"""
 
 
     def __init__(self,full_sky_pix,wdeg,hdeg,yoffset,mpi_comm=None,nsims=1,lmax=7000,pix_intermediate=None,bin_lmax=3000):
         self.dtype = np.float32
-        self.bin_edges = np.arange(80,bin_lmax,100)
+        self.bin_edges = np.arange(80,bin_lmax,100) # define power bin edges
+
+        # Create a full sky geometry
         self.fshape, self.fwcs = enmap.fullsky_geometry(res=full_sky_pix*np.pi/180./60., proj="car")
         self.fshape = self.fshape[-2:]
+
+        # Holders for geometries and window corrections for each of e,s,r
         self.shape = {}
         self.wcs = {}
         self.taper = {}
@@ -29,6 +36,7 @@ class RotTestPipeline(object):
         self.w3 = {}
         self.w4 = {}
 
+        # Intermediate pixelization for rotation
         self.pix_intermediate = full_sky_pix if (pix_intermediate is None) else pix_intermediate
         self.wdeg = wdeg
         self.hdeg = hdeg
@@ -36,6 +44,8 @@ class RotTestPipeline(object):
 	degree =  u.degree
         vwidth = hdeg/2.
         hwidth = wdeg/2.
+
+        # Box locations to slice from
 	self.pos_south=np.array([[-vwidth+yoffset,-hwidth],[vwidth+yoffset,hwidth]])*degree
 	self.pos_eq=np.array([[-vwidth,-hwidth],[vwidth,hwidth]])*degree
 
@@ -52,11 +62,13 @@ class RotTestPipeline(object):
         if self.rank==0: 
             self.logger = io.get_logger("rotrecon")
 
+        # Distribute MPI tasks
         num_each,each_tasks = mpi_distribute(nsims,self.numcores)
         self.mpibox = MPIStats(self.comm,num_each,tag_start=333)
         if self.rank==0: self.logger.info( "At most "+ str(max(num_each)) + " tasks...")
         self.tasks = each_tasks[self.rank]
 
+        # Initialize theory power spectra
         theory_file_root = "data/Aug6_highAcc_CDM"
         powspec_file = "data/Aug6_highAcc_CDM_lenspotentialCls.dat"
         
