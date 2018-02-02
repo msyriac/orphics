@@ -5,11 +5,14 @@ import itertools
 import scipy
 
 try:
+    from pandas import DataFrame
     import pandas as pd
 except:
     import warnings
     warnings.warn("Could not find pandas. Install using pip; FisherMatrix will not work otherwise")
-
+    class DataFrame:
+        pass
+    
 def check_fisher_sanity(fmat,param_list):
     Ny,Nx = fmat.shape
     assert Ny==Nx
@@ -17,7 +20,7 @@ def check_fisher_sanity(fmat,param_list):
     assert len(param_list)==len(set(param_list))
 
 
-class FisherMatrix(pd.DataFrame):
+class FisherMatrix(DataFrame):
     """
     A Fisher Matrix object that subclasses pandas.DataFrame.
     This is essentially just a structured array that
