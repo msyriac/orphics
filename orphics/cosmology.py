@@ -1088,8 +1088,8 @@ def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless=False,TCMB=2.7
 
 
 def atm_factor(ell,lknee,alpha):
-    if lknee>1.e-3:
-        atmFactor = (lknee/ell)**(-alpha)
+    if lknee>0.:
+        atmFactor = (lknee*np.nan_to_num(1./ell))**(-alpha)
     else:
         atmFactor = 0.
     return atmFactor
@@ -1100,6 +1100,9 @@ def white_noise_with_atm_func(ell,uk_arcmin,lknee,alpha,dimensionless,TCMB=2.725
     dfact = (1./TCMB**2.) if dimensionless else 1.
     return (atmFactor+1.)*noiseWhite*dfact
 
+def noise_pad_infinity(Nlfunc,ellmin,ellmax):
+    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: Nlfunc(y), lambda y: np.inf])
+    
 def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
     '''Get TT-lknee, TT-alpha, PP-lknee, PP-alpha  
     Returns either as functions of beam FWHM (arcmin) or for specified beam FWHM (arcmin)

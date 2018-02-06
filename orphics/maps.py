@@ -1145,7 +1145,7 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
 
     for noiseLevel,lknee,alpha,noiseFunc in zip(noiseLevels,lknees,alphas,noiseFuncs):
         if noiseFunc is not None:
-            retList.append(nfunc(modLMap))
+            retList.append(noiseFunc(modLMap))
         else:
         
             noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  
@@ -1157,7 +1157,7 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
                 
             with np.errstate(divide='ignore'):
                 retList.append(noiseForFilter*(atmFactor+1.)*np.nan_to_num(1./filt2d.copy()))
-
+    #print retList
     return retList
 
 
