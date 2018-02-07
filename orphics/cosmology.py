@@ -244,32 +244,33 @@ class Cosmology(object):
 
         TcmbMuK = self.pars.TCMB*1.e6
 
-        ne0 = self.ne0z(z) if not(shaw) else self.ne0zAlt(z)
+        ne0 = self.ne0z(z,shaw=shaw)
         return TcmbMuK*self.thompson_SI*ne0*(1.+z)**2./self.meterToMegaparsec  *xe  #*np.exp(-self.tau)
 
 
-    def ne0z(self,z):
+    def ne0z(self,z,shaw=True):
         '''
         Average electron density today but with
         Helium II reionization at z<3
         '''
 
-        if z>3.: 
-            NHe=1.
+        if not(shaw):
+        
+            if z>3.: 
+                NHe=1.
+            else:
+                NHe=2.
+
+            ne0_SI = (1.-(4.-NHe)*self.pars.YHe/4.)*self.ombh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI
+
         else:
-            NHe=2.
-
-        ne0_SI = (1.-(4.-NHe)*self.pars.YHe/4.)*self.ombh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI
-
-        return ne0_SI
-
-    def ne0zAlt(self,z):
-        """ Shaw et. al. """
-        chi = 0.86
-        me = 1.14
-        gasfrac = 0.9
-        omgh2 = gasfrac* self.ombh2
-        ne0_SI = chi*omgh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI/me
+            chi = 0.86
+            me = 1.14
+            gasfrac = 0.9
+            omgh2 = gasfrac* self.ombh2
+            ne0_SI = chi*omgh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI/me
+            
+            
         return ne0_SI
 
     
