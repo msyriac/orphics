@@ -262,6 +262,17 @@ class Cosmology(object):
         ne0_SI = (1.-(4.-NHe)*self.pars.YHe/4.)*self.ombh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI
 
         return ne0_SI
+
+    def ne0zAlt(self,z):
+        """ Shaw et. al. """
+        chi = 0.86
+        me = 1.14
+        gasfrac = 0.9
+        omgh2 = gasfrac* self.ombh2
+        ne0_SI = chi*omgh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI/me
+        return ne0_SI
+
+    
         
     def transfer(self, k, type='eisenhu_osc'):
         w_m = self.omch2 + self.ombh2 #self.Omega_m * self.h**2
@@ -401,8 +412,8 @@ class LimberCosmology(Cosmology):
 
     pkgrid_override can be a RectBivariateSpline object such that camb.PK.P(z,k,grid=True) returns the same as pkgrid_override(k,z)
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False):
-        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=False,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc)
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=1000,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False):
+        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=skipPower,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc)
 
         
 
@@ -413,7 +424,6 @@ class LimberCosmology(Cosmology):
         self.chis = self.chis[1:-1]
         self.zs = self.zs[1:-1]
         self.Hzs = np.array([self.results.hubble_parameter(z) for z in self.zs])
-        self._cSpeedKmPerSec = 299792.458
         self.kernels = {}
         self._initWkappaCMB()
 
@@ -422,7 +432,10 @@ class LimberCosmology(Cosmology):
         self.precalcFactor = self.Hzs**2. /self.chis/self.chis/self._cSpeedKmPerSec**2.
 
 
-        
+    def volume(self,zmin,zmax,fsky=1.):
+        """ Return the comoving volume of the universe
+        contained within redshifts zmin and zmax, in Mpc^3"""
+        return fsky * 4.*np.pi * np.trapz(self.chis[np.logical_and(self.zs>zmin,self.zs<zmax)]**2.*self._cSpeedKmPerSec/self.Hzs[np.logical_and(self.zs>zmin,self.zs<zmax)],self.zs[np.logical_and(self.zs>zmin,self.zs<zmax)])
 
 
     def generateCls(self,ellrange,autoOnly=False,zmin=0.):
