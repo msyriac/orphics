@@ -237,14 +237,14 @@ class Cosmology(object):
 
         
 
-    def Fstar(self,z,xe=1):
+    def Fstar(self,z,xe=1,shaw=True):
         '''
         Get the norm of the kSZ temperature at redshift z
         '''
 
         TcmbMuK = self.pars.TCMB*1.e6
 
-        ne0 = self.ne0z(z)
+        ne0 = self.ne0z(z) if not(shaw) else self.ne0zAlt(z)
         return TcmbMuK*self.thompson_SI*ne0*(1.+z)**2./self.meterToMegaparsec  *xe  #*np.exp(-self.tau)
 
 
