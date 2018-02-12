@@ -208,6 +208,7 @@ class MapRotatorEquator(MapRotator):
                                                       height_arcmin=height_multiplier*patch_height*60.,
                                                       px_res_arcmin=recommended_pix,yoffset_degree=0.,proj=proj)
 
+
         self.target_pix = recommended_pix
         self.wcs_target = wcs_target
         if verbose:
@@ -1344,7 +1345,7 @@ class Stacker(object):
 
 
     
-def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False):
+def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False):
     Ny,Nx = imap.shape
 
     # see enmap.sky2pix for "corner" options
@@ -1356,15 +1357,19 @@ def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False
 
     if (iy is None) or (ix is None):
         iy,ix = imap.sky2pix(coords=(dec,ra),corner=corner)
+
     
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
     if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
     cutout = imap[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
     #cutout = imap[fround(iy-Npix/2):fround(iy+Npix/2),fround(ix-Npix/2):fround(ix+Npix/2)]
-
-    shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
-    return enmap.ndmap(cutout,wcs)
+    #print(fround(iy-Npix/2.+0.5),fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5),fround(ix+Npix/2.+0.5))
+    if preserve_wcs:
+        return cutout
+    else:
+        shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
+        return enmap.ndmap(cutout,wcs)
 
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
@@ -1523,3 +1528,17 @@ class MatchedFilter(object):
         phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact*kmask/n2d).real 
         return phi_un*phi_var, phi_var
 
+
+
+def mask_center(imap):
+    Ny,Nx = imap.shape
+    assert Ny==Nx
+    N = Ny
+    if N%2==1:
+        imap[N/2,N/2] = np.nan
+    else:
+        imap[N/2,N/2] = np.nan
+        imap[N/2-1,N/2] = np.nan
+        imap[N/2,N/2-1] = np.nan
+        imap[N/2-1,N/2-1] = np.nan
+    
