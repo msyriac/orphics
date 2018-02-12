@@ -96,3 +96,7 @@ ENV/
 
 input/*local.ini
 *.hostfile
+
+data/*.dat
+data/*.csv
+input/*.dat

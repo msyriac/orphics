@@ -45,7 +45,7 @@ defaultCosmology = {'omch2': 0.12470
                     ,'H0': 67.0
                     ,'ns': 0.96
                     ,'As': 2.2e-9
-                    ,'mnu': 0.0
+                    ,'mnu': 0.06
                     ,'w0': -1.0
                     ,'tau':0.06
 }
@@ -132,7 +132,7 @@ class Cosmology(object):
             if not(low_acc):
                 self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
                 self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
-            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless,verbose=verbose)
+            theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless,verbose=verbose,prefix="_low_acc_"+str(low_acc))
             self.clttfunc = lambda ell: theory.lCl('TT',ell)
             self.theory = theory
 
@@ -145,10 +145,13 @@ class Cosmology(object):
         if not(skipPower): self._initPower(pkgrid_override)
 
         self.deltac = 1.42
-        self.Omega_m = (self.ombh2+self.omch2)/self.h**2.
+        self.Omega_m = (self.ombh2+self.omch2)/self.h**2.  # DOESN'T INCLUDE NEUTRINOS
+        self.Omega_m_all = (self.ombh2+self.omch2+self.omnuh2)/self.h**2.
+        self.Omega_de = 1.-self.Omega_m_all
+        self.fnu = (self.omnuh2)/(self.ombh2+self.omch2+self.omnuh2)
+        self.kfs_approx_func = lambda a : 0.04 * (a**2.) * np.sqrt(self.Omega_m_all*(a**(-3.))+self.Omega_de) * (self.mnu/0.05) * self.h  # Eq 3.20 S4 science book, in Mpc no h factor
         self.Omega_k = 0.
         self.wa = 0.
-        self.Omega_de = 1.-self.Omega_m
 
         # some useful numbers
         self._cSpeedKmPerSec = 299792.458
@@ -198,6 +201,15 @@ class Cosmology(object):
 
         if not(skip_growth): self._init_growth_rate()
 
+    def growth_scale_dependent(self,ks,z,comp):
+        growthfn = self.results.get_redshift_evolution(ks, z, [comp])  #Extract the linear growth function from CAMB.
+        growthfn0 = self.results.get_redshift_evolution(ks, 0, [comp])  
+ 
+        gcomp = growthfn/growthfn0
+        return gcomp
+
+
+        
     def _initPower(self,pkgrid_override=None):
         print("initializing power...")
         if pkgrid_override is None:
@@ -225,6 +237,43 @@ class Cosmology(object):
 
         
 
+    def Fstar(self,z,xe=1,shaw=True):
+        '''
+        Get the norm of the kSZ temperature at redshift z
+        '''
+
+        TcmbMuK = self.pars.TCMB*1.e6
+
+        ne0 = self.ne0z(z,shaw=shaw)
+        return TcmbMuK*self.thompson_SI*ne0*(1.+z)**2./self.meterToMegaparsec  *xe  #*np.exp(-self.tau)
+
+
+    def ne0z(self,z,shaw=True):
+        '''
+        Average electron density today but with
+        Helium II reionization at z<3
+        '''
+
+        if not(shaw):
+        
+            if z>3.: 
+                NHe=1.
+            else:
+                NHe=2.
+
+            ne0_SI = (1.-(4.-NHe)*self.pars.YHe/4.)*self.ombh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI
+
+        else:
+            chi = 0.86
+            me = 1.14
+            gasfrac = 0.9
+            omgh2 = gasfrac* self.ombh2
+            ne0_SI = chi*omgh2 * 3.*(self.H100_SI**2.)/self.mProton_SI/8./np.pi/self.G_SI/me
+            
+            
+        return ne0_SI
+
+    
         
     def transfer(self, k, type='eisenhu_osc'):
         w_m = self.omch2 + self.ombh2 #self.Omega_m * self.h**2
@@ -364,8 +413,8 @@ class LimberCosmology(Cosmology):
 
     pkgrid_override can be a RectBivariateSpline object such that camb.PK.P(z,k,grid=True) returns the same as pkgrid_override(k,z)
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=100,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.):
-        Cosmology.__init__(self,paramDict,constDict,lmax,clTTFixFile,skipCls,pickling,fill_zero,skipPower,pkgrid_override,kmax=kmax,nonlinear=nonlinear,zmax=zmax)
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=1000,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False):
+        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=skipPower,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc)
 
         
 
@@ -376,7 +425,6 @@ class LimberCosmology(Cosmology):
         self.chis = self.chis[1:-1]
         self.zs = self.zs[1:-1]
         self.Hzs = np.array([self.results.hubble_parameter(z) for z in self.zs])
-        self._cSpeedKmPerSec = 299792.458
         self.kernels = {}
         self._initWkappaCMB()
 
@@ -385,7 +433,10 @@ class LimberCosmology(Cosmology):
         self.precalcFactor = self.Hzs**2. /self.chis/self.chis/self._cSpeedKmPerSec**2.
 
 
-        
+    def volume(self,zmin,zmax,fsky=1.):
+        """ Return the comoving volume of the universe
+        contained within redshifts zmin and zmax, in Mpc^3"""
+        return fsky * 4.*np.pi * np.trapz(self.chis[np.logical_and(self.zs>zmin,self.zs<zmax)]**2.*self._cSpeedKmPerSec/self.Hzs[np.logical_and(self.zs>zmin,self.zs<zmax)],self.zs[np.logical_and(self.zs>zmin,self.zs<zmax)])
 
 
     def generateCls(self,ellrange,autoOnly=False,zmin=0.):
@@ -586,7 +637,7 @@ def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,
     return ps*tmul
 
         
-def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True,verbose=True):
+def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,pickling=False,fill_zero=False,get_dimensionless=True,verbose=True,prefix=""):
     '''
 
     The spectra are stored in dimensionless form, so TCMB has to be specified. They should 
@@ -612,7 +663,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
     try:
         assert pickling
-        clfile = "output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl"
+        clfile = "output/clsAll"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl"
         cmbmat = pickle.load(open(clfile,'rb'))
         if verbose: print("Loaded cached Cls from ", clfile)
     except:
@@ -622,7 +673,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
             directory = "output/"
             if not os.path.exists(directory):
                 os.makedirs(directory)
-            pickle.dump(cmbmat,open("output/clsAll_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
+            pickle.dump(cmbmat,open("output/clsAll"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
 
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
@@ -642,7 +693,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
     try:
         assert pickling
-        clfile = "output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt"
+        clfile = "output/clphi"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt"
         clphi = np.loadtxt(clfile)
         if verbose: print("Loaded cached Cls from ", clfile)
     except:
@@ -653,7 +704,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
             directory = "output/"
             if not os.path.exists(directory):
                 os.makedirs(directory)
-            np.savetxt("output/clphi_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt",clphi)
+            np.savetxt("output/clphi"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".txt",clphi)
 
     clkk = clphi* (2.*np.pi/4.)
     ells = np.arange(2,len(clkk)+2,1)
@@ -1094,3 +1145,69 @@ def getAtmosphere(beamFWHMArcmin=None,returnFunctions=False):
     else:
         b = beamFWHMArcmin
         return ttlkneeFunc(b),ttalphaFunc(b),pplkneeFunc(b),ppalphaFunc(b)
+
+
+def get_lensed_cls(theory,ells,clkk,lmax):
+    import camb.correlations as corr
+    
+    ellrange = np.arange(0,lmax+2000,1)
+    mulfact = ellrange*(ellrange+1.)/2./np.pi
+    ucltt = theory.uCl('TT',ellrange)*mulfact
+    uclee = theory.uCl('EE',ellrange)*mulfact
+    uclbb = theory.uCl('BB',ellrange)*mulfact
+    uclte = theory.uCl('TE',ellrange)*mulfact
+    from scipy.interpolate import interp1d
+    clkkfunc = interp1d(ells,clkk)
+    clpp = clkkfunc(ellrange)*4./2./np.pi
+
+    cmbarr = np.vstack((ucltt,uclee,uclbb,uclte)).T
+    #print "Calculating lensed cls..."
+    lcls = corr.lensed_cls(cmbarr,clpp)
+
+    lmax = lmax+2000
+    
+    cellrange = ellrange[:lmax].reshape((ellrange[:lmax].size,1)) #cellrange.ravel()[:lmax]
+    lclall = lcls[:lmax,:]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        lclall = np.nan_to_num(lclall/cellrange/(cellrange+1.)*2.*np.pi)
+    cellrange = cellrange.ravel()
+    #clcltt = lcls[:lmax,0]
+    #clcltt = np.nan_to_num(clcltt/cellrange/(cellrange+1.)*2.*np.pi)
+    #print clcltt
+    lpad = lmax
+    
+    dtheory = TheorySpectra()
+    with np.errstate(divide='ignore', invalid='ignore'):
+        mult = np.nan_to_num(1./mulfact)
+    ucltt *= mult
+    uclee *= mult
+    uclte *= mult
+    uclbb *= mult
+    #print cellrange.shape
+    #print ucltt.shape
+    dtheory.loadCls(cellrange,ucltt[:lmax],'TT',lensed=False,interporder="linear",lpad=lpad)
+    dtheory.loadCls(cellrange,uclte[:lmax],'TE',lensed=False,interporder="linear",lpad=lpad)
+    dtheory.loadCls(cellrange,uclee[:lmax],'EE',lensed=False,interporder="linear",lpad=lpad)
+    dtheory.loadCls(cellrange,uclbb[:lmax],'BB',lensed=False,interporder="linear",lpad=lpad)
+    dtheory.loadGenericCls(ells,clkk,"kk",lpad=lpad)
+
+    lcltt = lclall[:,0]
+    lclee = lclall[:,1]
+    lclbb = lclall[:,2]
+    lclte = lclall[:,3]
+    #lcltt *= mult
+    #lclee *= mult
+    #lclte *= mult
+    #lclbb *= mult
+    dtheory.loadCls(cellrange,lcltt,'TT',lensed=True,interporder="linear",lpad=lpad)
+    dtheory.loadCls(cellrange,lclte,'TE',lensed=True,interporder="linear",lpad=lpad)
+    dtheory.loadCls(cellrange,lclee,'EE',lensed=True,interporder="linear",lpad=lpad)
+    dtheory.loadCls(cellrange,lclbb,'BB',lensed=True,interporder="linear",lpad=lpad)
+
+
+    return dtheory
+    
+
+
+def noise_pad_infinity(Nlfunc,ellmin,ellmax):
+    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: Nlfunc(y), lambda y: np.inf])
