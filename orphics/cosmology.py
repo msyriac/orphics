@@ -1098,12 +1098,11 @@ def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless=False,TCMB=2.7
     nfact = white_noise_with_atm_func(ell,rms_noise,lknee,alpha,dimensionless,TCMB)
 
     ans = nfact * np.exp((tht_fwhm**2.)*(ell**2.) / (8.*np.log(2.)))
-    #print(nfact)
     return ans
 
 
 def atm_factor(ell,lknee,alpha):
-    if lknee>0.:
+    if lknee>1.e-3:
         atmFactor = (lknee*np.nan_to_num(1./ell))**(-alpha)
     else:
         atmFactor = 0.
