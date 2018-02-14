@@ -1209,8 +1209,3 @@ def get_lensed_cls(theory,ells,clkk,lmax):
 
 
     return dtheory
-    
-
-
-def noise_pad_infinity(Nlfunc,ellmin,ellmax):
-    return lambda x: np.piecewise(np.asarray(x).astype(float), [np.asarray(x)<ellmin,np.logical_and(np.asarray(x)>=ellmin,np.asarray(x)<=ellmax),np.asarray(x)>ellmax], [lambda y: np.inf, lambda y: Nlfunc(y), lambda y: np.inf])
