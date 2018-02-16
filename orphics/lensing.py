@@ -844,7 +844,7 @@ class NlGenerator(object):
         self.binner = bin2D(self.N.modLMap, bin_edges)
         self.bin_edges = bin_edges
 
-    def updateNoiseAdvanced(self,beamTX,noiseTX,beamPX,noisePX,tellminX,tellmaxX,pellminX,pellmaxX,beamTY,noiseTY,beamPY,noisePY,tellminY,tellmaxY,pellminY,pellmaxY,lkneesX,alphasX,lkneesY,alphasY,lxcutTX,lxcutTY,lycutTX,lycutTY,lxcutPX,lxcutPY,lycutPX,lycutPY,fgFuncX,fgFuncY,beamFileTX,beamFilePX,beamFileTY,beamFilePY,noiseFuncTX,noiseFuncTY,noiseFuncPX,noiseFuncPY):
+    def updateNoiseAdvanced(self,beamTX,noiseTX,beamPX,noisePX,tellminX,tellmaxX,pellminX,pellmaxX,beamTY,noiseTY,beamPY,noisePY,tellminY,tellmaxY,pellminY,pellmaxY,lkneesX=[0,0],alphasX=[1,1],lkneesY=[0,0],alphasY=[1,1],lxcutTX=None,lxcutTY=None,lycutTX=None,lycutTY=None,lxcutPX=None,lxcutPY=None,lycutPX=None,lycutPY=None,fgFuncX=None,fgFuncY=None,beamFileTX=None,beamFilePX=None,beamFileTY=None,beamFilePY=None,noiseFuncTX=None,noiseFuncTY=None,noiseFuncPX=None,noiseFuncPY=None):
 
         self.N.lmax_T = max(tellmaxX,tellmaxY)
         self.N.lmax_P = max(pellmaxX,pellmaxY)

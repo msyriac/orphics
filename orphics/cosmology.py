@@ -1103,7 +1103,7 @@ def noise_func(ell,fwhm,rms_noise,lknee=0.,alpha=0.,dimensionless=False,TCMB=2.7
 
 def atm_factor(ell,lknee,alpha):
     if lknee>1.e-3:
-        atmFactor = (lknee/ell)**(-alpha)
+        atmFactor = (float(lknee)/ell)**(-alpha)
     else:
         atmFactor = 0.
     return atmFactor
