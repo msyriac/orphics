@@ -35,3 +35,10 @@ from orphics.cosmology import LimberCosmology
 ### Known Issues
 
 - If your interactive sessions are rudely killed by an MPI error, disable MPI by exporting the environment variable `DISABLE_MPI=true` as needed.
+
+### Contributors
+
+1. Mathew Madhavacheril @msyriac
+2. Nam Ho Nguyen @NamHoNguyen
+3. Nicholas Battaglia @nbatta
+4. Teva Ilan 
