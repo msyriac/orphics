@@ -40,4 +40,8 @@ git push origin nice_name_for_my_feature_branch
 ```
 5. Go to your fork on github.com, go to this new branch, and submit a pull request with a description of your changes
 
+Some things to note:
+a. For step (3), what if you've already made these changes in a branch (say, master) and you just want to copy them over? This is a little tricky and I'd appreciate suggestions from people on how to handle this case. What I do is to use emacs to switch between git branches in two separate buffers and then copy-paste the relevant changes. See https://msyriac.github.io/docs/productivity/emacs.html 
+b. You may get feedback from me or others on your contribution in a code review. You should make the necessary changes to `nice_name_for_my_feature_branch` and push them. That will automatically update the Pull Request.
+
 
