@@ -365,7 +365,7 @@ class QuadNorm(object):
         return np.nan_to_num(unreplaced**2./replaced)
     
     def getNlkk2d(self,XY,halo=True,l1Scale=1.,l2Scale=1.,setNl=True):
-        if not(halo): raise NotImplementedError
+        #if not(halo): raise NotImplementedError
         lx,ly = self.lxMap,self.lyMap
         lmap = self.modLMap
 
@@ -405,22 +405,24 @@ class QuadNorm(object):
                     allTerms += [calc]
                     
 
-            # else:
+            else:
 
-            #     clunlenTTArr = self.uClFid2d['TT'].copy()
+                clunlenTTArr = self.uClFid2d['TT'].copy()
 
-            #     preG = self.WY('TT') #np.nan_to_num(1./cltotTTArrY)
+                preG = self.WY('TT') #np.nan_to_num(1./cltotTTArrY)
+                cltotTTArrX = np.nan_to_num(clunlenTTArr/self.WXY('TT'))
+                cltotTTArrY = np.nan_to_num(1./self.WY('TT'))
 
-            #     rfact = 2.**0.25
-            #     for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-            #         preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr*np.nan_to_num(1./cltotTTArrX)/2.            
-            #         preFX = ell1*clunlenTTArrNow*np.nan_to_num(1./cltotTTArrX)
-            #         preGX = ell2*clunlenTTArr*np.nan_to_num(1./cltotTTArrY)
+                rfact = 2.**0.25
+                for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr*np.nan_to_num(1./cltotTTArrX)/2.            
+                    preFX = ell1*clunlenTTArrNow*np.nan_to_num(1./cltotTTArrX)
+                    preGX = ell2*clunlenTTArr*np.nan_to_num(1./cltotTTArrY)
 
 
                     
-            #         calc = 2.*ell1*ell2*fft(ifft(preF,axes=[-2,-1])*ifft(preG,axes=[-2,-1])+ifft(preFX,axes=[-2,-1])*ifft(preGX,axes=[-2,-1])/2.,axes=[-2,-1])
-            #         allTerms += [calc]
+                    calc = 2.*ell1*ell2*fft(ifft(preF,axes=[-2,-1])*ifft(preG,axes=[-2,-1])+ifft(preFX,axes=[-2,-1])*ifft(preGX,axes=[-2,-1])/2.,axes=[-2,-1])
+                    allTerms += [calc]
           
 
         elif XY == 'EE':
@@ -822,17 +824,22 @@ class NlGenerator(object):
 
         cmbList = ['TT','TE','EE','BB']
         
+        self.theory = theorySpectra
         
         for cmb in cmbList:
             uClFilt = theorySpectra.uCl(cmb,self.N.modLMap)
             uClNorm = uClFilt
             lClFilt = theorySpectra.lCl(cmb,self.N.modLMap)
-            self.N.addUnlensedFilter2DPower(cmb,uClFilt)
-            if lensedEqualsUnlensed:
-                self.N.addLensedFilter2DPower(cmb,uClFilt)
+            if unlensedEqualsLensed:
+                self.N.addUnlensedNorm2DPower(cmb,lClFilt.copy())
+                self.N.addUnlensedFilter2DPower(cmb,lClFilt.copy())
             else:
-                self.N.addLensedFilter2DPower(cmb,lClFilt)
-            self.N.addUnlensedNorm2DPower(cmb,uClNorm)
+                self.N.addUnlensedNorm2DPower(cmb,uClNorm.copy())
+                self.N.addUnlensedFilter2DPower(cmb,uClFilt.copy())
+            if lensedEqualsUnlensed:
+                self.N.addLensedFilter2DPower(cmb,uClFilt.copy())
+            else:
+                self.N.addLensedFilter2DPower(cmb,lClFilt.copy())
 
         Clkk2d = theorySpectra.gCl("kk",self.N.modLMap)    
         self.N.addClkk2DPower(Clkk2d)
@@ -931,6 +938,29 @@ class NlGenerator(object):
                                      noiseFuncs=[noiseFuncTY,noiseFuncPY])
 
 
+        ### DEBUG
+        # beam = 1.5
+        # noise = 5.
+        # from orphics import cosmology,io
+        # import sys
+        # nTX = cosmology.white_noise_with_atm_func(self.N.modLMap,noise,0,1,dimensionless=False,TCMB=2.7255e6)/maps.gauss_beam(self.N.modLMap,beam)**2.
+        # nTY = nTX.copy()
+        # nPX = nTX.copy()
+        # nPY = nTX.copy()
+
+        # # ells = np.arange(2,6000)
+        # # nTX = cosmology.white_noise_with_atm_func(ells,noise,0,1,dimensionless=False,TCMB=2.7255e6)/maps.gauss_beam(ells,beam)**2.
+        
+        # # pl = io.Plotter(yscale='log')
+        # # pl.add(ells,ells**2.*self.theory.lCl('TT',ells))
+        # # pl.add(ells,nTX*ells**2.)
+        # # pl.done()
+        # # sys.exit()
+
+        # print(tellminX,tellmaxX,tellminY,tellmaxY)
+
+        ####
+        
         
         fMaskTX = maps.mask_kspace(self.shape,self.wcs,lmin=tellminX,lmax=tellmaxX,lxcut=lxcutTX,lycut=lycutTX)
         fMaskTY = maps.mask_kspace(self.shape,self.wcs,lmin=tellminY,lmax=tellmaxY,lxcut=lxcutTY,lycut=lycutTY)
