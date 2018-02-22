@@ -9,6 +9,29 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
+
+def split_sky(dec_width,num_decs,ra_width,dec_start=0.,ra_start=0.,ra_extent=90.):
+
+    ny = num_decs
+    wy = dec_width
+    xw = ra_width
+    boxes = []
+    for yindex in range(ny):
+        y0 = dec_start+yindex*wy
+        y1 = dec_start+(yindex+1)*wy
+        ymean = (y0+y1)/2.
+        cosfact = np.cos(ymean*np.pi/180.)
+        xfw = ra_extent*cosfact
+        nx = int(xfw/xw)
+
+        for xindex in range(nx):
+            x0 = ra_start+xindex*xw/cosfact
+            x1 = ra_start+(xindex+1)*xw/cosfact
+            box = np.array([[y0,x0],[y1,x1]])
+            boxes.append(box.copy())
+    return boxes
+
+
 def slice_from_box(shape, wcs, box, inclusive=False):
     """slice_from_box(shape, wcs, box, inclusive=False)
     Extract the part of the map inside the given box as a selection
