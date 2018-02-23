@@ -74,6 +74,9 @@ class CatMapper(object):
         if not self.curved:
             self.counts = enmap.enmap(self.counts,self.wcs)
 
+        self.mask = np.ones(shape)
+        self._counts()
+
     def get_map(self,weights=None):
         if self.verbose: print("Calculating histogram...")
         if self.curved:

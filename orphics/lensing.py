@@ -4,12 +4,14 @@ np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
 from enlib import enmap
 
+from scipy.integrate import simps
+from scipy.interpolate import splrep,splev
+
 from scipy.fftpack import fftshift,ifftshift,fftfreq
 from scipy.interpolate import interp1d
 from enlib.fft import fft,ifft
 
 from orphics.stats import bin2D
-from enlib import lensing as enlensing
 
 import time
 import cPickle as pickle
@@ -26,6 +28,7 @@ def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     kbeam -- (Ny,Nx) array of 2d beam wavenumbers
 
     """
+    from enlib import lensing as enlensing
 
     shape = alpha_pix.shape[-2:]
     Scov = ucov.copy()
@@ -362,7 +365,7 @@ class QuadNorm(object):
         return np.nan_to_num(unreplaced**2./replaced)
     
     def getNlkk2d(self,XY,halo=True,l1Scale=1.,l2Scale=1.,setNl=True):
-        if not(halo): raise NotImplementedError
+        #if not(halo): raise NotImplementedError
         lx,ly = self.lxMap,self.lyMap
         lmap = self.modLMap
 
@@ -402,22 +405,24 @@ class QuadNorm(object):
                     allTerms += [calc]
                     
 
-            # else:
+            else:
 
-            #     clunlenTTArr = self.uClFid2d['TT'].copy()
+                clunlenTTArr = self.uClFid2d['TT'].copy()
 
-            #     preG = self.WY('TT') #np.nan_to_num(1./cltotTTArrY)
+                preG = self.WY('TT') #np.nan_to_num(1./cltotTTArrY)
+                cltotTTArrX = np.nan_to_num(clunlenTTArr/self.WXY('TT'))
+                cltotTTArrY = np.nan_to_num(1./self.WY('TT'))
 
-            #     rfact = 2.**0.25
-            #     for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
-            #         preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr*np.nan_to_num(1./cltotTTArrX)/2.            
-            #         preFX = ell1*clunlenTTArrNow*np.nan_to_num(1./cltotTTArrX)
-            #         preGX = ell2*clunlenTTArr*np.nan_to_num(1./cltotTTArrY)
+                rfact = 2.**0.25
+                for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                    preF = ell1*ell2*clunlenTTArrNow*clunlenTTArr*np.nan_to_num(1./cltotTTArrX)/2.            
+                    preFX = ell1*clunlenTTArrNow*np.nan_to_num(1./cltotTTArrX)
+                    preGX = ell2*clunlenTTArr*np.nan_to_num(1./cltotTTArrY)
 
 
                     
-            #         calc = 2.*ell1*ell2*fft(ifft(preF,axes=[-2,-1])*ifft(preG,axes=[-2,-1])+ifft(preFX,axes=[-2,-1])*ifft(preGX,axes=[-2,-1])/2.,axes=[-2,-1])
-            #         allTerms += [calc]
+                    calc = 2.*ell1*ell2*fft(ifft(preF,axes=[-2,-1])*ifft(preG,axes=[-2,-1])+ifft(preFX,axes=[-2,-1])*ifft(preGX,axes=[-2,-1])/2.,axes=[-2,-1])
+                    allTerms += [calc]
           
 
         elif XY == 'EE':
@@ -811,7 +816,7 @@ class QuadNorm(object):
 
 
 class NlGenerator(object):
-    def __init__(self,shape,wcs,theorySpectra,bin_edges=None,gradCut=None,TCMB=2.725e6,bigell=9000,lensedEqualsUnlensed=False,unlensedEqualsLensed=False):
+    def __init__(self,shape,wcs,theorySpectra,bin_edges=None,gradCut=None,TCMB=2.7255e6,bigell=9000,lensedEqualsUnlensed=False,unlensedEqualsLensed=True):
         self.shape = shape
         self.wcs = wcs
         self.N = QuadNorm(shape,wcs,gradCut=gradCut,bigell=bigell)
@@ -819,17 +824,22 @@ class NlGenerator(object):
 
         cmbList = ['TT','TE','EE','BB']
         
+        self.theory = theorySpectra
         
         for cmb in cmbList:
             uClFilt = theorySpectra.uCl(cmb,self.N.modLMap)
             uClNorm = uClFilt
             lClFilt = theorySpectra.lCl(cmb,self.N.modLMap)
-            self.N.addUnlensedFilter2DPower(cmb,uClFilt)
-            if lensedEqualsUnlensed:
-                self.N.addLensedFilter2DPower(cmb,uClFilt)
+            if unlensedEqualsLensed:
+                self.N.addUnlensedNorm2DPower(cmb,lClFilt.copy())
+                self.N.addUnlensedFilter2DPower(cmb,lClFilt.copy())
             else:
-                self.N.addLensedFilter2DPower(cmb,lClFilt)
-            self.N.addUnlensedNorm2DPower(cmb,uClNorm)
+                self.N.addUnlensedNorm2DPower(cmb,uClNorm.copy())
+                self.N.addUnlensedFilter2DPower(cmb,uClFilt.copy())
+            if lensedEqualsUnlensed:
+                self.N.addLensedFilter2DPower(cmb,uClFilt.copy())
+            else:
+                self.N.addLensedFilter2DPower(cmb,lClFilt.copy())
 
         Clkk2d = theorySpectra.gCl("kk",self.N.modLMap)    
         self.N.addClkk2DPower(Clkk2d)
@@ -844,7 +854,7 @@ class NlGenerator(object):
         self.binner = bin2D(self.N.modLMap, bin_edges)
         self.bin_edges = bin_edges
 
-    def updateNoiseAdvanced(self,beamTX,noiseTX,beamPX,noisePX,tellminX,tellmaxX,pellminX,pellmaxX,beamTY,noiseTY,beamPY,noisePY,tellminY,tellmaxY,pellminY,pellmaxY,lkneesX,alphasX,lkneesY,alphasY,lxcutTX,lxcutTY,lycutTX,lycutTY,lxcutPX,lxcutPY,lycutPX,lycutPY,fgFuncX,fgFuncY,beamFileTX,beamFilePX,beamFileTY,beamFilePY,noiseFuncTX,noiseFuncTY,noiseFuncPX,noiseFuncPY):
+    def updateNoiseAdvanced(self,beamTX,noiseTX,beamPX,noisePX,tellminX,tellmaxX,pellminX,pellmaxX,beamTY,noiseTY,beamPY,noisePY,tellminY,tellmaxY,pellminY,pellmaxY,lkneesX=[0,0],alphasX=[1,1],lkneesY=[0,0],alphasY=[1,1],lxcutTX=None,lxcutTY=None,lycutTX=None,lycutTY=None,lxcutPX=None,lxcutPY=None,lycutPX=None,lycutPY=None,fgFuncX=None,fgFuncY=None,beamFileTX=None,beamFilePX=None,beamFileTY=None,beamFilePY=None,noiseFuncTX=None,noiseFuncTY=None,noiseFuncPX=None,noiseFuncPY=None):
 
         self.N.lmax_T = max(tellmaxX,tellmaxY)
         self.N.lmax_P = max(pellmaxX,pellmaxY)
@@ -928,6 +938,29 @@ class NlGenerator(object):
                                      noiseFuncs=[noiseFuncTY,noiseFuncPY])
 
 
+        ### DEBUG
+        # beam = 1.5
+        # noise = 5.
+        # from orphics import cosmology,io
+        # import sys
+        # nTX = cosmology.white_noise_with_atm_func(self.N.modLMap,noise,0,1,dimensionless=False,TCMB=2.7255e6)/maps.gauss_beam(self.N.modLMap,beam)**2.
+        # nTY = nTX.copy()
+        # nPX = nTX.copy()
+        # nPY = nTX.copy()
+
+        # # ells = np.arange(2,6000)
+        # # nTX = cosmology.white_noise_with_atm_func(ells,noise,0,1,dimensionless=False,TCMB=2.7255e6)/maps.gauss_beam(ells,beam)**2.
+        
+        # # pl = io.Plotter(yscale='log')
+        # # pl.add(ells,ells**2.*self.theory.lCl('TT',ells))
+        # # pl.add(ells,nTX*ells**2.)
+        # # pl.done()
+        # # sys.exit()
+
+        # print(tellminX,tellmaxX,tellminY,tellmaxY)
+
+        ####
+        
         
         fMaskTX = maps.mask_kspace(self.shape,self.wcs,lmin=tellminX,lmax=tellmaxX,lxcut=lxcutTX,lycut=lycutTX)
         fMaskTY = maps.mask_kspace(self.shape,self.wcs,lmin=tellminY,lmax=tellmaxY,lxcut=lxcutTY,lycut=lycutTY)
@@ -1499,6 +1532,26 @@ class Estimator(object):
 
 
 
+def Nlmv(Nleach,pols,centers,nlkk,bin_edges):
+    # Nleach: dict of (ls,Nls) for each polComb
+    # pols: list of polCombs to include
+    # centers,nlkk: additonal Nl to add
+    
+    Nlmvinv = 0.
+    for polComb in pols:
+        ls,Nls = Nleach[polComb]
+        nlfunc = interp1d(ls,Nls,bounds_error=False,fill_value=np.inf)
+        Nleval = nlfunc(bin_edges)
+        Nlmvinv += np.nan_to_num(1./Nleval)
+        
+    if nlkk is not None:
+        nlfunc = interp1d(centers,nlkk,bounds_error=False,fill_value=np.inf)
+        Nleval = nlfunc(bin_edges)
+        Nlmvinv += np.nan_to_num(1./Nleval)
+        
+    return np.nan_to_num(1./Nlmvinv)
+
+
 ## HALOS
 
 # g(x) = g(theta/thetaS) HuDeDeoVale 2007
@@ -1573,21 +1626,179 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
     return kappa, r500
 
 
-def Nlmv(Nleach,pols,centers,nlkk,bin_edges):
-    # Nleach: dict of (ls,Nls) for each polComb
-    # pols: list of polCombs to include
-    # centers,nlkk: additonal Nl to add
+
+def NFWMatchedFilterSN(clusterCosmology,log10Moverh,c,z,ells,Nls,kellmax,overdensity=500.,critical=True,atClusterZ=True,arcStamp=100.,pxStamp=0.05,saveId=None,verbose=False,rayleighSigmaArcmin=None,returnKappa=False,winAtLens=None):
+    if rayleighSigmaArcmin is not None: assert rayleighSigmaArcmin>=pxStamp
+    M = 10.**log10Moverh
+
     
-    Nlmvinv = 0.
-    for polComb in pols:
-        ls,Nls = Nleach[polComb]
-        nlfunc = interp1d(ls,Nls,bounds_error=False,fill_value=np.inf)
-        Nleval = nlfunc(bin_edges)
-        Nlmvinv += np.nan_to_num(1./Nleval)
+    shape,wcs = maps.rect_geometry(width_deg=arcStamp/60.,px_res_arcmin=pxStamp)
+    kellmin = 2.*np.pi/arcStamp*np.pi/60./180.
+
+    modLMap = enmap.modlmap(shape,wcs)
+    xMap,yMap,modRMap,xx,yy  = maps.get_real_attributes(shape,wcs)
         
-    if nlkk is not None:
-        nlfunc = interp1d(centers,nlkk,bounds_error=False,fill_value=np.inf)
-        Nleval = nlfunc(bin_edges)
-        Nlmvinv += np.nan_to_num(1./Nleval)
+    cc = clusterCosmology
+
+    cmb = False
+    if winAtLens is None:
+        cmb = True
+        comS = cc.results.comoving_radial_distance(cc.cmbZ)*cc.h
+        comL = cc.results.comoving_radial_distance(z)*cc.h
+        winAtLens = (comS-comL)/comS
+
+    kappaReal, r500 = NFWkappa(cc,M,c,z,modRMap*180.*60./np.pi,winAtLens,overdensity=overdensity,critical=critical,atClusterZ=atClusterZ)
+    
+    dAz = cc.results.angular_diameter_distance(z) * cc.h
+    th500 = r500/dAz
+    #fiveth500 = 10.*np.pi/180./60. #5.*th500
+    fiveth500 = 5.*th500
+    # print "5theta500 " , fiveth500*180.*60./np.pi , " arcminutes"
+    # print "maximum theta " , modRMap.max()*180.*60./np.pi, " arcminutes"
+
+    kInt = kappaReal.copy()
+    kInt[modRMap>fiveth500] = 0.
+    # print "mean kappa inside theta500 " , kInt[modRMap<fiveth500].mean()
+    # print "area of th500 disc " , np.pi*fiveth500**2.*(180.*60./np.pi)**2.
+    # print "estimated integral " , kInt[modRMap<fiveth500].mean()*np.pi*fiveth500**2.
+    k500 = simps(simps(kInt, yy), xx)
+    
+    if verbose: print(("integral of kappa inside disc ",k500))
+    kappaReal[modRMap>fiveth500] = 0. #### !!!!!!!!! Might not be necessary!
+    # if cmb: print z,fiveth500*180.*60./np.pi
+    Ukappa = kappaReal/k500
+
+
+    
+    # pl = Plotter()
+    # pl.plot2d(Ukappa)
+    # pl.done("output/kappa.png")
+
+    ellmax = kellmax
+    ellmin = kellmin
+
+    
+    
+    Uft = fft(Ukappa,axes=[-2,-1])
+
+    if rayleighSigmaArcmin is not None:
+        Prayleigh = rayleigh(modRMap*180.*60./np.pi,rayleighSigmaArcmin)
+        outDir = "/gpfs01/astro/www/msyriac/plots/"
+        # io.quickPlot2d(Prayleigh,outDir+"rayleigh.png")
+        rayK = fft(ifftshift(Prayleigh),axes=[-2,-1])
+        rayK /= rayK[modLMap<1.e-3]
+        Uft = Uft.copy()*rayK
+    
+    Upower = np.real(Uft*Uft.conjugate())
+
+    
+
+    # pl = Plotter()
+    # pl.plot2d(fftshift(Upower))
+    # pl.done("output/upower.png")
+
+
+    
+    Nls[Nls<0.]=0.
+    s = splrep(ells,Nls,k=3)
+    Nl2d = splev(modLMap,s) 
+    
+    Nl2d[modLMap<ellmin]=np.inf
+    Nl2d[modLMap>ellmax] = np.inf
+
+    Ny,Nx = shape
+    pixScaleY,pixScaleX = enmap.pixshape(shape,wcs)
+    area = Nx*Ny*pixScaleX*pixScaleY
+    Upower = Upower *area / (Nx*Ny)**2
         
-    return np.nan_to_num(1./Nlmvinv)
+    filter = np.nan_to_num(Upower/Nl2d)
+    #filter = np.nan_to_num(1./Nl2d)
+    filter[modLMap>ellmax] = 0.
+    filter[modLMap<ellmin] = 0.
+    # pl = Plotter()
+    # pl.plot2d(fftshift(filter))
+    # pl.done("output/filter.png")
+    # if (cmb): print Upower.sum()
+    # if not(cmb) and z>2.5:
+    #     bin_edges = np.arange(500,ellmax,100)
+    #     binner = bin2D(modLMap, bin_edges)
+    #     centers, nl2dells = binner.bin(Nl2d)
+    #     centers, upowerells = binner.bin(np.nan_to_num(Upower))
+    #     centers, filterells = binner.bin(filter)
+    #     from orphics.tools.io import Plotter
+    #     pl = Plotter(scaleY='log')
+    #     pl.add(centers,upowerells,label="upower")
+    #     pl.add(centers,nl2dells,label="noise")
+    #     pl.add(centers,filterells,label="filter")
+    #     pl.add(ells,Nls,ls="--")
+    #     pl.legendOn(loc='upper right')
+    #     #pl._ax.set_ylim(0,1e-8)
+    #     pl.done("output/filterells.png")
+    #     sys.exit()
+    
+    varinv = filter.sum()
+    std = np.sqrt(1./varinv)
+    sn = k500/std
+    if verbose: print(sn)
+
+    if saveId is not None:
+        np.savetxt("data/"+saveId+"_m"+str(log10Moverh)+"_z"+str(z)+".txt",np.array([log10Moverh,z,1./sn]))
+
+    if returnKappa:
+        return sn,ifft(Uft,axes=[-2,-1],normalize=True).real*k500
+    return sn, k500, std
+
+
+
+    
+
+def rayleigh(theta,sigma):
+    sigmasq = sigma*sigma
+    #return np.exp(-0.5*theta*theta/sigmasq)
+    return theta/sigmasq*np.exp(-0.5*theta*theta/sigmasq)
+        
+
+
+def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,critical=True,atClusterZ=True):
+
+    comL  = (cc.results.comoving_radial_distance(zL) )*cc.h
+
+    
+
+    c = concentration
+    M = massOverh
+
+    zdensity = 0.
+    if atClusterZ: zdensity = zL
+
+    if critical:
+        r500 = cc.rdel_c(M,zdensity,overdensity).flatten()[0] # R500 in Mpc/h
+    else:
+        r500 = cc.rdel_m(M,zdensity,overdensity) # R500 in Mpc/h
+
+
+    conv=np.pi/(180.*60.)
+    theta = thetaArc*conv # theta in radians
+
+    rS = r500/c
+
+    thetaS = rS/ comL 
+
+
+    const12 = 9.571e-20 # 2G/c^2 in Mpc / solar mass 
+    fc = np.log(1.+c) - (c/(1.+c))    
+    #const3 = comL * comLS * (1.+zL) / comS #  Mpc
+    const3 = comL *  (1.+zL) *winAtLens #  Mpc
+    const4 = M / (rS*rS) #solar mass / MPc^2
+    const5 = 1./fc
+    
+
+    kappaU = gnfw(theta/thetaS)+theta*0. # added for compatibility with enmap
+
+    consts = const12 * const3 * const4 * const5
+    kappa = consts * kappaU
+
+
+    return kappa, r500
+
+

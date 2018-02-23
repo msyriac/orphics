@@ -9,6 +9,29 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
+
+def split_sky(dec_width,num_decs,ra_width,dec_start=0.,ra_start=0.,ra_extent=90.):
+
+    ny = num_decs
+    wy = dec_width
+    xw = ra_width
+    boxes = []
+    for yindex in range(ny):
+        y0 = dec_start+yindex*wy
+        y1 = dec_start+(yindex+1)*wy
+        ymean = (y0+y1)/2.
+        cosfact = np.cos(ymean*np.pi/180.)
+        xfw = ra_extent*cosfact
+        nx = int(xfw/xw)
+
+        for xindex in range(nx):
+            x0 = ra_start+xindex*xw/cosfact
+            x1 = ra_start+(xindex+1)*xw/cosfact
+            box = np.array([[y0,x0],[y1,x1]])
+            boxes.append(box.copy())
+    return boxes
+
+
 def slice_from_box(shape, wcs, box, inclusive=False):
     """slice_from_box(shape, wcs, box, inclusive=False)
     Extract the part of the map inside the given box as a selection
@@ -106,76 +129,80 @@ class MapGen(object):
         
 
 class FourierCalc(object):
+    """
+    Once you know the shape and wcs of an ndmap, you can pre-calculate some things
+    to speed up fourier transforms and power spectra.
+    """
+
+    def __init__(self,shape,wcs,iau=True):
+        """Initialize with a geometry shape and wcs."""
+        
+        self.shape = shape
+        self.wcs = wcs
+        self.normfact = enmap.area(self.shape,self.wcs )/ np.prod(self.shape[-2:])**2.         
+        if len(shape) > 2 and shape[-3] > 1:
+            self.rot = enmap.queb_rotmat(enmap.lmap(shape,wcs),iau=iau)
+
+    def iqu2teb(self,emap, nthread=0, normalize=True, rot=True):
+        """Performs the 2d FFT of the enmap pixels, returning a complex enmap.
+        Similar to harm2map, but uses a pre-calculated self.rot matrix.
         """
-        Once you know the shape and wcs of an ndmap, you can pre-calculate some things
-        to speed up fourier transforms and power spectra.
+        emap = enmap.samewcs(enmap.fft(emap,nthread=nthread,normalize=normalize), emap)
+        if emap.ndim > 2 and emap.shape[-3] > 1 and rot:
+            emap[...,-2:,:,:] = enmap.map_mul(self.rot, emap[...,-2:,:,:])
+        return emap
+
+
+    def f2power(self,kmap1,kmap2,pixel_units=False):
+        """Similar to power2d, but assumes both maps are already FFTed """
+        norm = 1. if pixel_units else self.normfact
+        return np.real(np.conjugate(kmap1)*kmap2)*norm
+
+    def f1power(self,map1,kmap2,pixel_units=False,nthread=0):
+        """Similar to power2d, but assumes map2 is already FFTed """
+        kmap1 = self.iqu2teb(map1,nthread,normalize=False)
+        norm = 1. if pixel_units else self.normfact
+        return np.real(np.conjugate(kmap1)*kmap2)*norm,kmap1
+
+    def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None):
+        """
+        Calculate the power spectrum of emap crossed with emap2 (=emap if None)
+        Returns in radians^2 by default unles pixel_units specified
         """
 
-        def __init__(self,shape,wcs,iau=True):
-                self.shape = shape
-                self.wcs = wcs
-                self.normfact = enmap.area(self.shape,self.wcs )/ np.prod(self.shape[-2:])**2.         
-                if len(shape) > 2 and shape[-3] > 1:
-                        self.rot = enmap.queb_rotmat(enmap.lmap(shape,wcs),iau=iau)
+        if kmap is not None:
+            lteb1 = kmap
+            ndim = kmap.ndim
+            if ndim>2 : ncomp = kmap.shape[-3]
+        else:
+            lteb1 = self.iqu2teb(emap,nthread,normalize=False,rot=rot)
+            ndim = emap.ndim
+            if ndim>2 : ncomp = emap.shape[-3]
 
-        def iqu2teb(self,emap, nthread=0, normalize=True, rot=True):
-                """Performs the 2d FFT of the enmap pixels, returning a complex enmap.
-                Similar to harm2map, but uses a pre-calculated self.rot matrix.
-                """
-                emap = enmap.samewcs(enmap.fft(emap,nthread=nthread,normalize=normalize), emap)
-                if emap.ndim > 2 and emap.shape[-3] > 1 and rot:
-                        emap[...,-2:,:,:] = enmap.map_mul(self.rot, emap[...,-2:,:,:])
-                return emap
-
-
-        def f2power(self,kmap1,kmap2,pixel_units=False):
-                norm = 1. if pixel_units else self.normfact
-                return np.real(np.conjugate(kmap1)*kmap2)*norm
-
-        def f1power(self,map1,kmap2,pixel_units=False,nthread=0):
-                kmap1 = self.iqu2teb(map1,nthread,normalize=False)
-                norm = 1. if pixel_units else self.normfact
-                return np.real(np.conjugate(kmap1)*kmap2)*norm,kmap1
-
-        def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None):
-                """
-                Calculate the power spectrum of emap crossed with emap2 (=emap if None)
-                Returns in radians^2 by default unles pixel_units specified
-                """
-
-                if kmap is not None:
-                        lteb1 = kmap
-                        ndim = kmap.ndim
-                        if ndim>2 : ncomp = kmap.shape[-3]
-                else:
-                        lteb1 = self.iqu2teb(emap,nthread,normalize=False,rot=rot)
-                        ndim = emap.ndim
-                        if ndim>2 : ncomp = emap.shape[-3]
-
-                if kmap2 is not None:
-                        lteb2 = kmap2
-                else:
-                        lteb2 = self.iqu2teb(emap2,nthread,normalize=False,rot=rot) if emap2 is not None else lteb1
+        if kmap2 is not None:
+            lteb2 = kmap2
+        else:
+            lteb2 = self.iqu2teb(emap2,nthread,normalize=False,rot=rot) if emap2 is not None else lteb1
                 
-                assert lteb1.shape==lteb2.shape
+        assert lteb1.shape==lteb2.shape
                 
-                if ndim > 2 and ncomp > 1:
-                        retpow = np.empty((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]))
-                        for i in range(ncomp):
-                                retpow[i,i] = self.f2power(lteb1[i],lteb2[i],pixel_units)
-                        if not(skip_cross):
-                                for i in range(ncomp):
-                                        for j in range(i+1,ncomp):
-                                                retpow[i,j] = self.f2power(lteb1[i],lteb2[j],pixel_units)
-                                                retpow[j,i] = retpow[i,j]
-                        return retpow,lteb1,lteb2
-                else:
-                        if lteb1.ndim>2:
-                                lteb1 = lteb1[0]
-                        if lteb2.ndim>2:
-                                lteb2 = lteb2[0]
-                        p2d = self.f2power(lteb1,lteb2,pixel_units)
-                        return p2d,lteb1,lteb2
+        if ndim > 2 and ncomp > 1:
+            retpow = np.empty((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]))
+            for i in range(ncomp):
+                retpow[i,i] = self.f2power(lteb1[i],lteb2[i],pixel_units)
+                if not(skip_cross):
+                    for i in range(ncomp):
+                        for j in range(i+1,ncomp):
+                            retpow[i,j] = self.f2power(lteb1[i],lteb2[j],pixel_units)
+                            retpow[j,i] = retpow[i,j]
+            return retpow,lteb1,lteb2
+        else:
+            if lteb1.ndim>2:
+                lteb1 = lteb1[0]
+            if lteb2.ndim>2:
+                lteb2 = lteb2[0]
+            p2d = self.f2power(lteb1,lteb2,pixel_units)
+            return p2d,lteb1,lteb2
 
 
 
@@ -207,6 +234,7 @@ class MapRotatorEquator(MapRotator):
         shape_target,wcs_target = rect_geometry(width_arcmin=width_multiplier*patch_width*60.,
                                                       height_arcmin=height_multiplier*patch_height*60.,
                                                       px_res_arcmin=recommended_pix,yoffset_degree=0.,proj=proj)
+
 
         self.target_pix = recommended_pix
         self.wcs_target = wcs_target
@@ -1136,24 +1164,20 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
             Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
             filt2d = np.exp(-(modLMap**2.)*Sigma*Sigma)
 
-
     retList = []
 
     for noiseLevel,lknee,alpha,noiseFunc in zip(noiseLevels,lknees,alphas,noiseFuncs):
         if noiseFunc is not None:
-            retList.append(nfunc(modLMap))
+            retList.append(noiseFunc(modLMap))
         else:
-        
-            noiseForFilter = (np.pi / (180. * 60))**2.  * noiseLevel**2. / TCMB**2.  
-
-            if lknee>0.:
+            noiseForFilter = (np.pi / (180. * 60.))**2.  * noiseLevel**2. / TCMB**2.  
+            if lknee>1.e-3:
                 atmFactor = (lknee*np.nan_to_num(1./modLMap))**(-alpha)
             else:
                 atmFactor = 0.
                 
             with np.errstate(divide='ignore'):
                 retList.append(noiseForFilter*(atmFactor+1.)*np.nan_to_num(1./filt2d.copy()))
-
     return retList
 
 
@@ -1344,7 +1368,7 @@ class Stacker(object):
 
 
     
-def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False):
+def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False):
     Ny,Nx = imap.shape
 
     # see enmap.sky2pix for "corner" options
@@ -1356,15 +1380,19 @@ def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False
 
     if (iy is None) or (ix is None):
         iy,ix = imap.sky2pix(coords=(dec,ra),corner=corner)
+
     
     res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
     Npix = int(arcmin_width/res)
     if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
     cutout = imap[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
     #cutout = imap[fround(iy-Npix/2):fround(iy+Npix/2),fround(ix-Npix/2):fround(ix+Npix/2)]
-
-    shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
-    return enmap.ndmap(cutout,wcs)
+    #print(fround(iy-Npix/2.+0.5),fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5),fround(ix+Npix/2.+0.5))
+    if preserve_wcs:
+        return cutout
+    else:
+        shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
+        return enmap.ndmap(cutout,wcs)
 
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
@@ -1523,3 +1551,17 @@ class MatchedFilter(object):
         phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact*kmask/n2d).real 
         return phi_un*phi_var, phi_var
 
+
+
+def mask_center(imap):
+    Ny,Nx = imap.shape
+    assert Ny==Nx
+    N = Ny
+    if N%2==1:
+        imap[N/2,N/2] = np.nan
+    else:
+        imap[N/2,N/2] = np.nan
+        imap[N/2-1,N/2] = np.nan
+        imap[N/2,N/2-1] = np.nan
+        imap[N/2-1,N/2-1] = np.nan
+    

@@ -154,7 +154,7 @@ def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,
         from enlib import enmap, enplot
     except:
         traceback.print_exc()
-        printC("Could not produce plot "+filename+". High resolution plotting requires enlib, which couldn't be imported. Continuing without plotting.",color='fail')
+        cprint("Could not produce plot "+filename+". High resolution plotting requires enlib, which couldn't be imported. Continuing without plotting.",color='fail')
         return
         
         

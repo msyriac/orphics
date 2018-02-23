@@ -5,11 +5,14 @@ import itertools
 import scipy
 
 try:
+    from pandas import DataFrame
     import pandas as pd
 except:
     import warnings
     warnings.warn("Could not find pandas. Install using pip; FisherMatrix will not work otherwise")
-
+    class DataFrame:
+        pass
+    
 def check_fisher_sanity(fmat,param_list):
     Ny,Nx = fmat.shape
     assert Ny==Nx
@@ -17,7 +20,7 @@ def check_fisher_sanity(fmat,param_list):
     assert len(param_list)==len(set(param_list))
 
 
-class FisherMatrix(pd.DataFrame):
+class FisherMatrix(DataFrame):
     """
     A Fisher Matrix object that subclasses pandas.DataFrame.
     This is essentially just a structured array that
@@ -27,7 +30,15 @@ class FisherMatrix(pd.DataFrame):
     >> params = ['H0','om','sigma8']
     >> F = FisherMatrix(np.zeros((len(params),len(params))),params)
     
-    where params is a list of parameter names,
+    where params is a list of parameter names. If you already have a
+    Fisher matrix 'Fmatrix' whose diagonal parameter order is specified by
+    the list 'params', then you can initialize this object as:
+    
+    >> F = FisherMatrix(Fmatrix,params)
+    
+    This makes the code 'aware' of the parameter order in a way that makes
+    handling combinations of Fishers a lot easier.
+    
     You can set individual elements like:
     
     >> F['s8']['H0'] = 1.
@@ -64,6 +75,20 @@ class FisherMatrix(pd.DataFrame):
 
     
     def __init__(self,fmat,param_list,delete_params=None,prior_dict=None,skip_inv=False):
+	"""
+	fmat 		-- (n,n) shape numpy array containing initial Fisher matrix for n parameters
+	param_list 	-- n-element list specifying diagonal order of fmat
+	delete_params 	-- list of names of parameters you would like to delete from this 
+			Fisher matrix when you initialize it. This is useful when skip_inv=False if some
+			of your parameters are not constrained. See skip_inv below.
+	prior_dict 	-- a dictionary that maps names of parameters to 1-sigma prior values
+			you would like to add on initialization. This can also be done later with the 
+			add_prior function.
+	skip_inv 	-- If true, this skips calculation of the inverse of the Fisher matrix
+			when the object is initialized.
+	"""
+	
+	
         check_fisher_sanity(fmat,param_list)
         pd.DataFrame.__init__(self,fmat.copy(),columns=param_list,index=param_list)
         self.params = param_list
@@ -85,6 +110,10 @@ class FisherMatrix(pd.DataFrame):
 
             
     def copy(self, order='K'):
+	"""
+	>> Fnew = F.copy()
+	will create an independent Fnew that is not a view of the original.
+	"""
         self._update()
 	f = FisherMatrix(pd.DataFrame.copy(self), list(self.params),skip_inv=True)
         f._finv = self._finv
@@ -110,15 +139,24 @@ class FisherMatrix(pd.DataFrame):
         return FisherMatrix(np.nan_to_num(new_fpd.as_matrix()),new_fpd.columns.tolist())
 
     def add_prior(self,param,prior):
+	"""
+	Adds 1-sigma value 'prior' to the parameter name specified by 'param'
+	"""
         self[param][param] += 1./prior**2.
         self._changed = True
         
     def sigmas(self):
+	"""
+	Returns marginalized 1-sigma uncertainties on each parameter in the Fisher matrix.
+	"""
         self._update()
         errs = np.diagonal(self._finv)**(0.5)
         return dict(zip(self.params,errs))
     
     def delete(self,params):
+	"""
+	Given a list of parameter names 'params', deletes these from the Fisher matrix.
+	"""
         self.drop(labels=params,axis=0,inplace=True)
         self.drop(labels=params,axis=1,inplace=True)
         self.params = self.columns.tolist()
@@ -126,6 +164,10 @@ class FisherMatrix(pd.DataFrame):
         self._changed = True
 
     def marge_var_2param(self,param1,param2):
+	"""
+	Returns the sub-matrix corresponding to two parameters param1 and param2.
+	Useful for contour plots.
+	"""
         self._update()
         i = self.params.index(param1)
         j = self.params.index(param2)
@@ -139,6 +181,8 @@ class FisherMatrix(pd.DataFrame):
 class OQE(object):
     """Optimal Quadratic Estimator for likelihoods that
     are Gaussian in the model parameters.
+    
+    WARNING: This class has not been tested thoroughly.
 
     Given a fiducial covariance matrix for the data and derivatives
     of the covariance matrix w.r.t. each parameter of interest,
