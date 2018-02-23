@@ -110,6 +110,10 @@ class FisherMatrix(DataFrame):
 
             
     def copy(self, order='K'):
+	"""
+	>> Fnew = F.copy()
+	will create an independent Fnew that is not a view of the original.
+	"""
         self._update()
 	f = FisherMatrix(pd.DataFrame.copy(self), list(self.params),skip_inv=True)
         f._finv = self._finv
@@ -135,15 +139,24 @@ class FisherMatrix(DataFrame):
         return FisherMatrix(np.nan_to_num(new_fpd.as_matrix()),new_fpd.columns.tolist())
 
     def add_prior(self,param,prior):
+	"""
+	Adds 1-sigma value 'prior' to the parameter name specified by 'param'
+	"""
         self[param][param] += 1./prior**2.
         self._changed = True
         
     def sigmas(self):
+	"""
+	Returns marginalized 1-sigma uncertainties on each parameter in the Fisher matrix.
+	"""
         self._update()
         errs = np.diagonal(self._finv)**(0.5)
         return dict(zip(self.params,errs))
     
     def delete(self,params):
+	"""
+	Given a list of parameter names 'params', deletes these from the Fisher matrix.
+	"""
         self.drop(labels=params,axis=0,inplace=True)
         self.drop(labels=params,axis=1,inplace=True)
         self.params = self.columns.tolist()
@@ -151,6 +164,10 @@ class FisherMatrix(DataFrame):
         self._changed = True
 
     def marge_var_2param(self,param1,param2):
+	"""
+	Returns the sub-matrix corresponding to two parameters param1 and param2.
+	Useful for contour plots.
+	"""
         self._update()
         i = self.params.index(param1)
         j = self.params.index(param2)
