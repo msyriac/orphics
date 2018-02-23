@@ -30,7 +30,15 @@ class FisherMatrix(DataFrame):
     >> params = ['H0','om','sigma8']
     >> F = FisherMatrix(np.zeros((len(params),len(params))),params)
     
-    where params is a list of parameter names,
+    where params is a list of parameter names. If you already have a
+    Fisher matrix 'Fmatrix' whose diagonal parameter order is specified by
+    the list 'params', then you can initialize this object as:
+    
+    >> F = FisherMatrix(Fmatrix,params)
+    
+    This makes the code 'aware' of the parameter order in a way that makes
+    handling combinations of Fishers a lot easier.
+    
     You can set individual elements like:
     
     >> F['s8']['H0'] = 1.
