@@ -75,6 +75,20 @@ class FisherMatrix(DataFrame):
 
     
     def __init__(self,fmat,param_list,delete_params=None,prior_dict=None,skip_inv=False):
+	"""
+	fmat 		-- (n,n) shape numpy array containing initial Fisher matrix for n parameters
+	param_list 	-- n-element list specifying diagonal order of fmat
+	delete_params 	-- list of names of parameters you would like to delete from this 
+			Fisher matrix when you initialize it. This is useful when skip_inv=False if some
+			of your parameters are not constrained. See skip_inv below.
+	prior_dict 	-- a dictionary that maps names of parameters to 1-sigma prior values
+			you would like to add on initialization. This can also be done later with the 
+			add_prior function.
+	skip_inv 	-- If true, this skips calculation of the inverse of the Fisher matrix
+			when the object is initialized.
+	"""
+	
+	
         check_fisher_sanity(fmat,param_list)
         pd.DataFrame.__init__(self,fmat.copy(),columns=param_list,index=param_list)
         self.params = param_list
