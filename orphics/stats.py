@@ -181,6 +181,8 @@ class FisherMatrix(DataFrame):
 class OQE(object):
     """Optimal Quadratic Estimator for likelihoods that
     are Gaussian in the model parameters.
+    
+    WARNING: This class has not been tested thoroughly.
 
     Given a fiducial covariance matrix for the data and derivatives
     of the covariance matrix w.r.t. each parameter of interest,
