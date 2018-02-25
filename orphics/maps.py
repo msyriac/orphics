@@ -107,14 +107,14 @@ class MapGen(object):
         pre-calculate some things to speed up random map generation.
         """
         
-        def __init__(self,shape,wcs,cov,pixel_units=False):
+        def __init__(self,shape,wcs,cov,pixel_units=False,smooth="auto"):
                 self.shape = shape
                 self.wcs = wcs
                 if cov.ndim==4:
                         if not(pixel_units): cov = cov * np.prod(shape[-2:])/enmap.area(shape,wcs )
                         self.covsqrt = enmap.multi_pow(cov, 0.5)
                 else:
-                        self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant")
+                        self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
         def get_map(self,seed=None,scalar=False,iau=True):
                 if seed is not None: np.random.seed(seed)
@@ -150,6 +150,7 @@ class FourierCalc(object):
         emap = enmap.samewcs(enmap.fft(emap,nthread=nthread,normalize=normalize), emap)
         if emap.ndim > 2 and emap.shape[-3] > 1 and rot:
             emap[...,-2:,:,:] = enmap.map_mul(self.rot, emap[...,-2:,:,:])
+
         return emap
 
 
