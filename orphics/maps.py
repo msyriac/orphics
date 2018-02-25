@@ -127,7 +127,9 @@ class MapGen(object):
 
         
         
-
+def spec1d_to_2d(shape,wcs,ps):
+    return enmap.spec2flat(shape,wcs,ps)/(np.prod(shape[-2:])/enmap.area(shape,wcs ))
+    
 class FourierCalc(object):
     """
     Once you know the shape and wcs of an ndmap, you can pre-calculate some things

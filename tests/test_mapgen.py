@@ -18,7 +18,7 @@ ps = cltt.reshape((1,1,ells.size))
 # from scipy.interpolate import interp1d
 modlmap = enmap.modlmap(shape,wcs)
 #cltt2d = cc.theory.lCl('TT',modlmap)
-cltt2d = enmap.spec2flat(shape,wcs,ps)/(np.prod(shape[-2:])/enmap.area(shape,wcs ))
+cltt2d = maps.spec1d_to_2d(shape,wcs,ps)
 
 mg = maps.MapGen(shape,wcs,ps)
 fc = maps.FourierCalc(shape,wcs)
@@ -45,9 +45,9 @@ my_tasks = each_tasks[rank]
 
 st = stats.Stats(comm)
 
-import flipper.liteMap as lm
-lmap = lm.makeEmptyCEATemplate(deg, deg,meanRa = 180., meanDec = 0.,\
-                               pixScaleXarcmin = px, pixScaleYarcmin=px)
+# import flipper.liteMap as lm
+# lmap = lm.makeEmptyCEATemplate(deg, deg,meanRa = 180., meanDec = 0.,\
+#                                pixScaleXarcmin = px, pixScaleYarcmin=px)
     
 
 for i,task in enumerate(my_tasks):
@@ -57,11 +57,11 @@ for i,task in enumerate(my_tasks):
 
     st.add_to_stats("p1diff", (p1d.copy()-p1dth)/p1dth)
     
-    lmap.fillWithGaussianRandomField(ells,cltt,bufferFactor = 1)
-    nmap = enmap.enmap(lmap.data,imap.wcs)
-    p2d,_,_ = fc.power2d(nmap)
-    cents,p1d = binner.bin(p2d)
-    st.add_to_stats("p1diffFlipper", (p1d.copy()-p1dth)/p1dth)
+    # lmap.fillWithGaussianRandomField(ells,cltt,bufferFactor = 1)
+    # nmap = enmap.enmap(lmap.data,imap.wcs)
+    # p2d,_,_ = fc.power2d(nmap)
+    # cents,p1d = binner.bin(p2d)
+    # st.add_to_stats("p1diffFlipper", (p1d.copy()-p1dth)/p1dth)
 
     
     
@@ -74,7 +74,7 @@ st.get_stats()
 if rank==0:
     pl = io.Plotter()
     pl.add_err(cents,st.stats["p1diff"]['mean'],yerr=st.stats["p1diff"]['errmean'],marker="o",ls="-",label="enlib")
-    pl.add_err(cents,st.stats["p1diffFlipper"]['mean'],yerr=st.stats["p1diffFlipper"]['errmean'],marker="o",ls="-",label="flipper")
+    # pl.add_err(cents,st.stats["p1diffFlipper"]['mean'],yerr=st.stats["p1diffFlipper"]['errmean'],marker="o",ls="-",label="flipper")
     pl.hline()
     pl.legend()
     pl.done(io.dout_dir+"mapgen.png")
