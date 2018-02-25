@@ -29,7 +29,7 @@ binner = stats.bin2D(modlmap,bin_edges)
 #cltt2d = cc.theory.gCl('kk',modlmap)
 cents,p1dth = binner.bin(cltt2d)
 
-N = 2000
+N = 400000
 
 
 # MPI
