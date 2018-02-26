@@ -45,7 +45,7 @@ parser.add_argument("--debug", action='store_true',help='Debug with plots.')
 parser.add_argument("--iau", action='store_true',help='Use IAU pol convention.')
 parser.add_argument("--flat", action='store_true',help='Do flat sky periodic.')
 parser.add_argument("-f","--flat-force", action='store_true',help='Force flat sky remake.')
-parser.add_argument("--flat-res",     type=float,  default=1.0,help="Resolution in arcmin if flat sky sims.")
+parser.add_argument("--res",     type=float,  default=1.0,help="Resolution in arcmin of sims.")
 parser.add_argument("--flat-taper", action='store_true',help='Taper periodic flat-sky sims.')
 #parser.add_argument("-p", "--pad", action='store_true',help='Big if true.')
 args = parser.parse_args()
@@ -70,7 +70,7 @@ theory = cosmology.loadTheorySpectraFromCAMB(args.TheoryRoot,
                                              unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
 
 # Geometry
-fshape,fwcs = enmap.fullsky_geometry(res=1.0*np.pi/180./60.)
+fshape,fwcs = enmap.fullsky_geometry(res=args.res*np.pi/180./60.)
 box = np.array([[-args.wy/2.,-args.wx/2.],[args.wy/2.,args.wx/2.]])*np.pi/180.
 
 # Stats
@@ -127,8 +127,8 @@ def init_flat(ishape,iwcs):
     ps[0,0] = theory.uCl('TT',ells)
     if pol:
         ps[1,1] = theory.uCl('EE',ells)
-        ps[1,2] = theory.uCl('TE',ells)
-        ps[2,1] = theory.uCl('TE',ells)
+        ps[1,0] = theory.uCl('TE',ells)
+        ps[0,1] = theory.uCl('TE',ells)
     oshape = (3,)+ishape if pol else ishape
     mgen = maps.MapGen(oshape,iwcs,ps)
     psk = theory.gCl('kk',ells).reshape((1,1,ells.size))
@@ -148,7 +148,7 @@ for i,task in enumerate(my_tasks):
         if i==0: shape,wcs = cpatch.shape,cpatch.wcs
     except:
         assert args.flat, "No sims found in directory specified. I can only make lensed sims if they are flat-sky."
-        shape,wcs = enmap.geometry(pos=box,res=args.flat_res*np.pi/180./60.)
+        shape,wcs = enmap.geometry(pos=box,res=args.res*np.pi/180./60.)
         if pol: shape = (3,) + shape
         if not(inited): mgen, kgen = init_flat(shape[-2:],wcs)
         inited = True
@@ -158,7 +158,7 @@ for i,task in enumerate(my_tasks):
         enmap.write_fits(filename("lensed"),cpatch)
         enmap.write_fits(filename("unlensed"),unlensed)
         enmap.write_fits(filename("kappa"),kpatch)
-        
+
     if i==0:
         qest, ngen, kbeam, binner, taper, fc = init_geometry(shape[-2:],wcs)
         if args.flat and not(args.flat_taper): taper = kpatch*0.+1.
@@ -171,6 +171,7 @@ for i,task in enumerate(my_tasks):
     observed = maps.filter_map(cpatch*taper,kbeam) + nmaps*taper
     lteb = fc.iqu2teb(observed,normalize=False)
     lt,le,lb = lteb[0],lteb[1],lteb[2]
+    if args.flat and not(args.iau): lb = -lb
     
     p2d = fc.f2power(lt,lt)
     cents,p1d = binner.bin(p2d/w2)

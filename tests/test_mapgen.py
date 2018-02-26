@@ -66,7 +66,7 @@ for i,task in enumerate(my_tasks):
     
     
 
-    if rank==0: print ("Rank 0 done with task ", task+1, " / " , len(my_tasks))
+    if rank==0 and (task+1)%100==0: print ("Rank 0 done with task ", task+1, " / " , len(my_tasks))
     
 
 st.get_stats()
