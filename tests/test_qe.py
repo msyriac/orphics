@@ -45,10 +45,12 @@ parser.add_argument("--debug", action='store_true',help='Debug with plots.')
 parser.add_argument("--iau", action='store_true',help='Use IAU pol convention.')
 parser.add_argument("--flat", action='store_true',help='Do flat sky periodic.')
 parser.add_argument("-f","--flat-force", action='store_true',help='Force flat sky remake.')
+parser.add_argument("-p","--purify", action='store_true',help='Purify E/B.')
 parser.add_argument("--res",     type=float,  default=1.0,help="Resolution in arcmin of sims.")
 parser.add_argument("--flat-taper", action='store_true',help='Taper periodic flat-sky sims.')
 #parser.add_argument("-p", "--pad", action='store_true',help='Big if true.')
 args = parser.parse_args()
+san = lambda x: np.nan_to_num(x)
 polcombs = args.estimators.split(',')
 pol = False if polcombs==['TT'] else True
 io.dout_dir += "qev_"
@@ -101,11 +103,16 @@ def init_geometry(ishape,iwcs):
     kmask = maps.mask_kspace(ishape,iwcs,lmin=args.kellmin,lmax=args.kellmax)
 
     qest = lensing.qest(ishape,iwcs,theory,noise2d=nT,beam2d=kbeam,kmask=tmask,noise2d_P=nP,kmask_P=pmask,kmask_K=kmask,pol=pol,grad_cut=None,unlensed_equals_lensed=True)
+    # qest = lensing.qest(ishape,iwcs,theory,noise2d=san(nT/kbeam**2.),beam2d=None,kmask=tmask,noise2d_P=san(nP/kbeam**2.),kmask_P=pmask,kmask_K=kmask,pol=pol,grad_cut=None,unlensed_equals_lensed=True)
 
     taper,w2 = maps.get_taper_deg(ishape,iwcs,taper_width_degrees = args.taper_width,pad_width_degrees = args.pad_width)
     fc = maps.FourierCalc(oshape,iwcs,iau=args.iau)
+
     
-    return qest,ngen,kbeam,binner,taper,fc
+    purifier = maps.Purify(ishape,iwcs,taper) if args.purify else None
+
+    
+    return qest,ngen,kbeam,binner,taper,fc,purifier
 
 def lens(ulensed,convergence):
     posmap = ulensed.posmap()
@@ -160,7 +167,7 @@ for i,task in enumerate(my_tasks):
         enmap.write_fits(filename("kappa"),kpatch)
 
     if i==0:
-        qest, ngen, kbeam, binner, taper, fc = init_geometry(shape[-2:],wcs)
+        qest, ngen, kbeam, binner, taper, fc, purifier = init_geometry(shape[-2:],wcs)
         if args.flat and not(args.flat_taper): taper = kpatch*0.+1.
         w3 = np.mean(taper**3.)
         w2 = np.mean(taper**2.)
@@ -169,9 +176,16 @@ for i,task in enumerate(my_tasks):
     
     nmaps = ngen.get_map(iau=args.iau)
     observed = maps.filter_map(cpatch*taper,kbeam) + nmaps*taper
-    lteb = fc.iqu2teb(observed,normalize=False)
-    lt,le,lb = lteb[0],lteb[1],lteb[2]
+    if args.purify:
+        lt,le,lb = purifier.lteb_from_iqu(observed,method='pure')
+    else:
+        lteb = fc.iqu2teb(observed,normalize=False)
+        lt,le,lb = lteb[0],lteb[1],lteb[2]
     if args.flat and not(args.iau): lb = -lb
+
+    # lt = san(lt/kbeam)
+    # le = san(le/kbeam)
+    # lb = san(lb/kbeam)
     
     p2d = fc.f2power(lt,lt)
     cents,p1d = binner.bin(p2d/w2)

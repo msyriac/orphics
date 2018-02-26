@@ -7,9 +7,24 @@ import numpy as np
 from enlib.fft import fft
 
 
+class Purify(object):
+
+    def __init__(self,shape,wcs,window):
+        px = maps.resolution(shape,wcs)
+        self.windict = init_deriv_window(taper,px)
+        lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes_enmap(shape,wcs)
+
+    def lteb_from_iqu(imap,method='pure'):
+        fT, fE, fB = iqu_to_pure_lteb(imap[0],imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method)
+        
+        
 
 
-def initializeDerivativesWindowfuntions(window,px):
+
+def init_deriv_window(window,px):
+    """
+    px is in radians
+    """
 	
     def matrixShift(l,row_shift,column_shift):	
         m1=np.hstack((l[:,row_shift:],l[:,:row_shift]))
@@ -30,7 +45,7 @@ def initializeDerivativesWindowfuntions(window,px):
 
 
 
-def TQUtoPureTEB(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure'):
+def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure'):
 
     window = windowDict
 
