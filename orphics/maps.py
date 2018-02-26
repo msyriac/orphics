@@ -107,14 +107,14 @@ class MapGen(object):
         pre-calculate some things to speed up random map generation.
         """
         
-        def __init__(self,shape,wcs,cov,pixel_units=False):
+        def __init__(self,shape,wcs,cov,pixel_units=False,smooth="auto"):
                 self.shape = shape
                 self.wcs = wcs
                 if cov.ndim==4:
                         if not(pixel_units): cov = cov * np.prod(shape[-2:])/enmap.area(shape,wcs )
                         self.covsqrt = enmap.multi_pow(cov, 0.5)
                 else:
-                        self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant")
+                        self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
         def get_map(self,seed=None,scalar=False,iau=True):
                 if seed is not None: np.random.seed(seed)
@@ -127,7 +127,9 @@ class MapGen(object):
 
         
         
-
+def spec1d_to_2d(shape,wcs,ps):
+    return enmap.spec2flat(shape,wcs,ps)/(np.prod(shape[-2:])/enmap.area(shape,wcs ))
+    
 class FourierCalc(object):
     """
     Once you know the shape and wcs of an ndmap, you can pre-calculate some things
@@ -150,6 +152,7 @@ class FourierCalc(object):
         emap = enmap.samewcs(enmap.fft(emap,nthread=nthread,normalize=normalize), emap)
         if emap.ndim > 2 and emap.shape[-3] > 1 and rot:
             emap[...,-2:,:,:] = enmap.map_mul(self.rot, emap[...,-2:,:,:])
+
         return emap
 
 
@@ -1564,4 +1567,237 @@ def mask_center(imap):
         imap[N/2-1,N/2] = np.nan
         imap[N/2,N/2-1] = np.nan
         imap[N/2-1,N/2-1] = np.nan
+
+
+
+        
+class Purify(object):
+
+    def __init__(self,shape,wcs,window):
+        px = resolution(shape,wcs)
+        self.windict = init_deriv_window(window,px)
+        lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes(shape,wcs)
+
+    def lteb_from_iqu(self,imap,method='pure'):
+        fT, fE, fB = iqu_to_pure_lteb(imap[0],imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method)
+        return fT,-fE,-fB
+        
+
+
+
+def init_deriv_window(window,px):
+    """
+    px is in radians
+    """
+	
+    def matrixShift(l,row_shift,column_shift):	
+        m1=np.hstack((l[:,row_shift:],l[:,:row_shift]))
+        m2=np.vstack((m1[column_shift:],m1[:column_shift]))
+        return m2
+    delta=px
+    Win=window[:]
+    
+    dWin_dx=(-matrixShift(Win,-2,0)+8*matrixShift(Win,-1,0)-8*matrixShift(Win,1,0)+matrixShift(Win,2,0))/(12*delta)
+    dWin_dy=(-matrixShift(Win,0,-2)+8*matrixShift(Win,0,-1)-8*matrixShift(Win,0,1)+matrixShift(Win,0,2))/(12*delta)
+    d2Win_dx2=(-matrixShift(dWin_dx,-2,0)+8*matrixShift(dWin_dx,-1,0)-8*matrixShift(dWin_dx,1,0)+matrixShift(dWin_dx,2,0))/(12*delta)
+    d2Win_dy2=(-matrixShift(dWin_dy,0,-2)+8*matrixShift(dWin_dy,0,-1)-8*matrixShift(dWin_dy,0,1)+matrixShift(dWin_dy,0,2))/(12*delta)
+    d2Win_dxdy=(-matrixShift(dWin_dy,-2,0)+8*matrixShift(dWin_dy,-1,0)-8*matrixShift(dWin_dy,1,0)+matrixShift(dWin_dy,2,0))/(12*delta)
+    
+    #In return we change the sign of the simple gradient in order to agree with np convention
+    return {'Win':Win, 'dWin_dx':-dWin_dx,'dWin_dy':-dWin_dy, 'd2Win_dx2':d2Win_dx2, 'd2Win_dy2':d2Win_dy2,'d2Win_dxdy':d2Win_dxdy}
+	
+
+
+
+def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure'):
+
+    window = windowDict
+
+    win =window['Win']
+    dWin_dx=window['dWin_dx']
+    dWin_dy=window['dWin_dy']
+    d2Win_dx2=window['d2Win_dx2'] 
+    d2Win_dy2=window['d2Win_dy2']
+    d2Win_dxdy=window['d2Win_dxdy']
+
+    T_temp=T_map.copy()#*win
+    fT=fft(T_temp,axes=[-2,-1])
+    
+    Q_temp=Q_map.copy()#*win
+    fQ=fft(Q_temp,axes=[-2,-1])
+    
+    U_temp=U_map.copy()#*win
+    fU=fft(U_temp,axes=[-2,-1])
+    
+    fE=fT.copy()
+    fB=fT.copy()
+    
+    fE=fQ[:]*np.cos(2.*angLMap)+fU[:]*np.sin(2.*angLMap)
+    fB=-fQ[:]*np.sin(2.*angLMap)+fU[:]*np.cos(2.*angLMap)
+    
+    if method=='standard':
+        return fT, fE, fB
+    
+    Q_temp=Q_map.copy()*dWin_dx
+    QWx=fft(Q_temp,axes=[-2,-1])
+    
+    Q_temp=Q_map.copy()*dWin_dy
+    QWy=fft(Q_temp,axes=[-2,-1])
+    
+    U_temp=U_map.copy()*dWin_dx
+    UWx=fft(U_temp,axes=[-2,-1])
+    
+    U_temp=U_map.copy()*dWin_dy
+    UWy=fft(U_temp,axes=[-2,-1])
+    
+    U_temp=2.*Q_map*d2Win_dxdy-U_map*(d2Win_dx2-d2Win_dy2)
+    QU_B=fft(U_temp,axes=[-2,-1])
+ 
+    U_temp=-Q_map*(d2Win_dx2-d2Win_dy2)-2.*U_map*d2Win_dxdy
+    QU_E=fft(U_temp,axes=[-2,-1])
+    
+    modLMap=modLMap+2
+
+
+    fB[:] += QU_B[:]*(1./modLMap)**2
+    fB[:]-= (2.*1j)/modLMap*(np.sin(angLMap)*(QWx[:]+UWy[:])+np.cos(angLMap)*(QWy[:]-UWx[:]))
+    
+    if method=='hybrid':
+        return fT, fE, fB
+    
+    fE[:]+= QU_E[:]*(1./modLMap)**2
+    fE[:]-= (2.*1j)/modLMap*(np.sin(angLMap)*(QWy[:]-UWx[:])-np.cos(angLMap)*(QWx[:]+UWy[:]))
+    
+    if method=='pure':
+        return fT, fE, fB
+
+
+
+## LEGACY
+
+class PatchArray(object):
+    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,cc=None,theory=None,lmax=None,skip_real=False,orphics_is_dimensionless=True):
+        self.shape = shape
+        self.wcs = wcs
+        if not(skip_real): self.modrmap = enmap.modrmap(shape,wcs)
+        self.lxmap,self.lymap,self.modlmap,self.angmap,self.lx,self.ly = get_ft_attributes(shape,wcs)
+        self.pix_ells = np.arange(0.,self.modlmap.max(),1.)
+        self.posmap = enmap.posmap(self.shape,self.wcs)
+        self.dimensionless = dimensionless
+        self.TCMB = TCMB
+
+        if (theory is not None) or (cc is not None):
+            self.add_theory(cc,theory,lmax,orphics_is_dimensionless)
+
+    def add_theory(self,cc=None,theory=None,lmax=None,orphics_is_dimensionless=True):
+        if cc is not None:
+            self.cc = cc
+            self.theory = cc.theory
+            self.lmax = cc.lmax
+            # assert theory is None
+            # assert lmax is None
+            if theory is None: theory = self.theory
+            if lmax is None: lmax = self.lmax
+        else:
+            assert theory is not None
+            assert lmax is not None
+            self.theory = theory
+            self.lmax = lmax
+            
+        #psl = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
+        from orphics import cosmology
+        psu = cosmology.enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
+        self.fine_ells = np.arange(0,lmax,1)
+        pclkk = theory.gCl("kk",self.fine_ells)
+        self.clkk = pclkk.copy()
+        pclkk = pclkk.reshape((1,1,pclkk.size))
+        #self.pclkk.resize((1,self.pclkk.size))
+        self.ugenerator = MapGen(self.shape,self.wcs,psu)
+        self.kgenerator = MapGen(self.shape[-2:],self.wcs,pclkk)
+
+
+    def update_kappa(self,kappa):
+        # Converts kappa map to pixel displacements
+        from orphics import lensing
+        fphi = lensing.kappa_to_fphi(kappa,self.modlmap)
+        grad_phi = enmap.gradf(enmap.ndmap(fphi,self.wcs))
+        pos = self.posmap + grad_phi
+        self._displace_pix = enmap.sky2pix(self.shape,self.wcs,pos, safe=False)
+
+    def get_lensed(self, unlensed, order=3, mode="spline", border="cyclic"):
+        from enlib import lensing as enlensing
+        return enlensing.displace_map(unlensed, self._displace_pix, order=order, mode=mode, border=border)
+
+
+    def get_unlensed_cmb(self,seed=None,scalar=False):
+        return self.ugenerator.get_map(seed=seed,scalar=scalar)
+        
+    def get_grf_kappa(self,seed=None,skip_update=False):
+        kappa = self.kgenerator.get_map(seed=seed,scalar=True)
+        if not(skip_update): self.update_kappa(kappa)
+        return kappa
+
+
+    def _fill_beam(self,beam_func):
+        self.lbeam = beam_func(self.modlmap)
+        self.lbeam[self.modlmap<2] = 1.
+        
+    def add_gaussian_beam(self,fwhm):
+        if fwhm<1.e-5:
+            bfunc = lambda x: x*0.+1.
+        else:
+            bfunc = lambda x : cmb.gauss_beam(x,fwhm)
+        self._fill_beam(bfunc)
+        
+    def add_1d_beam(self,ells,bls,fill_value="extrapolate"):
+        bfunc = interp1d(ells,bls,fill_value=fill_value)
+        self._fill_beam(bfunc)
+
+    def add_2d_beam(self,beam_2d):
+        self.lbeam = beam_2d
+
+    def add_white_noise_with_atm(self,noise_uK_arcmin_T,noise_uK_arcmin_P=None,lknee_T=0.,alpha_T=0.,lknee_P=0.,
+                        alpha_P=0.):
+
+        map_dimensionless=self.dimensionless
+        TCMB=self.TCMB
+
+
+        
+        self.nT = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_T,lknee_T,alpha_T,
+                                                map_dimensionless,TCMB)
+        
+        if noise_uK_arcmin_P is None and np.isclose(lknee_T,lknee_P) and np.isclose(alpha_T,alpha_P):
+            self.nP = 2.*self.nT.copy()
+        else:
+            if noise_uK_arcmin_P is None: noise_uK_arcmin_P = np.sqrt(2.)*noise_uK_arcmin_T
+            self.nP = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_P,lknee_P,alpha_P,
+                                      map_dimensionless,TCMB)
+
+        TCMBt = TCMB if map_dimensionless else 1.
+        ps_noise = np.zeros((3,3,self.pix_ells.size))
+        ps_noise[0,0] = self.pix_ells*0.+(noise_uK_arcmin_T*np.pi/180./60./TCMBt)**2.
+        ps_noise[1,1] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
+        ps_noise[2,2] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
+        noisecov = ps_noise
+        self.is_2d_noise = False
+        self.ngenerator = MapGen(self.shape,self.wcs,noisecov)
+
+            
+    def add_noise_2d(self,nT,nP=None):
+        self.nT = nT
+        if nP is None: nP = 2.*nT
+        self.nP = nP
+
+        ps_noise = np.zeros((3,3,self.modlmap.shape[0],self.modlmap.shape[1]))
+        ps_noise[0,0] = nT
+        ps_noise[1,1] = nP
+        ps_noise[2,2] = nP
+        noisecov = ps_noise
+        self.is_2d_noise = True
+        self.ngenerator = MapGen(self.shape,self.wcs,noisecov)
+
+
+    def get_noise_sim(self,seed=None,scalar=False):
+        return self.ngenerator.get_map(seed=seed,scalar=scalar)
     
