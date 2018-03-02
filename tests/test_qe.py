@@ -7,7 +7,7 @@ import argparse
 
 """
 
-Loads cutouts from full-sky lensed simulations.
+Loads cutouts from full-sky lensed simulations or generate flat-sky sims on the fly.
 Performs QE lensing reconstruction for both temperature
 and polarization estimators.
 Cross-correlates with input convergence to verify reconstruction.
@@ -16,8 +16,7 @@ Cross-correlates with input convergence to verify reconstruction.
 Full-sky sims work to <5% for all estimators if iau=True. Pol estimators
 esp. TB are worse, possibly due to E->B leakage.
 
-Flat-sky sims do not get pol right for 2-pt or for lensing, no matter
-if iau is False or True.
+Pol estimators for noiseless and lmax=5000 seem to have large N2-like bias.
 
 """
 
@@ -33,6 +32,7 @@ parser.add_argument("--beam",     type=float,  default=1.5,help="Beam FWHM in ar
 parser.add_argument("--noise",     type=float,  default=1.5,help="T noise in muK-arcmin.")
 parser.add_argument("--taper-width",     type=float,  default=1.5,help="Taper width in degrees.")
 parser.add_argument("--pad-width",     type=float,  default=0.5,help="Taper width in degrees.")
+parser.add_argument("--noise-pad",     type=float,  default=3.5,help="Extra degrees to pad noise maps by if using full-sky signal sims.")
 parser.add_argument("--tellmin",     type=int,  default=500,help="Temperature ellmin.")
 parser.add_argument("--tellmax",     type=int,  default=3000,help="Temperature ellmax.")
 parser.add_argument("--pellmin",     type=int,  default=500,help="Polarization ellmin.")
@@ -41,7 +41,11 @@ parser.add_argument("--kellmin",     type=int,  default=40,help="Convergence ell
 parser.add_argument("--kellmax",     type=int,  default=3000,help="Convergence ellmax.")
 parser.add_argument("--dell",     type=int,  default=100,help="Spectra bin-width.")
 parser.add_argument("--estimators",     type=str,  default="TT,TE,ET,EB,EE,TB",help="List of polcombs.")
+parser.add_argument("--save",     type=str,  default="",help="Suffix for saves.")
+parser.add_argument("--save-meanfield",     type=str,  default=None,help="Runs only meanfield. Path to save meanfield to.")
+parser.add_argument("--load-meanfield",     type=str,  default=None,help="Path to load meanfields from.")
 parser.add_argument("--debug", action='store_true',help='Debug with plots.')
+parser.add_argument("--debug-noise", action='store_true',help='Debug noise spectra.')
 parser.add_argument("--iau", action='store_true',help='Use IAU pol convention.')
 parser.add_argument("--flat", action='store_true',help='Do flat sky periodic.')
 parser.add_argument("-f","--flat-force", action='store_true',help='Force flat sky remake.')
@@ -55,7 +59,8 @@ polcombs = args.estimators.split(',')
 pol = False if polcombs==['TT'] else True
 io.dout_dir += "qev_"
 if args.flat: io.dout_dir += "flat_"
-if args.iau: io.dout_dir += "iau_"
+if args.iau: io.dout_dir += "iau"
+io.dout_dir += args.save+"_"
 
 # MPI
 comm = mpi.MPI.COMM_WORLD
@@ -82,7 +87,10 @@ def init_geometry(ishape,iwcs):
     modlmap = enmap.modlmap(ishape,iwcs)
     bin_edges = np.arange(args.kellmin,args.kellmax,args.dell)
     binner = stats.bin2D(modlmap,bin_edges)
-    kbeam = maps.gauss_beam(modlmap,args.beam)
+    if args.beam<1e-5:
+        kbeam = None
+    else:
+        kbeam = maps.gauss_beam(modlmap,args.beam)
     lmax = modlmap.max()
     ells = np.arange(2,lmax,1)
     wnoise_TT = ells*0.+(args.noise*(np.pi/180./60.))**2.
@@ -96,14 +104,27 @@ def init_geometry(ishape,iwcs):
         ps[1,1] = wnoise_PP
         ps[2,2] = wnoise_PP
     oshape = (3,)+ishape if pol else ishape
-    ngen = maps.MapGen(oshape,iwcs,ps)
+
+    if not(args.flat) and args.noise_pad>1.e-5:
+        # Pad noise sim geometry
+        pad_width_deg = args.noise_pad
+        pad_width = pad_width_deg * np.pi/180.
+        res = maps.resolution(oshape[-2:],iwcs)
+        pad_pixels = int(pad_width/res)
+        template = enmap.zeros(oshape,iwcs)
+        btemplate = enmap.pad(template,pad_pixels)
+        bshape,bwcs = btemplate.shape,btemplate.wcs
+        del template
+        del btemplate
+        ngen = maps.MapGen(bshape,bwcs,ps)
+    else:
+        ngen = maps.MapGen(oshape,iwcs,ps)
     
     tmask = maps.mask_kspace(ishape,iwcs,lmin=args.tellmin,lmax=args.tellmax)
     pmask = maps.mask_kspace(ishape,iwcs,lmin=args.pellmin,lmax=args.pellmax)
     kmask = maps.mask_kspace(ishape,iwcs,lmin=args.kellmin,lmax=args.kellmax)
 
     qest = lensing.qest(ishape,iwcs,theory,noise2d=nT,beam2d=kbeam,kmask=tmask,noise2d_P=nP,kmask_P=pmask,kmask_K=kmask,pol=pol,grad_cut=None,unlensed_equals_lensed=True)
-    # qest = lensing.qest(ishape,iwcs,theory,noise2d=san(nT/kbeam**2.),beam2d=None,kmask=tmask,noise2d_P=san(nP/kbeam**2.),kmask_P=pmask,kmask_K=kmask,pol=pol,grad_cut=None,unlensed_equals_lensed=True)
 
     taper,w2 = maps.get_taper_deg(ishape,iwcs,taper_width_degrees = args.taper_width,pad_width_degrees = args.pad_width)
     fc = maps.FourierCalc(oshape,iwcs,iau=args.iau)
@@ -143,50 +164,78 @@ def init_flat(ishape,iwcs):
     return mgen,kgen
 
 
+mfs = {}
+for pcomb in polcombs:
+    if not(args.load_meanfield is None):
+        mfs[pcomb] = enmap.read_hdf(args.load_meanfield+"_mf_"+pcomb+".hdf")
+    else:
+        mfs[pcomb] = 0.
+
 inited = False
 for i,task in enumerate(my_tasks):
 
 
-    filename = lambda x: args.SimRoot+"_"+x+"_"+str(task).zfill(4)+".fits"
+    filename = lambda x,ext="fits",k=task: args.SimRoot+"_"+x+"_"+str(k).zfill(4)+args.save+"."+ext
     try:
         if args.flat and args.flat_force: raise
+        if not(args.save_meanfield is None): raise
         cpatch = enmap.read_fits(filename("lensed"),box=box if not(args.flat) else None,wcs_override=fwcs if not(args.flat) else None)
         kpatch = enmap.read_fits(filename("kappa"),box=box if not(args.flat) else None,wcs_override=fwcs if not(args.flat) else None)
         if i==0: shape,wcs = cpatch.shape,cpatch.wcs
     except:
-        assert args.flat, "No sims found in directory specified. I can only make lensed sims if they are flat-sky."
-        shape,wcs = enmap.geometry(pos=box,res=args.res*np.pi/180./60.)
-        if pol: shape = (3,) + shape
-        if not(inited): mgen, kgen = init_flat(shape[-2:],wcs)
+        assert args.flat or not(args.save_meanfield is None), "No sims found in directory specified. I can only make lensed sims if they are flat-sky."
+        if not(inited): 
+            if not(args.save_meanfield is None) and not(args.flat):
+                template = enmap.read_fits(filename("lensed","fits",0),box=box if not(args.flat) else None,wcs_override=fwcs if not(args.flat) else None)
+                shape,wcs = template.shape,template.wcs 
+            else:
+                shape,wcs = enmap.geometry(pos=box,res=args.res*np.pi/180./60.)
+                if pol: shape = (3,) + shape
+            mgen, kgen = init_flat(shape[-2:],wcs)
         inited = True
         unlensed = mgen.get_map(iau=args.iau)
-        kpatch = kgen.get_map()
-        cpatch = lens(unlensed,kpatch)
-        enmap.write_fits(filename("lensed"),cpatch)
-        enmap.write_fits(filename("unlensed"),unlensed)
-        enmap.write_fits(filename("kappa"),kpatch)
+
+        if not(args.save_meanfield is None):
+            cpatch = unlensed
+        else:
+            kpatch = kgen.get_map()
+            cpatch = lens(unlensed,kpatch)
+        # enmap.write_fits(filename("lensed"),cpatch)
+        # enmap.write_fits(filename("unlensed"),unlensed)
+        # enmap.write_fits(filename("kappa"),kpatch)
 
     if i==0:
         qest, ngen, kbeam, binner, taper, fc, purifier = init_geometry(shape[-2:],wcs)
-        if args.flat and not(args.flat_taper): taper = kpatch*0.+1.
+        if args.flat and not(args.flat_taper): taper = enmap.ones(shape[-2:])
         w3 = np.mean(taper**3.)
         w2 = np.mean(taper**2.)
 
-    kpatch *= taper
+    if args.save_meanfield is None: kpatch *= taper
     
     nmaps = ngen.get_map(iau=args.iau)
-    observed = maps.filter_map(cpatch*taper,kbeam) + nmaps*taper
-    if args.purify:
-        lt,le,lb = purifier.lteb_from_iqu(observed,method='pure')
-    else:
-        lteb = fc.iqu2teb(observed,normalize=False)
-        lt,le,lb = lteb[0],lteb[1],lteb[2]
-    if args.flat and not(args.iau): lb = -lb
+    if not(args.flat) and args.noise_pad>1.e-5:
+        nmaps = enmap.extract(nmaps,shape,wcs)
 
-    # lt = san(lt/kbeam)
-    # le = san(le/kbeam)
-    # lb = san(lb/kbeam)
-    
+    observed = maps.convolve_gaussian(cpatch,args.beam) + nmaps if args.beam>1e-5 and args.noise>1e-5 else cpatch
+
+    # enmap.write_fits(filename("obs_I"),cpatch[0])
+    # enmap.write_fits(filename("obs_Q"),cpatch[1])
+    # enmap.write_fits(filename("obs_U"),cpatch[2])
+
+    if args.purify:
+        lt,le,lb = purifier.lteb_from_iqu(observed,method='pure') # no need to multiply by window if purifying
+        if args.debug_noise: lnt,lne,lnb = purifier.lteb_from_iqu(nmaps,method='pure') # no need to multiply by window if purifying
+    else:
+        lteb = fc.iqu2teb(observed*taper,normalize=False)
+        
+        lt,le,lb = lteb[0],lteb[1],lteb[2]
+        if args.debug_noise: 
+            nlteb = fc.iqu2teb(nmaps*taper,normalize=False)
+            lnt,lne,lnb = nlteb[0],nlteb[1],nlteb[2]
+    if args.flat and not(args.iau):
+        lb = -lb
+        if args.debug_noise:  lnb = -lnb
+
     p2d = fc.f2power(lt,lt)
     cents,p1d = binner.bin(p2d/w2)
     st.add_to_stats("cTT",p1d.copy())
@@ -199,6 +248,17 @@ for i,task in enumerate(my_tasks):
     p2d = fc.f2power(lt,le)
     cents,p1d = binner.bin(p2d/w2)
     st.add_to_stats("cTE",p1d.copy())
+    if args.debug_noise:
+        p2d = fc.f2power(lnt,lnt)
+        cents,p1d = binner.bin(p2d/w2)
+        st.add_to_stats("nTT",p1d.copy())
+        p2d = fc.f2power(lne,lne)
+        cents,p1d = binner.bin(p2d/w2)
+        st.add_to_stats("nEE",p1d.copy())
+        p2d = fc.f2power(lnb,lnb)
+        cents,p1d = binner.bin(p2d/w2)
+        st.add_to_stats("nBB",p1d.copy())
+        
     
 
     
@@ -213,76 +273,150 @@ for i,task in enumerate(my_tasks):
         if pol:
             io.plot_img(nmaps[1],io.dout_dir+"nQ.png",high_res=False)
             io.plot_img(nmaps[2],io.dout_dir+"nU.png",high_res=False)
-        io.plot_img(kpatch,io.dout_dir+"kappa.png",high_res=False)
+        if args.save_meanfield is None: io.plot_img(kpatch,io.dout_dir+"kappa.png",high_res=False)
 
-    
-    p2d,kinp,kinp = fc.power2d(kpatch)
-    cents,p1dii = binner.bin(p2d/w2)
-    st.add_to_stats("input",p1dii.copy())
+    if args.save_meanfield is None: 
+        p2d,kinp,kinp = fc.power2d(kpatch)
+        cents,p1dii = binner.bin(p2d/w2)
+        st.add_to_stats("input",p1dii.copy())
+    te_et_comb = 0.
+    te_et_comb_wt = 0.
+    mv_comb = 0.
+    mv_comb_wt = 0.
     for pcomb in polcombs:
-        recon = qest.kappa_from_map(pcomb,lt,le,lb,alreadyFTed=True)
+        recon = qest.kappa_from_map(pcomb,lt,le,lb,alreadyFTed=True)-mfs[pcomb]
+        # enmap.write_fits(filename("recon_"+pcomb),cpatch[0])
         if args.debug and task==0: io.plot_img(recon,io.dout_dir+"recon"+pcomb+".png",high_res=False)
-        p2d,krecon = fc.f1power(recon,kinp)
-        cents,p1d = binner.bin(p2d/w3)
-        st.add_to_stats(pcomb,p1d.copy())
+        if args.save_meanfield is None: 
+            p2d,krecon = fc.f1power(recon,kinp)
+            cents,p1d = binner.bin(p2d/w3)
+            st.add_to_stats(pcomb,p1d.copy())
+            # TE + ET
+            if pcomb in ['TE','ET']:
+                te_et_comb += np.nan_to_num(krecon/qest.N.Nlkk[pcomb])
+                te_et_comb_wt += np.nan_to_num(1./qest.N.Nlkk[pcomb])
+            # MV
+            mv_comb += np.nan_to_num(krecon/qest.N.Nlkk[pcomb])
+            mv_comb_wt += np.nan_to_num(1./qest.N.Nlkk[pcomb])
+        else:
+            st.add_to_stack("mf_"+pcomb,recon)
+        if args.save_meanfield is None: st.add_to_stats("r_"+pcomb,(p1d-p1dii)/p1dii)
 
-        st.add_to_stats("r_"+pcomb,(p1d-p1dii)/p1dii)
 
-
+    # TE + ET
+    pcomb = "TE_ET"
+    kte_et = te_et_comb/te_et_comb_wt
+    p2d = fc.f2power(kte_et,kinp)
+    cents,p1d = binner.bin(p2d/w3)
+    st.add_to_stats(pcomb,p1d.copy())
+    if args.save_meanfield is None: st.add_to_stats("r_"+pcomb,(p1d-p1dii)/p1dii)
+    # MV
+    pcomb = "mv"
+    krecon_mv = mv_comb/mv_comb_wt
+    p2d = fc.f2power(krecon_mv,kinp)
+    cents,p1d = binner.bin(p2d/w3)
+    st.add_to_stats("mv",p1d.copy())
+    if args.save_meanfield is None: st.add_to_stats("r_"+pcomb,(p1d-p1dii)/p1dii)
+    
 
         
     if rank==0: print ("Rank 0 done with task ", task+1, " / " , len(my_tasks))
 
 if rank==0: print ("Collecting results...")
-st.get_stats(verbose=False)
-# st.get_stacks(verbose=False)
+if not(args.save_meanfield is None):
+    st.get_stacks(verbose=False)
+else:
+    st.get_stats(verbose=False)
 
 
 if rank==0:
 
 
 
-    pl = io.Plotter(yscale='log',xlabel='$L$',ylabel='$C_L$')
-    ells = np.arange(2,args.kellmax,1)
-    pl.add(ells,theory.gCl('kk',ells),lw=3,color="k")
-    pl.add(cents,st.stats['input']['mean'],lw=1,color="k",alpha=0.5)
-    for pcomb in polcombs:
-        pmean,perr = st.stats[pcomb]['mean'],st.stats[pcomb]['errmean']
-        pl.add_err(cents,pmean,yerr=perr,marker="o",mew=2,elinewidth=2,ls="-",lw=2,label=pcomb)
-
-    pl.legend(loc='upper right')
-    pl._ax.set_ylim(1e-9,1e-6)
-    pl.done(io.dout_dir+"clkk.png")
-
-
-    pl = io.Plotter(xlabel='$L$',ylabel='$\Delta C_L/C_L$')
-    for pcomb in polcombs:
-        pmean,perr = st.stats["r_"+pcomb]['mean'],st.stats["r_"+pcomb]['errmean']
-        pl.add_err(cents,pmean,yerr=perr,marker="o",mew=2,elinewidth=2,ls="-",lw=2,label=pcomb)
-    pl.legend(loc='upper right')
-    pl.hline()
-    pl._ax.set_ylim(-0.1,0.05)
-    pl.done(io.dout_dir+"rclkk.png")
-
-
-
-    pl = io.Plotter(yscale='log',xlabel='$L$',ylabel='$C_{\\ell}$')
-    ells = np.arange(2,args.pellmax,1)
-    for cmb in ['TT','EE','BB']:
-        pl.add(ells,theory.lCl(cmb,ells)*ells**2.,lw=3,color="k")
-        pmean,perr = st.stats["c"+cmb]['mean'],st.stats["c"+cmb]['errmean']
-        pl.add_err(cents,pmean*cents**2.,yerr=perr*cents**2.,marker="o",mew=2,elinewidth=2,ls="-",lw=2,label=cmb)
-
-    pl.legend(loc='upper right')
-    # pl._ax.set_ylim(1e-9,1e-6)
-    pl.done(io.dout_dir+"clcmb.png")
-
+        
     
-    pl = io.Plotter(xlabel='$L$',ylabel='$C_{\\ell}$')
-    ells = np.arange(2,args.pellmax,1)
-    pl.add(ells,theory.lCl('TE',ells)*ells**2.,lw=3,color="k")
-    pmean,perr = st.stats['cTE']['mean'],st.stats['cTE']['errmean']
-    pl.add_err(cents,pmean*cents**2.,yerr=perr*cents**2.,marker="o",mew=2,elinewidth=2,ls="-",lw=2)
-    pl.legend(loc='upper right')
-    # pl._ax.set_ylim(1e-9,1e-6)
-    pl.done(io.dout_dir+"clte.png")
+
+    if not(args.save_meanfield is None):
+        for pcomb in polcombs:
+            pmf = st.stacks["mf_"+pcomb]
+            enmap.write_hdf(args.save_meanfield+"_mf_"+pcomb+".hdf",pmf.copy())
+            io.plot_img(pmf,io.dout_dir+"mf_"+pcomb+"_highres.png",high_res=True)
+            io.plot_img(pmf,io.dout_dir+"mf_"+pcomb+".png",high_res=False)
+    else:
+
+        pl = io.Plotter(yscale='log',xlabel='$L$',ylabel='$C_L$')
+        ells = np.arange(2,args.kellmax,1)
+        pl.add(ells,theory.gCl('kk',ells),lw=3,color="k")
+        pl.add(cents,st.stats['input']['mean'],lw=1,color="k",alpha=0.5)
+        for pcomb in polcombs+['TE_ET','mv']:
+            pmean,perr = st.stats[pcomb]['mean'],st.stats[pcomb]['errmean']
+            pl.add_err(cents,pmean,yerr=perr,marker="o",mew=2,elinewidth=2,lw=2,label=pcomb,ls="--" if pcomb=='mv' else "-")
+
+        pl.legend(loc='upper right')
+        pl._ax.set_ylim(1e-9,1e-6)
+        pl.done(io.dout_dir+"clkk.png")
+
+
+        pl = io.Plotter(xlabel='$L$',ylabel='$\Delta C_L/C_L$')
+        save_tuples = []
+        save_tuples.append(cents)
+        header = ""
+        header += "L \t"
+        for pcomb in polcombs+['TE_ET','mv']:
+            pmean,perr = st.stats["r_"+pcomb]['mean'],st.stats["r_"+pcomb]['errmean']
+            pl.add_err(cents,pmean,yerr=perr,marker="o",mew=2,elinewidth=2,lw=2,label=pcomb,ls="--" if pcomb=='mv' else "-")
+            save_tuples.append(pmean)
+            save_tuples.append(perr)
+            header += pcomb+" \t"
+            header += pcomb+"_err \t"
+        io.save_cols(filename("rclkk","txt"),save_tuples,header=header,delimiter='\t')
+        pl.legend(loc='upper right')
+        pl.hline()
+        pl._ax.set_ylim(-0.1,0.05)
+        pl.done(io.dout_dir+"rclkk.png")
+
+
+
+        pl = io.Plotter(yscale='log',xlabel='$L$',ylabel='$C_{\\ell}$')
+        ells = np.arange(2,args.pellmax,1)
+        for i,cmb in enumerate(['TT','EE','BB']):
+            pl.add(ells,theory.lCl(cmb,ells)*ells**2.,lw=3,color="k")
+            pmean,perr = st.stats["c"+cmb]['mean'],st.stats["c"+cmb]['errmean']
+            pl.add_err(cents,pmean*cents**2.,yerr=perr*cents**2.,marker="o",mew=2,elinewidth=2,ls="-",lw=2,label=cmb,color="C"+str(i))
+            if args.debug_noise:
+                pmean,perr = st.stats["n"+cmb]['mean'],st.stats["n"+cmb]['errmean']
+                pl.add(cents,pmean*cents**2.,ls="--",lw=2,color="C"+str(i))
+                q2d = qest.N.noiseYY2d[cmb]
+                cents,p1d = binner.bin(q2d.real)
+                pl.add(cents,p1d*cents**2.,ls="-",lw=2,color="C"+str(i))
+
+
+        pl.legend(loc='upper right')
+        # pl._ax.set_ylim(1e-9,1e-6)
+        pl.done(io.dout_dir+"clcmb.png")
+
+        if args.debug_noise:
+
+            pl = io.Plotter(yscale='log',xlabel='$L$',ylabel='$C_{\\ell}$')
+            ells = np.arange(2,args.pellmax,1)
+            for i,cmb in enumerate(['TT','EE','BB']):
+                pmean,perr = st.stats["n"+cmb]['mean'],st.stats["n"+cmb]['errmean']
+                pl.add(cents,pmean*cents**2.,ls="none",lw=2,color="C"+str(i),marker="o")
+                q2d = qest.N.noiseYY2d[cmb]
+                cents,p1d = binner.bin(q2d.real)
+                pl.add(cents,p1d*cents**2.,ls="-",lw=2,color="C"+str(i))
+
+            pl.legend(loc='upper right')
+            # pl._ax.set_ylim(1e-9,1e-6)
+            pl.done(io.dout_dir+"nlcmb.png")
+
+        
+
+        pl = io.Plotter(xlabel='$L$',ylabel='$C_{\\ell}$')
+        ells = np.arange(2,args.pellmax,1)
+        pl.add(ells,theory.lCl('TE',ells)*ells**2.,lw=3,color="k")
+        pmean,perr = st.stats['cTE']['mean'],st.stats['cTE']['errmean']
+        pl.add_err(cents,pmean*cents**2.,yerr=perr*cents**2.,marker="o",mew=2,elinewidth=2,ls="-",lw=2)
+        pl.legend(loc='upper right')
+        # pl._ax.set_ylim(1e-9,1e-6)
+        pl.done(io.dout_dir+"clte.png")

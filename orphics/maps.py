@@ -1045,8 +1045,8 @@ def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
                 assert hp_coords.lower() in gal_coords
                 gc = SkyCoord(ra=ph*u.degree, dec=th*u.degree, frame='fk5')
                 gc = gc.transform_to('galactic')
-                phOut = gc.l.deg
-                thOut = gc.b.deg
+                phOut = gc.l.deg* np.pi/180.
+                thOut = gc.b.deg* np.pi/180.
         else:
                 thOut = th
                 phOut = ph
@@ -1579,6 +1579,9 @@ class Purify(object):
         lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes(shape,wcs)
 
     def lteb_from_iqu(self,imap,method='pure'):
+        """
+        maps must not have window applied!
+        """
         fT, fE, fB = iqu_to_pure_lteb(imap[0],imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method)
         return fT,-fE,-fB
         
@@ -1610,6 +1613,9 @@ def init_deriv_window(window,px):
 
 
 def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure'):
+    """
+    maps must not have window applied!
+    """
 
     window = windowDict
 
@@ -1620,13 +1626,13 @@ def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure')
     d2Win_dy2=window['d2Win_dy2']
     d2Win_dxdy=window['d2Win_dxdy']
 
-    T_temp=T_map.copy()#*win
+    T_temp=T_map.copy()*win
     fT=fft(T_temp,axes=[-2,-1])
     
-    Q_temp=Q_map.copy()#*win
+    Q_temp=Q_map.copy()*win
     fQ=fft(Q_temp,axes=[-2,-1])
     
-    U_temp=U_map.copy()#*win
+    U_temp=U_map.copy()*win
     fU=fft(U_temp,axes=[-2,-1])
     
     fE=fT.copy()
@@ -1800,4 +1806,61 @@ class PatchArray(object):
 
     def get_noise_sim(self,seed=None,scalar=False):
         return self.ngenerator.get_map(seed=seed,scalar=scalar)
+    
+
+
+
+def gauss_kern(sigmaY,sigmaX,nsigma=5.0):
+    """
+    @ brief Returns a normalized 2D gauss kernel array for convolutions
+    ^
+    | Y
+    |
+    ------>
+      X 
+    """
+    sizeY = int(nsigma*sigmaY)
+    sizeX = int(nsigma*sigmaX)
+    
+    y, x = np.mgrid[-sizeY:sizeY+1, -sizeX:sizeX+1]
+    g = np.exp(-(x**2/(2.*sigmaX**2)+y**2/(2.*sigmaY**2)))
+    return g / g.sum()
+
+
+
+def convolve_gaussian(imap,fwhm=1.4,nsigma=5.0):
+    """
+    @brief convolve a map with a Gaussian beam (real space operation)
+    @param fwhm Full Width Half Max in arcmin
+    @param nsigma Number of sigmas the Gaussian kernel is defined out to.
+
+
+    """
+    from scipy import signal
+    
+    fwhm *= np.pi/(180.*60.)
+    py,px = enmap.pixshape(imap.shape, imap.wcs)
+
+    """
+    @param sigmaY standard deviation of Gaussian in pixel units in the Y direction
+    @param sigmaX standard deviation of Gaussian in pixel units in the X direction
+
+    """
+    
+    sigmaY = fwhm/(np.sqrt(8.*np.log(2.))*py)
+    sigmaX = fwhm/(np.sqrt(8.*np.log(2.))*px)
+
+    g = gauss_kern(sigmaY, sigmaX,nsigma=nsigma)
+    
+    ncomps = imap.shape[0] if imap.ndim>2 else 1
+    imaps = imap.reshape((ncomps,imap.shape[-2],imap.shape[-1]))
+    data = []
+    for i in range(imap.shape[0]):
+        omap = signal.convolve(imaps[i],g, mode='same')
+        data.append(omap)
+
+    data = np.array(data).reshape((ncomps,imap.shape[-2],imap.shape[-1]))
+    
+    return enmap.enmap(data,imap.wcs)
+
     

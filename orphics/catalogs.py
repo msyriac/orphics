@@ -52,12 +52,35 @@ class CatMapper(object):
 
     """
 
-    def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None,verbose=True):
+    def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial"):
 
         self.verbose = verbose
         if nside is not None:
+
+            eq_coords = ['fk5','j2000','equatorial']
+            gal_coords = ['galactic']
+
             if verbose: print( "Calculating pixels...")
-            self.pixs = hp.ang2pix(nside,ras_deg,decs_deg,lonlat=True)
+            if hp_coords in gal_coords:
+                if verbose: print( "Transforming coords...")
+                from astropy.coordinates import SkyCoord
+                import astropy.units as u
+                gc = SkyCoord(ra=ras_deg*u.degree, dec=decs_deg*u.degree, frame='fk5')
+                gc = gc.transform_to('galactic')
+                phOut = gc.l.deg * np.pi/180.
+                thOut = gc.b.deg * np.pi/180.
+                thOut = np.pi/2. - thOut #polar angle is 0 at north pole
+
+                self.pixs = hp.ang2pix( nside, thOut, phOut )
+            elif hp_coords in eq_coords:
+                ras_out = ras_deg
+                decs_out = decs_deg
+                lonlat = True
+                self.pixs = hp.ang2pix(nside,ras_out,decs_out,lonlat=lonlat)
+                
+            else:
+                raise ValueError
+                
             if verbose: print( "Done with pixels...")
             self.nside = nside
             self.shape = hp.nside2npix(nside)
@@ -108,7 +131,7 @@ class CatMapper(object):
 
 class BOSSMapper(CatMapper):
 
-    def __init__(self,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None,shape=None,wcs=None,nside=None,verbose=True):
+    def __init__(self,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial"):
         from astropy.io import fits
 
         ras = []
@@ -120,7 +143,7 @@ class BOSSMapper(CatMapper):
             decs += cat.data['DEC'].tolist()
             f.close()
             
-        CatMapper.__init__(self,ras,decs,shape,wcs,nside,verbose=verbose)
+        CatMapper.__init__(self,ras,decs,shape,wcs,nside,verbose=verbose,hp_coords=hp_coords)
         if random_files is not None:
             self.rand_map = 0.
             #ras = []
@@ -132,7 +155,7 @@ class BOSSMapper(CatMapper):
                 cat = f[1] #.copy()
                 ras = cat.data['RA'] #.tolist()
                 decs = cat.data['DEC'] #.tolist()
-                rcat = CatMapper(ras,decs,shape,wcs,nside,verbose=verbose)
+                rcat = CatMapper(ras,decs,shape,wcs,nside,verbose=verbose,hp_coords=hp_coords)
                 self.rand_map += rcat.counts
                 del rcat
                 del ras
@@ -180,7 +203,7 @@ class HSCMapper(CatMapper):
         if pz_file is not None:
             raise NotImplementedError
 
-        CatMapper.__init__(self,ras,decs,shape,wcs,nside)
+        CatMapper.__init__(self,ras,decs,shape,wcs,nside,hp_coords=hp_coords)
         self.hsc_wts = self.get_map(weights=self.wts)
         self.mean_wt = np.nan_to_num(self.hsc_wts/self.counts)
         self.update_mask(mask_threshold)

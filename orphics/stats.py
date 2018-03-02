@@ -466,6 +466,37 @@ class bin2D(object):
         return self.centers,res
 
 
+class bin1D:
+    '''
+    * Takes data defined on x0 and produces values binned on x.
+    * Assumes x0 is linearly spaced and continuous in a domain?
+    * Assumes x is continuous in a subdomain of x0.
+    * Should handle NaNs correctly.
+    '''
+    
+
+    def __init__(self, bin_edges):
+
+        self.updateBinEdges(bin_edges)
+
+
+    def update_bin_edges(self,bin_edges):
+        
+        self.bin_edges = bin_edges
+        self.numbins = len(bin_edges)-1
+
+
+    def binned(self,x,y):
+
+
+        # pretty sure this treats nans in y correctly, but should double-check!
+        bin_means = binnedstat(x,y,bins=self.bin_edges,statistic=np.nanmean)[0]
+
+
+        
+        return (self.bin_edges[:-1]+self.bin_edges[1:])/2.,bin_means
+
+        
     
 def bin_in_annuli(data2d, modrmap, bin_edges):
     binner = bin2D(modrmap, bin_edges)
