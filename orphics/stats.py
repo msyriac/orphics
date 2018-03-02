@@ -477,7 +477,7 @@ class bin1D:
 
     def __init__(self, bin_edges):
 
-        self.updateBinEdges(bin_edges)
+        self.update_bin_edges(bin_edges)
 
 
     def update_bin_edges(self,bin_edges):
