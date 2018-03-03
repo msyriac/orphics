@@ -3,6 +3,7 @@ import numpy as np
 import time
 import itertools
 import scipy
+from scipy.stats import binned_statistic as binnedstat
 
 try:
     from pandas import DataFrame

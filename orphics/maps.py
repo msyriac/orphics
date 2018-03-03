@@ -10,6 +10,22 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
+def resample_fft(imap,res):
+    """
+    Wrapper around enlib.resample.resample_fft.
+    Accepts a target map resolution instead of target shape.
+    Returns an enmap instead of an array.
+    imap must be periodic/windowed
+    """
+    from enlib import resample
+    shape,wcs = imap.shape,imap.wcs
+    inres = resolution(shape,wcs)
+    scale = inres/res
+    oshape,owcs = enmap.scale_geometry(shape, wcs, scale)
+    return enmap.enmap(resample.resample_fft(imap,oshape[-2:]),owcs)
+
+    
+
 def split_sky(dec_width,num_decs,ra_width,dec_start=0.,ra_start=0.,ra_extent=90.):
 
     ny = num_decs
@@ -388,12 +404,12 @@ def ncov(shape,wcs,noise_uk_arcmin):
     noise_uK_pixel = noise_uK_rad/normfact
     return np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
 
-def pixcov(shape,wcs,fourierCov):
-    fourierCov = fourierCov.astype(np.float32, copy=False)
+def pixcov(shape,wcs,fourier_cov):
+    fourier_cov = fourier_cov.astype(np.float32, copy=False)
     bny,bnx = shape
-    from numpy.fft import fft2,ifft2
+    from numpy.fft import fft2,ifft2 # TODO: update to fast fft
 
-    pcov = fft2((ifft2(fourierCov,axes=(-4,-3))),axes=(-2,-1)).real
+    pcov = fft2((ifft2(fourier_cov,axes=(-4,-3))),axes=(-2,-1)).real
     return pcov*bnx*bny/enmap.area(shape,wcs)
 
 def get_lnlike(covinv,instamp):
