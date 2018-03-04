@@ -238,8 +238,8 @@ class OQE(object):
 
         
     def _inv(self,cov):
-        #return np.linalg.pinv(cov)
-        #return scipy.linalg.pinv2(cov)
+        # return np.linalg.pinv(cov)
+        # return scipy.linalg.pinv2(cov)
         return np.linalg.inv(cov)
 
 
