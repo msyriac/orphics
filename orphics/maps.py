@@ -1915,6 +1915,7 @@ def gkern_interp(shape,wcs,rs,bprof,fwhm_guess,nsigma=20.0):
     if ((ny%2==0) and (sy%2==1)) or ((ny%2==1) and (sy%2==0)): sy+=1
     if ((nx%2==0) and (sx%2==1)) or ((nx%2==1) and (sx%2==0)): sx+=1
     
+    
     rmap = crop_center(modrmap,sy,sx)
 
     g = interp(rs,bprof)(rmap)
@@ -1929,6 +1930,7 @@ def convolve_profile(imap,rs,bprof,fwhm_guess,nsigma=20.0):
     fwhm_guess is in arcmin
     """
     g = gkern_interp(imap.shape,imap.wcs,rs,bprof,fwhm_guess,nsigma=nsigma)
+    print(g.shape)
     return convolve(imap,g)
 
 def convolve(imap,kernel):
