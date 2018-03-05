@@ -11,6 +11,27 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
+def crop_center(img,cropy,cropx):
+    y,x = img.shape
+    startx = x//2-(cropx//2)
+    starty = y//2-(cropy//2)    
+    return img[starty:starty+cropy,startx:startx+cropx]
+
+def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None):
+    """Get the binned power spectrum of a map in one line of code.
+    (At the cost of flexibility and reusability of expensive parts)"""
+    
+    from orphics import stats
+    shape,wcs = imap.shape,imap.wcs
+    modlmap = enmap.modlmap(shape,wcs) if modlmap is None else modlmap
+    fc = FourierCalc(shape,wcs) if fc is None else fc
+    binner = stats.bin2D(modlmap,bin_edges) if binner is None else binner
+    p2d,_,_ = fc.power2d(imap)
+    return binner.bin(p2d)
+
+def interp(x,y,bounds_error=False,fill_value=0.,**kwargs):
+    return interp1d(x,y,bounds_error=bounds_error,fill_value=fill_value,**kwargs)
+
 def flat_sim(deg,px,lmax=6000,lensed=True,pol=False):
     """
     Get some commonly used objects for flat-sky sims.
@@ -525,11 +546,21 @@ def cosine_window(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
     return win
 
 def filter_map(imap,kfilter):
-    return np.real(ifft(fft(imap,axes=[-2,-1])*kfilter,axes=[-2,-1],normalize=True)) 
+    return enmap.enmap(np.real(ifft(fft(imap,axes=[-2,-1])*kfilter,axes=[-2,-1],normalize=True)) ,imap.wcs)
 
 def gauss_beam(ell,fwhm):
     tht_fwhm = np.deg2rad(fwhm / 60.)
     return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
+
+def sigma_from_fwhm(fwhm):
+    return fwhm/2./np.sqrt(2.*np.log(2.))
+
+def gauss_beam_real(rs,fwhm):
+    """rs in radians ; fwhm in arcmin"""
+    tht_fwhm = np.deg2rad(fwhm / 60.)
+    sigma = sigma_from_fwhm(tht_fwhm)
+    return np.exp(-(rs**2.) / 2./sigma**2.)
+
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
     output = np.ones(shape[-2:], dtype = int)
@@ -1860,42 +1891,87 @@ def gauss_kern(sigmaY,sigmaX,nsigma=5.0):
     return g / g.sum()
 
 
+def gkern_interp(shape,wcs,rs,bprof,fwhm_guess,nsigma=20.0):
+    """
+    @ brief Returns a normalized 2D kernel array for convolutions
+    given a 1D profile shape. 
+    rs in radians
+    bprof is profile
+    fwhm_guess is in arcmin
+    """
 
-def convolve_gaussian(imap,fwhm=1.4,nsigma=5.0):
+    fwhm_guess *= np.pi/(180.*60.)
+    # Approximate pixel size
+    py,px = enmap.pixshape(shape, wcs, signed=False)
+    sigma = fwhm_guess/(np.sqrt(8.*np.log(2.)))
+
+    modrmap = enmap.modrmap(shape,wcs)
+
+    ny,nx = shape
+
+    sy = int(nsigma*sigma/py)
+    sx = int(nsigma*sigma/px)
+    
+    if ((ny%2==0) and (sy%2==1)) or ((ny%2==1) and (sy%2==0)): sy+=1
+    if ((nx%2==0) and (sx%2==1)) or ((nx%2==1) and (sx%2==0)): sx+=1
+    
+    rmap = crop_center(modrmap,sy,sx)
+
+    g = interp(rs,bprof)(rmap)
+
+    return g / g.sum()
+
+
+def convolve_profile(imap,rs,bprof,fwhm_guess,nsigma=20.0):
+    """
+    rs in radians
+    bprof is profile
+    fwhm_guess is in arcmin
+    """
+    g = gkern_interp(imap.shape,imap.wcs,rs,bprof,fwhm_guess,nsigma=nsigma)
+    return convolve(imap,g)
+
+def convolve(imap,kernel):
+    from scipy import signal
+
+    g = kernel
+    ncomps = imap.shape[0] if imap.ndim>2 else 1
+    imaps = imap.reshape((ncomps,imap.shape[-2],imap.shape[-1]))
+    data = []
+    for i in range(imaps.shape[0]):
+        omap = signal.convolve(imaps[i],g, mode='same')
+        data.append(omap)
+
+    if ncomps==1:
+        data = np.array(data).reshape((imap.shape[-2],imap.shape[-1]))
+    else:
+        data = np.array(data).reshape((ncomps,imap.shape[-2],imap.shape[-1]))
+    
+    return enmap.enmap(data,imap.wcs)
+
+
+def convolve_gaussian(imap,fwhm=None,nsigma=5.0):
     """
     @brief convolve a map with a Gaussian beam (real space operation)
+    @param kernel real-space 2D kernel
     @param fwhm Full Width Half Max in arcmin
     @param nsigma Number of sigmas the Gaussian kernel is defined out to.
 
 
     """
-    from scipy import signal
     
-    fwhm *= np.pi/(180.*60.)
-    py,px = enmap.pixshape(imap.shape, imap.wcs)
 
     """
     @param sigmaY standard deviation of Gaussian in pixel units in the Y direction
     @param sigmaX standard deviation of Gaussian in pixel units in the X direction
 
     """
-    
+
+    fwhm *= np.pi/(180.*60.)
+    py,px = enmap.pixshape(imap.shape, imap.wcs)
     sigmaY = fwhm/(np.sqrt(8.*np.log(2.))*py)
     sigmaX = fwhm/(np.sqrt(8.*np.log(2.))*px)
 
     g = gauss_kern(sigmaY, sigmaX,nsigma=nsigma)
-    print(g)
-    
-    ncomps = imap.shape[0] if imap.ndim>2 else 1
-    imaps = imap.reshape((ncomps,imap.shape[-2],imap.shape[-1]))
-    data = []
-    for i in range(imaps.shape[0]):
-        print(i)
-        omap = signal.convolve(imaps[i],g, mode='same')
-        data.append(omap)
-
-    data = np.array(data).reshape((ncomps,imap.shape[-2],imap.shape[-1]))
-    
-    return enmap.enmap(data,imap.wcs)
-
-    
+        
+    return convolve(imap,g)
