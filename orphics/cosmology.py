@@ -252,6 +252,7 @@ class Cosmology(object):
         '''
         Average electron density today but with
         Helium II reionization at z<3
+        Units: 1/meter**3
         '''
 
         if not(shaw):
@@ -413,10 +414,9 @@ class LimberCosmology(Cosmology):
 
     pkgrid_override can be a RectBivariateSpline object such that camb.PK.P(z,k,grid=True) returns the same as pkgrid_override(k,z)
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=1000,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False):
-        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=skipPower,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc)
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=1000,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False,skip_growth=True,dimensionless=True):
+        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=skipPower,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc,skip_growth=skip_growth,dimensionless=dimensionless)
 
-        
 
         self.kmax = kmax
         self.chis = np.linspace(0,self.chistar,numz)
