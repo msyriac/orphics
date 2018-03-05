@@ -1,3 +1,4 @@
+from __future__ import print_function 
 from enlib import enmap, utils
 import numpy as np
 from enlib.fft import fft,ifft
@@ -9,6 +10,23 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
+
+def flat_sim(deg,px,lmax=6000,lensed=True,pol=False):
+    """
+    Get some commonly used objects for flat-sky sims.
+    Not very flexible but is a one-line replacement for
+    a large fraction of use cases.
+    """
+    from orphics import cosmology
+    shape,wcs = rect_geometry(width_deg=deg,px_res_arcmin=px)
+    modlmap = enmap.modlmap(shape,wcs)
+    cc = cosmology.Cosmology(lmax=lmax,pickling=True,dimensionless=False)
+    Lmax = modlmap.max()
+    ells = np.arange(0,Lmax,1)
+    ps = cosmology.power_from_theory(ells,cc.theory,lensed=lensed,pol=pol)
+    mgen = MapGen(shape,wcs,ps)
+    return shape,wcs,modlmap,cc,mgen
+
 
 def resample_fft(imap,res):
     """
@@ -681,12 +699,10 @@ def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
     """
     by Thibaut Louis
 
-    my_map  -- masked map
-    my_map_2  -- random map with same power
-    Mask -- mask
-    power_spec -- 2d S+N power
-    nxside
-    nyside
+    imap  -- masked map
+    rand_map  -- random map with same power
+    mask -- mask
+    power2d -- 2d S+N power : IMPORTANT, this must be non-zero up to pixel scale
     eps
 
     """
@@ -750,12 +766,12 @@ def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
     delta_array=np.zeros(shape=(i_max))
     
     while i<i_max and delta_new > eps**2*delta_o:
-        # print ""
-        # print "number of iterations:", i
-        # print ""
-        # print "eps**2*delta_o=",eps**2*delta_o
-        # print ""
-        # print "delta new=",delta_new
+        # print ("")
+        # print ("number of iterations:", i)
+        # print ("")
+        # print ("eps**2*delta_o=",eps**2*delta_o)
+        # print ("")
+        # print ("delta new=",delta_new)
         
         q=apply_px_c_inv_px(d)
         alpha=delta_new/(np.inner(d,q))
@@ -1594,11 +1610,12 @@ class Purify(object):
         self.windict = init_deriv_window(window,px)
         lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes(shape,wcs)
 
-    def lteb_from_iqu(self,imap,method='pure'):
+    def lteb_from_iqu(self,imap,method='pure',flip_q=True):
         """
         maps must not have window applied!
         """
-        fT, fE, fB = iqu_to_pure_lteb(imap[0],imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method)
+        sgnq = -1 if flip_q else 1
+        fT, fE, fB = iqu_to_pure_lteb(imap[0],sgnq*imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method)
         return fT,-fE,-fB
         
 
@@ -1867,11 +1884,13 @@ def convolve_gaussian(imap,fwhm=1.4,nsigma=5.0):
     sigmaX = fwhm/(np.sqrt(8.*np.log(2.))*px)
 
     g = gauss_kern(sigmaY, sigmaX,nsigma=nsigma)
+    print(g)
     
     ncomps = imap.shape[0] if imap.ndim>2 else 1
     imaps = imap.reshape((ncomps,imap.shape[-2],imap.shape[-1]))
     data = []
-    for i in range(imap.shape[0]):
+    for i in range(imaps.shape[0]):
+        print(i)
         omap = signal.convolve(imaps[i],g, mode='same')
         data.append(omap)
 

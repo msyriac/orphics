@@ -207,6 +207,7 @@ for i,task in enumerate(my_tasks):
     if i==0:
         qest, ngen, kbeam, binner, taper, fc, purifier = init_geometry(shape[-2:],wcs)
         if args.flat and not(args.flat_taper): taper = enmap.ones(shape[-2:])
+        w4 = np.mean(taper**4.)
         w3 = np.mean(taper**3.)
         w2 = np.mean(taper**2.)
 
@@ -283,6 +284,9 @@ for i,task in enumerate(my_tasks):
     te_et_comb_wt = 0.
     mv_comb = 0.
     mv_comb_wt = 0.
+    krtt = None
+    kreb = None
+    
     for pcomb in polcombs:
         recon = qest.kappa_from_map(pcomb,lt,le,lb,alreadyFTed=True)-mfs[pcomb]
         # enmap.write_fits(filename("recon_"+pcomb),cpatch[0])
@@ -291,6 +295,8 @@ for i,task in enumerate(my_tasks):
             p2d,krecon = fc.f1power(recon,kinp)
             cents,p1d = binner.bin(p2d/w3)
             st.add_to_stats(pcomb,p1d.copy())
+            if pcomb=='TT': krtt=krecon.copy()
+            if pcomb=='EB': kreb=krecon.copy()
             # TE + ET
             if pcomb in ['TE','ET']:
                 te_et_comb += np.nan_to_num(krecon/qest.N.Nlkk[pcomb])
@@ -317,6 +323,12 @@ for i,task in enumerate(my_tasks):
     cents,p1d = binner.bin(p2d/w3)
     st.add_to_stats("mv",p1d.copy())
     if args.save_meanfield is None: st.add_to_stats("r_"+pcomb,(p1d-p1dii)/p1dii)
+    # TTEB
+    if (args.save_meanfield is None) and (krtt is not None) and (kreb is not None):
+        p2dtteb = fc.f2power(krtt,kreb)
+        cents,p1d = binner.bin(p2dtteb/w4)
+        st.add_to_stats("tteb",p1d.copy())
+        st.add_to_stats("r_tteb",(p1d-p1dii)/p1dii)
     
 
         
@@ -348,7 +360,7 @@ if rank==0:
         ells = np.arange(2,args.kellmax,1)
         pl.add(ells,theory.gCl('kk',ells),lw=3,color="k")
         pl.add(cents,st.stats['input']['mean'],lw=1,color="k",alpha=0.5)
-        for pcomb in polcombs+['TE_ET','mv']:
+        for pcomb in polcombs+['TE_ET','mv','tteb']:
             pmean,perr = st.stats[pcomb]['mean'],st.stats[pcomb]['errmean']
             pl.add_err(cents,pmean,yerr=perr,marker="o",mew=2,elinewidth=2,lw=2,label=pcomb,ls="--" if pcomb=='mv' else "-")
 
@@ -362,7 +374,7 @@ if rank==0:
         save_tuples.append(cents)
         header = ""
         header += "L \t"
-        for pcomb in polcombs+['TE_ET','mv']:
+        for pcomb in polcombs+['TE_ET','mv','tteb']:
             pmean,perr = st.stats["r_"+pcomb]['mean'],st.stats["r_"+pcomb]['errmean']
             pl.add_err(cents,pmean,yerr=perr,marker="o",mew=2,elinewidth=2,lw=2,label=pcomb,ls="--" if pcomb=='mv' else "-")
             save_tuples.append(pmean)

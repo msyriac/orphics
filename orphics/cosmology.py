@@ -1209,3 +1209,18 @@ def get_lensed_cls(theory,ells,clkk,lmax):
 
 
     return dtheory
+
+
+
+
+def power_from_theory(ells,theory,lensed=True,pol=False):
+    ncomp = 3 if pol else 1
+    cfunc = theory.lCl if lensed else theory.uCl
+    ps = np.zeros((ncomp,ncomp,)+ells.shape)
+    ps[0,0] = cfunc('TT',ells)
+    if pol:
+        ps[1,1] = cfunc('EE',ells)
+        ps[2,2] = cfunc('BB',ells)
+        ps[0,1] = cfunc('TE',ells)
+        ps[1,0] = cfunc('TE',ells)
+    return ps
