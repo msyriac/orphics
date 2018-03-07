@@ -505,7 +505,7 @@ def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,wei
     res = resolution(shape,wcs)
     pix_apod = int(taper_width_degrees*np.pi/180./res)
     pix_pad = int(pad_width_degrees*np.pi/180./res)
-    taper = cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod,padY=pix_pad,padX=pix_pad)*weight
+    taper = enmap.enmap(cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod,padY=pix_pad,padX=pix_pad)*weight,wcs)
     w2 = np.mean(taper**2.)
     return taper,w2
 
