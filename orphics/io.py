@@ -46,6 +46,7 @@ class LoggerWriter:
     
 def get_logger(logname)        :
     logging.basicConfig(filename=logname+str(time.time()*10)+".log",level=logging.DEBUG,format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',datefmt='%m-%d %H:%M',filemode='w')
+    print ("JIA: print logger",logname+str(time.time()*10)+".log" )   
     console = logging.StreamHandler()
     console.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
