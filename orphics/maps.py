@@ -39,7 +39,7 @@ def flat_sim(deg,px,lmax=6000,lensed=True,pol=False):
     a large fraction of use cases.
     """
     from orphics import cosmology
-    shape,wcs = rect_geometry(width_deg=deg,px_res_arcmin=px)
+    shape,wcs = rect_geometry(width_deg=deg,px_res_arcmin=px,pol=pol)
     modlmap = enmap.modlmap(shape,wcs)
     cc = cosmology.Cosmology(lmax=lmax,pickling=True,dimensionless=False)
     Lmax = modlmap.max()
@@ -445,7 +445,7 @@ def ncov(shape,wcs,noise_uk_arcmin):
 
 def pixcov(shape,wcs,fourier_cov):
     fourier_cov = fourier_cov.astype(np.float32, copy=False)
-    bny,bnx = shape
+    bny,bnx = shape[-2:]
     from numpy.fft import fft2,ifft2 # TODO: update to fast fft
 
     pcov = fft2((ifft2(fourier_cov,axes=(-4,-3))),axes=(-2,-1)).real

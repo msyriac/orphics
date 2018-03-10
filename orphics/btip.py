@@ -1,6 +1,7 @@
+from __future__ import print_function
 import numpy as np
-
-
+from orphics import maps,io
+from enlib import enmap,resample
 
 def inpaint_map(imap,ras,decs,radii_tags,radii_dict,tot_power_2d,seed=None):
     """
@@ -51,7 +52,7 @@ def get_geometry_shapes(shape,wcs,hole_arcminutes):
     return m1.size,m2.size
 
 
-def make_circular_geometry(shape,wcs,context_arcmin,hole_arcmin,power2d,buffer_factor = 2,verbose=False,downsample=True):
+def make_circular_geometry(shape,wcs,context_arcmin,hole_arcmin,power2d,buffer_factor = 2,verbose=False):
     '''Makes the circular geometry matrices that need to be pre-calculated for later inpainting.
 
     Arguments
@@ -91,28 +92,49 @@ def make_circular_geometry(shape,wcs,context_arcmin,hole_arcmin,power2d,buffer_f
     arc = context_arcmin
     res = maps.resolution(shape,wcs)*60.*180./np.pi
                                                       
-    bshape,bwcs = maps.rect_geometry(width_arcmin=arc*bufferFactor,px_res_arcmin=res)
+    bshape,bwcs = maps.rect_geometry(width_arcmin=arc*buffer_factor,px_res_arcmin=res)
     tshape,twcs = maps.rect_geometry(width_arcmin=arc,px_res_arcmin=res)
     sny,snx = tshape
-    modlmap = enmap.modlmap(bshape,bwcs)
+    bmodlmap = enmap.modlmap(bshape,bwcs)
+    modlmap = enmap.modlmap(shape,wcs)
 
-    print "Downsampling..."
-    from enlib.resample import resample_fft
-    Niy,Nix = inputLy.size,inputLx.size
-    Noy,Nox = ly.size,lx.size
-    outPower = resample_fft(input2DPower,factors=[float(Noy)/Niy,float(Nox)/Nix],axes=[-2,-1])
+    if verbose: print ("Downsampling...")
+    Niy,Nix = shape[-2:]
+    Noy,Nox = bshape[-2:]
+    
+    # print(bshape,tshape,power2d.shape)
+    # io.plot_img(np.fft.fftshift(np.log10(power2d)))
+    #out_power = resample.resample_fft(power2d,bshape[-2:],axes=[-2,-1])
+    #out_power = np.fft.ifftshift(resample.resample_fft(np.fft.fftshift(power2d),bshape[-2:],axes=[-2,-1]))
+    out_power = resample.resample_bin(power2d,factors=[float(Noy)/Niy,float(Nox)/Nix],axes=[-2,-1])
+    # io.plot_img(np.fft.fftshift(np.log10(out_power)))
+    # print(out_power.shape)
+    
+    if verbose: print ("Starting slow part...")
+    d = maps.diagonal_cov(out_power)
+    pcov = maps.pixcov(bshape,bwcs,d)[:sny,:snx,:sny,:snx]
+    modrmap = enmap.modrmap(tshape,twcs)
+    m1 = np.where(modrmap.reshape(-1)<hole_arcmin*np.pi/180./60.)[0]
+    m2 = np.where(modrmap.reshape(-1)>=hole_arcmin*np.pi/180./60.)[0]
 
-    print "Starting slow part..."
-    d = maps.diagonal_cov(down_power_2d)
-    pcov = maps.pixcov(shape,wcs,d)[:sny,:snx,:sny,:snx]
-    xMap,yMap,modRMap,xx,yy = fmaps.getRealAttributes(targetTemplate)
-    m1 = np.where(modRMap.reshape(-1)<holeArc*np.pi/180./60.)[0]
-    m2 = np.where(modRMap.reshape(-1)>=holeArc*np.pi/180./60.)[0]
-
-    meanMul, cov = getGeometry(pcov.reshape(sny*snx,sny*snx),m1,m2)
-    covRoot = eigPow(cov,0.5)
+    meanMul, cov = get_geometry(pcov.reshape(sny*snx,sny*snx),m1,m2)
+    covRoot = stats.eig_pow(cov,0.5)
 
     return meanMul, covRoot, pcov, targetTemplate, m1, m2
+
+
+def get_geometry(pixcov,m1,m2):
+    # m1 is hole
+    # m2 is context
+
+    Cinv = np.linalg.inv(pixcov)
+    cslice = Cinv[m1][:,m1]
+    meanMul1 = np.linalg.inv(cslice)
+
+    mul2 = Cinv[m1][:,m2]
+    meanMul = np.dot(-meanMul1,mul2)
+    cov = np.linalg.pinv(Cinv[m1][:,m1])
+    return meanMul, cov
 
 
 def fill_hole(masked_liteMap_stamp,meanMatrix,holeArc,m1,m2,covRoot=None):

@@ -267,6 +267,13 @@ class CinvUpdater(object):
 
         
 
+def eig_pow(C,exponent=-1,lim=1.e-8):
+    e,v = np.linalg.eigh(C)
+    emax = np.max(e)
+    mask = e<emax*lim
+    e[~mask] **= exponent
+    e[mask]=0.
+    return (v*e).dot(v.T)
 
 def sm_update(Ainv, u, v=None):
     """Compute the value of (A + uv^T)^-1 given A^-1, u, and v. 
