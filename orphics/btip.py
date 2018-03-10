@@ -1,7 +1,7 @@
 from __future__ import print_function
 import numpy as np
-from orphics import maps,io
-from enlib import enmap,resample
+from orphics import maps,io,stats
+from enlib import enmap,resample,bench
 
 def inpaint_map(imap,ras,decs,radii_tags,radii_dict,tot_power_2d,seed=None):
     """
@@ -39,7 +39,7 @@ def prepare_circular_mask(stamp,hole_arcminutes):
     '''
 
     stamp[stamp.modrmap()<hole_arcminutes*np.pi/180./60.] = np.nan
-    unmaskedMean = np.nanmean(stamp)
+    unmasked_mean = np.nanmean(stamp)
     stamp -= unmasked_mean
 
     return stamp, unmasked_mean
@@ -112,15 +112,18 @@ def make_circular_geometry(shape,wcs,context_arcmin,hole_arcmin,power2d,buffer_f
     
     if verbose: print ("Starting slow part...")
     d = maps.diagonal_cov(out_power)
-    pcov = maps.pixcov(bshape,bwcs,d)[:sny,:snx,:sny,:snx]
+    with bench.show("pixcov"):
+        pcov = maps.pixcov(bshape,bwcs,d)[:sny,:snx,:sny,:snx]
     modrmap = enmap.modrmap(tshape,twcs)
     m1 = np.where(modrmap.reshape(-1)<hole_arcmin*np.pi/180./60.)[0]
     m2 = np.where(modrmap.reshape(-1)>=hole_arcmin*np.pi/180./60.)[0]
 
-    meanMul, cov = get_geometry(pcov.reshape(sny*snx,sny*snx),m1,m2)
+    with bench.show("geom"):
+        meanMul, cov = get_geometry(pcov.reshape(sny*snx,sny*snx),m1,m2)
+    
     covRoot = stats.eig_pow(cov,0.5)
 
-    return meanMul, covRoot, pcov, targetTemplate, m1, m2
+    return meanMul, covRoot, pcov, tshape,twcs, m1, m2
 
 
 def get_geometry(pixcov,m1,m2):
@@ -137,7 +140,7 @@ def get_geometry(pixcov,m1,m2):
     return meanMul, cov
 
 
-def fill_hole(masked_liteMap_stamp,meanMatrix,holeArc,m1,m2,covRoot=None):
+def fill_hole(masked_stamp,meanMatrix,holeArc,m1,m2,covRoot=None):
     '''Returns the result of an inpaint operation as a 1d unraveled vector
 
     Arguments
@@ -163,7 +166,7 @@ def fill_hole(masked_liteMap_stamp,meanMatrix,holeArc,m1,m2,covRoot=None):
 
     '''
 
-    mean = np.dot(meanMatrix,masked_liteMap_stamp.data.reshape(-1)[m2])
+    mean = np.dot(meanMatrix,masked_stamp.reshape(-1)[m2])
     r = np.random.normal(0.,1.,size=(m1.size))
     if covRoot is not None:
         rand = np.dot(covRoot,r)

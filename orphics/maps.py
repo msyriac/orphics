@@ -14,7 +14,7 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 def crop_center(img,cropy,cropx):
     y,x = img.shape
     startx = x//2-(cropx//2)
-    starty = y//2-(cropy//2)    
+    starty = y//2-(cropy//2)
     return img[starty:starty+cropy,startx:startx+cropx]
 
 def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None):
