@@ -437,6 +437,11 @@ def diagonal_cov(power2d):
     ncomp = len(power2d)
     
     Cflat = np.zeros((ncomp,ncomp,nx*ny,nx*ny))
+
+    # ncomp=3 at most so let's just for loop it without trying to be clever
+    # Sigurd suggests
+    # np.einsum("...ii->...i", Cflat)[:] = power2d.reshape(Cflat.shape[:-1])
+    # but warns it might break with older numpy versions
     for i in range(ncomp):
         for j in range(ncomp):
             np.fill_diagonal(Cflat[i,j],power2d[i,j].reshape(-1))
@@ -450,14 +455,16 @@ def ncov(shape,wcs,noise_uk_arcmin):
     return np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
 
 def pixcov(shape,wcs,fourier_cov):
-    fourier_cov = fourier_cov.astype(np.float32, copy=False)
+    #fourier_cov = fourier_cov.astype(np.float32, copy=False)
+    fourier_cov = fourier_cov.astype(np.complex64, copy=False)
     bny,bnx = shape[-2:]
-    from numpy.fft import fft2 as hfft,ifft2 as hifft # TODO: update to fast fft
-    #from enlib.fft import fft as hfft,ifft as hifft # This doesn't work ValueError:
+    #from numpy.fft import fft2 as hfft,ifft2 as hifft # TODO: update to fast fft
+    from enlib.fft import fft as hfft,ifft as hifft # This doesn't work ValueError:
     # Invalid scheme: The output array and input array dtypes do not correspond to a valid fftw scheme.
 
 
-    pcov = hfft((hifft(fourier_cov,axes=(-4,-3))),axes=(-2,-1)).real
+    #pcov = hfft((hifft(fourier_cov,axes=(-4,-3))),axes=(-2,-1)).real
+    pcov = hfft((hifft(fourier_cov,axes=(-4,-3),normalize=True)),axes=(-2,-1)).real # gotta normalize if using enlib.fft
     return pcov*bnx*bny/enmap.area(shape,wcs)
 
 def get_lnlike(covinv,instamp):
