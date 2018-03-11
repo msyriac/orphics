@@ -452,8 +452,9 @@ def ncov(shape,wcs,noise_uk_arcmin):
 def pixcov(shape,wcs,fourier_cov):
     fourier_cov = fourier_cov.astype(np.float32, copy=False)
     bny,bnx = shape[-2:]
-    #from numpy.fft import fft2 as hfft,ifft2 as hifft # TODO: update to fast fft
-    from enlib.fft import fft as hfft,ifft as hifft # This doesn't work ValueError: Invalid scheme: The output array and input array dtypes do not correspond to a valid fftw scheme.
+    from numpy.fft import fft2 as hfft,ifft2 as hifft # TODO: update to fast fft
+    #from enlib.fft import fft as hfft,ifft as hifft # This doesn't work ValueError:
+    # Invalid scheme: The output array and input array dtypes do not correspond to a valid fftw scheme.
 
 
     pcov = hfft((hifft(fourier_cov,axes=(-4,-3))),axes=(-2,-1)).real
