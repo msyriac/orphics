@@ -432,9 +432,22 @@ def get_real_attributes_generic(Ny,Nx,pixScaleY,pixScaleX):
 
 def diagonal_cov(power2d):
     ny,nx = power2d.shape[-2:]
-    Cflat = np.zeros((nx*ny,nx*ny))
-    np.fill_diagonal(Cflat,power2d.reshape(-1))
-    return Cflat.reshape((ny,nx,ny,nx))
+    if power2d.ndim==4:
+        ncomp = power2d.shape[0]
+        assert ncomp==power2d.shape[1]
+    elif power2d.ndim==2:
+        ncomp = 1
+    else:
+        raise ValueError
+        
+
+    power2d = power2d.reshape((ncomp,ncomp,power2d.shape[-2],power2d.shape[-1]))
+    
+    Cflat = np.zeros((ncomp,ncomp,nx*ny,nx*ny))
+    for i in range(ncomp):
+        for j in range(ncomp):
+            np.fill_diagonal(Cflat[i,j],power2d[i,j].reshape(-1))
+    return Cflat.reshape((ncomp,ncomp,ny,nx,ny,nx))
 
 
 def ncov(shape,wcs,noise_uk_arcmin):
@@ -446,9 +459,10 @@ def ncov(shape,wcs,noise_uk_arcmin):
 def pixcov(shape,wcs,fourier_cov):
     fourier_cov = fourier_cov.astype(np.float32, copy=False)
     bny,bnx = shape[-2:]
-    from numpy.fft import fft2,ifft2 # TODO: update to fast fft
+    #from numpy.fft import fft2,ifft2 # TODO: update to fast fft
+    from enlib.fft import fft as hfft,ifft as hifft # TODO: update to fast fft
 
-    pcov = fft2((ifft2(fourier_cov,axes=(-4,-3))),axes=(-2,-1)).real
+    pcov = hfft((hifft(fourier_cov,axes=(-4,-3))),axes=(-2,-1)).real
     return pcov*bnx*bny/enmap.area(shape,wcs)
 
 def get_lnlike(covinv,instamp):
