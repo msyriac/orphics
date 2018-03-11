@@ -113,7 +113,7 @@ def make_circular_geometry(shape,wcs,context_arcmin,hole_arcmin,power2d,buffer_f
     if verbose: print ("Starting slow part...")
     d = maps.diagonal_cov(out_power)
     with bench.show("pixcov"):
-        pcov = maps.pixcov(bshape,bwcs,d)[:sny,:snx,:sny,:snx]
+        pcov = maps.pixcov(bshape,bwcs,d)[0,0,:sny,:snx,:sny,:snx]
     modrmap = enmap.modrmap(tshape,twcs)
     m1 = np.where(modrmap.reshape(-1)<hole_arcmin*np.pi/180./60.)[0]
     m2 = np.where(modrmap.reshape(-1)>=hole_arcmin*np.pi/180./60.)[0]

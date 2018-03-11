@@ -698,7 +698,7 @@ def ilc_comb_a_b(response_a,response_b,cinv):
     pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
     return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
 
-def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
+def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -707,18 +707,41 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
     noises -- 1d, 2d or float noise powers (in uK^2-radian^2)
     components -- list of strings representing foreground components recognized by fgGenerator
     fnoise -- A szar.foregrounds.fgNoises object (or derivative) containing foreground power definitions
+
+    Returns beam-deconvolved covariance matrix
     """
 
     nfreqs = len(noises)
-    cshape = (nfreqs,nfreqs,1,1) if cmb_ps.ndim==2 else (nfreqs,nfreqs,1)
+    if cmb_ps.ndim==2:
+        cshape = (nfreqs,nfreqs,1,1)
+    elif cmb_ps.ndim==1:
+        cshape = (nfreqs,nfreqs,1)
+    else:
+        raise ValueError
+    
     Covmat = np.tile(cmb_ps,cshape)
 
+    if plot:
+        pl = io.Plotter(yscale='log',ylabel="$\\ell^2 C_{\\ell}$",xlabel="$\\ell$")
+        pl.add(ells,cmb_ps*ells**2.,color='k',lw=3)
     for i,(kbeam1,freq1,noise1) in enumerate(zip(kbeams,freqs,noises)):
         for j,(kbeam2,freq2,noise2) in enumerate(zip(kbeams,freqs,noises)):
             if i==j:
-                Covmat[i,j,:] += noise1/kbeam1**2.
+                instnoise = noise1/kbeam1**2.
+                Covmat[i,j,:] += instnoise
+                if plot:
+                    pl.add(ells,instnoise*ells**2.,lw=2,ls="--",label=str(freq1))
+
             for component in components:
-                Covmat[i,j,:] += fnoise.get_noise(component,freq1,freq2,ells)
+                fgnoise = fnoise.get_noise(component,freq1,freq2,ells)
+                Covmat[i,j,:] += fgnoise
+                if plot:
+                    pl.add(ells,fgnoise*ells**2.,lw=2,alpha=0.5,label=component+"_"+str(freq1)+"_"+str(freq2))
+    if plot:
+        pl._ax.set_xlim(0,6000)
+        pl._ax.set_ylim(1,1e5)
+        pl.legend(loc='upper left',labsize=10)
+        pl.done(plot_save)
 
 
     cinv = np.linalg.inv(Covmat.T).T
