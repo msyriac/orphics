@@ -1049,6 +1049,7 @@ class HealpixProjector(object):
                 del opos
         self.pmap = pmap
         self.ncomp = ncomp
+        self.rot = rot
         
     def project(self,ihealmap,unit=1,lmax=0,first=0,return_hp=False):
         from enlib import sharp, coordinates, curvedsky
@@ -1075,11 +1076,10 @@ class HealpixProjector(object):
         if self.ncomp == 3:
             print("P -> alm")
             sht.map2alm(m[1:3],alm[1:3], spin=2)
-        del m
 
         print("Projecting")
         res  = curvedsky.alm2map_pos(alm, self.pmap)
-        if rot and self.ncomp==3:
+        if self.rot and self.ncomp==3:
             print("Rotating polarization vectors")
             res[1:3] = enmap.rotate_pol(res[1:3], self.psi)
 
