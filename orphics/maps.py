@@ -650,7 +650,7 @@ def cilc(kmaps,cinv,response_a,response_b):
 
     numer = brb * arM - arb*brM
     norm = (ara*brb-arb**2.)
-    return numer/norm
+    return np.nan_to_num(numer/norm)
 
 def ilc_def_response(response,cinv):
     """Default CMB response -- vector of ones"""
@@ -690,7 +690,7 @@ def cilc_noise(cinv,response_a,response_b):
 
     numer = (brb)**2. * ara + (arb)**2.*brb - brb*arb*arb - arb*brb*bra
     denom = (ara*brb-arb**2.)**2.
-    return numer/denom
+    return np.nan_to_num(numer/denom)
 
 
 def ilc_comb_a_b(response_a,response_b,cinv):
@@ -727,7 +727,7 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_s
     for i,(kbeam1,freq1,noise1) in enumerate(zip(kbeams,freqs,noises)):
         for j,(kbeam2,freq2,noise2) in enumerate(zip(kbeams,freqs,noises)):
             if i==j:
-                instnoise = noise1/kbeam1**2.
+                instnoise = np.nan_to_num(noise1/kbeam1**2.)
                 Covmat[i,j,:] += instnoise
                 if plot:
                     pl.add(ells,instnoise*ells**2.,lw=2,ls="--",label=str(freq1))
