@@ -159,6 +159,7 @@ class Stats(object):
 
             if not(skip_stats):
                 for k,label in enumerate(self.vectors.keys()):
+                    if self.vectors[label].ndim>2: continue
                     self.stats[label] = get_stats(self.vectors[label])
             #self.vectors = {}
                 
