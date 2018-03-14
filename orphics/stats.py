@@ -466,10 +466,11 @@ class bin2D(object):
         self.digitized = np.digitize(np.ndarray.flatten(modrmap), bin_edges,right=True)
         self.bin_edges = bin_edges
     def bin(self,data2d,weights=None):
+        
         if weights is None:
             res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/np.bincount(self.digitized)[1:-1]
         else:
-            weights = self.digitized*0.+weights
+            #weights = self.digitized*0.+weights
             res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/np.bincount(self.digitized,weights.reshape(-1))[1:-1]
         return self.centers,res
 
