@@ -11,6 +11,19 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
+def binary_mask(mask,threshold=0.5):
+    m = mask.copy()
+    m[m>0.5] = 1
+    m[m<0.5] = 0
+    return m
+        
+
+def area_from_mask(mask):
+    m = binary_mask(mask)
+    frac = m.sum()*1./np.prod(m.shape[-2:])
+    return frac*mask.area()*(180./np.pi)**2., frac
+
+
 def crop_center(img,cropy,cropx):
     y,x = img.shape
     startx = x//2-(cropx//2)
@@ -214,7 +227,8 @@ class FourierCalc(object):
     def f2power(self,kmap1,kmap2,pixel_units=False):
         """Similar to power2d, but assumes both maps are already FFTed """
         norm = 1. if pixel_units else self.normfact
-        return np.real(np.conjugate(kmap1)*kmap2)*norm
+        res = np.real(np.conjugate(kmap1)*kmap2)*norm
+        return res
 
     def f1power(self,map1,kmap2,pixel_units=False,nthread=0):
         """Similar to power2d, but assumes map2 is already FFTed """
@@ -245,14 +259,14 @@ class FourierCalc(object):
         assert lteb1.shape==lteb2.shape
                 
         if ndim > 2 and ncomp > 1:
-            retpow = np.empty((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]))
+            retpow = np.zeros((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]))
             for i in range(ncomp):
                 retpow[i,i] = self.f2power(lteb1[i],lteb2[i],pixel_units)
-                if not(skip_cross):
-                    for i in range(ncomp):
-                        for j in range(i+1,ncomp):
-                            retpow[i,j] = self.f2power(lteb1[i],lteb2[j],pixel_units)
-                            retpow[j,i] = retpow[i,j]
+            if not(skip_cross):
+                for i in range(ncomp):
+                    for j in range(i+1,ncomp):
+                        retpow[i,j] = self.f2power(lteb1[i],lteb2[j],pixel_units)
+                        retpow[j,i] = retpow[i,j]
             return retpow,lteb1,lteb2
         else:
             if lteb1.ndim>2:
@@ -985,40 +999,75 @@ class NoiseModel(object):
         assert self.shape[-2:]==beam_2d_transform.shape
         self.kbeam2d = beam_2d_transform
     
-def noise_from_splits(splits,fourier_calc=None,nthread=0):
-    
+def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
+    """
+    Calculate noise power spectra by subtracting cross power of splits 
+    from autopower of splits. Optionally calculate cross power spectra
+    of T,E,B from I,Q,U.
 
-    import itertools
+    splits -- (nsplits,ncomp,Ny,Nx) arrays
 
-    if fourier_calc is None:
-        shape = splits[0].shape
+    ncomp can be 1 for T only, or 3 for I,Q,U
+    ncomp could be > 3 for e.g. I1,Q1,U1,I2,Q2,U2 for 2 arrays
+
+    """
+
+    try:
+        wcs = splits.wcs
+    except:
         wcs = splits[0].wcs
+        
+    splits = enmap.enmap(np.asarray(splits),wcs)
+    assert splits.ndim==3 or splits.ndim==4
+    if splits.ndim == 3: splits = splits[:,None,:,:]
+    ncomp = splits[1]
+        
+    if fourier_calc is None:
+        shape = splits.shape[-3:]
         fourier_calc = FourierCalc(shape,wcs)
     
-    Nsplits = len(splits)
+    Nsplits = splits.shape[0]
+
+    if do_cross: assert ncomp==3
+
+    print(splits.shape)
 
     # Get fourier transforms of I,Q,U
     ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
-
-    kteb_splits = []
-    # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
-    for ksplit in ksplits:
-        kteb_splits.append( ksplit.copy())
-        if (splits[0].ndim==3 and splits[0].shape[0]==3):
-            kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
+    del splits
+    
+    if do_cross:
+        kteb_splits = []
+        # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
+        for ksplit in ksplits:
+            kteb_splits.append( ksplit.copy())
+            if (ndim==3 and ncomp==3):
+                kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
             
     # get auto power of I,Q,U
-    auto = sum([fourier_calc.power2d(kmap=ksplit)[0] for ksplit in ksplits])/Nsplits
+    auto = 0.
+    for ksplit in ksplits:
+        auto += fourier_calc.power2d(kmap=ksplit)[0]
+    auto /= Nsplits
 
     # do cross powers of I,Q,U
-    cross_splits = [y for y in itertools.combinations(ksplits,2)]
-    Ncrosses = len(cross_splits)
-    assert Ncrosses==(Nsplits*(Nsplits-1)/2)
-    cross = sum([fourier_calc.power2d(kmap=ksplit1,kmap2=ksplit2)[0] for (ksplit1,ksplit2) in cross_splits])/Ncrosses
-
-    # do cross powers of T,E,B
-    cross_teb_splits = [y for y in itertools.combinations(kteb_splits,2)]
-    cross_teb = sum([fourier_calc.power2d(kmap=ksplit1,kmap2=ksplit2)[0] for (ksplit1,ksplit2) in cross_teb_splits])/Ncrosses
+    Ncrosses = (Nsplits*(Nsplits-1)/2)
+    cross = 0.
+    for i in range(len(ksplits)):
+        for j in range(i+1,len(ksplits)):
+            cross += fourier_calc.power2d(kmap=ksplits[i],kmap2=ksplits[j])[0]
+    cross /= Ncrosses
+    del ksplits
+        
+    if do_cross:
+        # do cross powers of T,E,B
+        cross_teb = 0.
+        for i in range(len(ksplits)):
+            for j in range(i+1,len(ksplits)):
+                cross_teb += fourier_calc.power2d(kmap=kteb_splits[i],kmap2=kteb_splits[j])[0]
+        cross_teb /= Ncrosses
+    else:
+        cross_teb = None
 
     # get noise model for I,Q,U
     noise = (auto-cross)/Nsplits
@@ -1430,13 +1479,13 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
 
 class ACTMapReader(object):
 
-    def __init__(self,config_yaml_path):
+    def __init__(self,map_root,beam_root,config_yaml_path):
 
         with open(config_yaml_path, 'r') as ymlfile:
             self._cfg = yaml.load(ymlfile,Loader=yaml.BaseLoader)
 
-        self.map_root = self._cfg['map_root']
-        self.beam_root = self._cfg['beam_root']
+        self.map_root = map_root #self._cfg['map_root']
+        self.beam_root = beam_root #self._cfg['beam_root']
 
         
         self.boxes = {}
@@ -1462,8 +1511,8 @@ class ACTMapReader(object):
 
 class SigurdCoaddReader(ACTMapReader):
     
-    def __init__(self,config_yaml_path):
-        ACTMapReader.__init__(self,config_yaml_path)
+    def __init__(self,map_root,beam_root,config_yaml_path):
+        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
         eg_file = self._fstring(split=-1,freq="150",day_night="daynight",planck=True)
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
 
@@ -1514,20 +1563,26 @@ class SigurdCoaddReader(ACTMapReader):
         return ls, bells
 
 
-class SigurdBNReader(ACTMapReader):
+class SigurdMR2Reader(ACTMapReader):
     
-    def __init__(self,config_yaml_path):
-        ACTMapReader.__init__(self,config_yaml_path)
+    def __init__(self,map_root,beam_root,config_yaml_path):
+        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
         eg_file = self._fstring(split=-1,season="s15",array="pa1",freq="150",day_night="night")
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
 
-    def get_map(self,split,season,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
+    def get_map(self,split,season,patch,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
 
-        patch = "boss"
+        assert patch=="boss"
         fstr = self._fstring(split,season,array,freq,day_night,weight)
         cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
         selection = self.sel_from_region(region)
         fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
+
+        if weight:
+            ndim = fmap.ndim
+            if ndim==4: fmap = fmap[0,0]
+            if ndim==3: fmap = fmap[0]
+            
 
         if get_identifier:
             identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
@@ -1539,7 +1594,7 @@ class SigurdBNReader(ACTMapReader):
         # Change this function if the map naming scheme changes
         splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)+"_"
         weightstr = "div" if weight else "map0500"
-        return self.map_root+"mr2/"+season+"/boss_north/"+season+"_boss_"+array+"_f"+freq+"_"+day_night+"_nohwp"+splitstr+"sky_"+weightstr+"_mono.fits"
+        return self.map_root+"mr2/"+season+"/boss_north/"+season+"_boss_"+array+"_f"+freq.zfill(3)+"_"+day_night+"_nohwp"+splitstr+"sky_"+weightstr+"_mono.fits"
 
 
     def get_beam(self,season,array,freq="150",day_night="night"):
@@ -1549,10 +1604,10 @@ class SigurdBNReader(ACTMapReader):
         return ls, bells
 
     
-class SimoneC7V5Reader(ACTMapReader):
+class SimoneMR2Reader(ACTMapReader):
     
-    def __init__(self,config_yaml_path):
-        ACTMapReader.__init__(self,config_yaml_path)
+    def __init__(self,map_root,beam_root,config_yaml_path):
+        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
         
     def get_beam(self,season,patch,array,freq="150",day_night="night"):
         beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
