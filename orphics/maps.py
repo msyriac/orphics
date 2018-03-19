@@ -1,5 +1,5 @@
 from __future__ import print_function 
-from enlib import enmap, utils
+from enlib import enmap, utils, bench
 import numpy as np
 from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
@@ -169,20 +169,33 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
     return shape, wcs
 
 
+#def resample
+
 class MapGen(object):
         """
         Once you know the shape and wcs of an ndmap and the input power spectra, you can 
         pre-calculate some things to speed up random map generation.
         """
         
-        def __init__(self,shape,wcs,cov,pixel_units=False,smooth="auto"):
+        def __init__(self,shape,wcs,cov=None,covsqrt=None,pixel_units=False,smooth="auto",ndown=None,order=0):
                 self.shape = shape
                 self.wcs = wcs
-                if cov.ndim==4:
-                        if not(pixel_units): cov = cov * np.prod(shape[-2:])/enmap.area(shape,wcs )
-                        self.covsqrt = enmap.multi_pow(cov, 0.5)
+                if covsqrt is not None:
+                    self.covsqrt = covsqrt
                 else:
-                        self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
+                    if cov.ndim==4:
+                            if not(pixel_units): cov = cov * np.prod(shape[-2:])/enmap.area(shape,wcs )
+                            print ("sqrt...")
+                            if ndown:
+                                pix_high = enmap.pixmap(shape[-2:],wcs)
+                                pix_low = pix_high/float(ndown)
+                                cov_low = enmap.downgrade(cov, ndown)
+                                covsqrt_low = enmap.enmap(enmap.multi_pow(cov_low,0.5),wcs)
+                                self.covsqrt = covsqrt_low.at(pix_low, order=order, mask_nan=False, unit="pix")
+                            else:
+                                self.covsqrt = enmap.multi_pow(cov, 0.5)
+                    else:
+                            self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
         def get_map(self,seed=None,scalar=False,iau=True):
                 if seed is not None: np.random.seed(seed)
@@ -236,7 +249,7 @@ class FourierCalc(object):
         norm = 1. if pixel_units else self.normfact
         return np.real(np.conjugate(kmap1)*kmap2)*norm,kmap1
 
-    def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None):
+    def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None, dtype=None):
         """
         Calculate the power spectrum of emap crossed with emap2 (=emap if None)
         Returns in radians^2 by default unles pixel_units specified
@@ -259,7 +272,7 @@ class FourierCalc(object):
         assert lteb1.shape==lteb2.shape
                 
         if ndim > 2 and ncomp > 1:
-            retpow = np.zeros((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]))
+            retpow = np.zeros((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]),dtype=dtype)
             for i in range(ncomp):
                 retpow[i,i] = self.f2power(lteb1[i],lteb2[i],pixel_units)
             if not(skip_cross):
@@ -1017,23 +1030,24 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
     except:
         wcs = splits[0].wcs
         
-    splits = enmap.enmap(np.asarray(splits),wcs)
+    splits = enmap.enmap(np.asarray(splits),wcs).astype(np.float32)
     assert splits.ndim==3 or splits.ndim==4
     if splits.ndim == 3: splits = splits[:,None,:,:]
     ncomp = splits[1]
         
     if fourier_calc is None:
-        shape = splits.shape[-3:]
+        shape = splits.shape[-3:] if do_cross else splits.shape[-2:]
         fourier_calc = FourierCalc(shape,wcs)
     
     Nsplits = splits.shape[0]
 
     if do_cross: assert ncomp==3
 
-    print(splits.shape)
+    print(splits.shape, " Starting fts...")
 
     # Get fourier transforms of I,Q,U
-    ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
+    with bench.show("ksplits"):
+        ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
     del splits
     
     if do_cross:
@@ -1047,7 +1061,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
     # get auto power of I,Q,U
     auto = 0.
     for ksplit in ksplits:
-        auto += fourier_calc.power2d(kmap=ksplit)[0]
+        auto += fourier_calc.power2d(kmap=ksplit,dtype=np.float32)[0].astype(np.float32)
     auto /= Nsplits
 
     # do cross powers of I,Q,U
@@ -1055,7 +1069,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
     cross = 0.
     for i in range(len(ksplits)):
         for j in range(i+1,len(ksplits)):
-            cross += fourier_calc.power2d(kmap=ksplits[i],kmap2=ksplits[j])[0]
+            cross += fourier_calc.power2d(kmap=ksplits[i],kmap2=ksplits[j],dtype=np.float32)[0].astype(np.float32)
     cross /= Ncrosses
     del ksplits
         
@@ -1064,7 +1078,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
         cross_teb = 0.
         for i in range(len(ksplits)):
             for j in range(i+1,len(ksplits)):
-                cross_teb += fourier_calc.power2d(kmap=kteb_splits[i],kmap2=kteb_splits[j])[0]
+                cross_teb += fourier_calc.power2d(kmap=kteb_splits[i],kmap2=kteb_splits[j],dtype=np.float32)[0].astype(np.float32)
         cross_teb /= Ncrosses
     else:
         cross_teb = None
