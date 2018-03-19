@@ -1,4 +1,5 @@
-from enlib import enmap, utils
+from __future__ import print_function 
+from enlib import enmap, utils, bench
 import numpy as np
 from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
@@ -9,6 +10,73 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
+
+def binary_mask(mask,threshold=0.5):
+    m = mask.copy()
+    m[m>0.5] = 1
+    m[m<0.5] = 0
+    return m
+        
+
+def area_from_mask(mask):
+    m = binary_mask(mask)
+    frac = m.sum()*1./np.prod(m.shape[-2:])
+    return frac*mask.area()*(180./np.pi)**2., frac
+
+
+def crop_center(img,cropy,cropx):
+    y,x = img.shape
+    startx = x//2-(cropx//2)
+    starty = y//2-(cropy//2)
+    return img[starty:starty+cropy,startx:startx+cropx]
+
+def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None):
+    """Get the binned power spectrum of a map in one line of code.
+    (At the cost of flexibility and reusability of expensive parts)"""
+    
+    from orphics import stats
+    shape,wcs = imap.shape,imap.wcs
+    modlmap = enmap.modlmap(shape,wcs) if modlmap is None else modlmap
+    fc = FourierCalc(shape,wcs) if fc is None else fc
+    binner = stats.bin2D(modlmap,bin_edges) if binner is None else binner
+    p2d,_,_ = fc.power2d(imap)
+    return binner.bin(p2d)
+
+def interp(x,y,bounds_error=False,fill_value=0.,**kwargs):
+    return interp1d(x,y,bounds_error=bounds_error,fill_value=fill_value,**kwargs)
+
+def flat_sim(deg,px,lmax=6000,lensed=True,pol=False):
+    """
+    Get some commonly used objects for flat-sky sims.
+    Not very flexible but is a one-line replacement for
+    a large fraction of use cases.
+    """
+    from orphics import cosmology
+    shape,wcs = rect_geometry(width_deg=deg,px_res_arcmin=px,pol=pol)
+    modlmap = enmap.modlmap(shape,wcs)
+    cc = cosmology.Cosmology(lmax=lmax,pickling=True,dimensionless=False)
+    Lmax = modlmap.max()
+    ells = np.arange(0,Lmax,1)
+    ps = cosmology.power_from_theory(ells,cc.theory,lensed=lensed,pol=pol)
+    mgen = MapGen(shape,wcs,ps)
+    return shape,wcs,modlmap,cc,mgen
+
+
+def resample_fft(imap,res):
+    """
+    Wrapper around enlib.resample.resample_fft.
+    Accepts a target map resolution instead of target shape.
+    Returns an enmap instead of an array.
+    imap must be periodic/windowed
+    """
+    from enlib import resample
+    shape,wcs = imap.shape,imap.wcs
+    inres = resolution(shape,wcs)
+    scale = inres/res
+    oshape,owcs = enmap.scale_geometry(shape, wcs, scale)
+    return enmap.enmap(resample.resample_fft(imap,oshape[-2:]),owcs)
+
+    
 
 def split_sky(dec_width,num_decs,ra_width,dec_start=0.,ra_start=0.,ra_extent=90.):
 
@@ -101,20 +169,33 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
     return shape, wcs
 
 
+#def resample
+
 class MapGen(object):
         """
         Once you know the shape and wcs of an ndmap and the input power spectra, you can 
         pre-calculate some things to speed up random map generation.
         """
         
-        def __init__(self,shape,wcs,cov,pixel_units=False,smooth="auto"):
+        def __init__(self,shape,wcs,cov=None,covsqrt=None,pixel_units=False,smooth="auto",ndown=None,order=0):
                 self.shape = shape
                 self.wcs = wcs
-                if cov.ndim==4:
-                        if not(pixel_units): cov = cov * np.prod(shape[-2:])/enmap.area(shape,wcs )
-                        self.covsqrt = enmap.multi_pow(cov, 0.5)
+                if covsqrt is not None:
+                    self.covsqrt = covsqrt
                 else:
-                        self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
+                    if cov.ndim==4:
+                            if not(pixel_units): cov = cov * np.prod(shape[-2:])/enmap.area(shape,wcs )
+                            print ("sqrt...")
+                            if ndown:
+                                pix_high = enmap.pixmap(shape[-2:],wcs)
+                                pix_low = pix_high/float(ndown)
+                                cov_low = enmap.downgrade(cov, ndown)
+                                covsqrt_low = enmap.enmap(enmap.multi_pow(cov_low,0.5),wcs)
+                                self.covsqrt = covsqrt_low.at(pix_low, order=order, mask_nan=False, unit="pix")
+                            else:
+                                self.covsqrt = enmap.multi_pow(cov, 0.5)
+                    else:
+                            self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
         def get_map(self,seed=None,scalar=False,iau=True):
                 if seed is not None: np.random.seed(seed)
@@ -159,7 +240,8 @@ class FourierCalc(object):
     def f2power(self,kmap1,kmap2,pixel_units=False):
         """Similar to power2d, but assumes both maps are already FFTed """
         norm = 1. if pixel_units else self.normfact
-        return np.real(np.conjugate(kmap1)*kmap2)*norm
+        res = np.real(np.conjugate(kmap1)*kmap2)*norm
+        return res
 
     def f1power(self,map1,kmap2,pixel_units=False,nthread=0):
         """Similar to power2d, but assumes map2 is already FFTed """
@@ -167,7 +249,7 @@ class FourierCalc(object):
         norm = 1. if pixel_units else self.normfact
         return np.real(np.conjugate(kmap1)*kmap2)*norm,kmap1
 
-    def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None):
+    def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None, dtype=None):
         """
         Calculate the power spectrum of emap crossed with emap2 (=emap if None)
         Returns in radians^2 by default unles pixel_units specified
@@ -190,14 +272,14 @@ class FourierCalc(object):
         assert lteb1.shape==lteb2.shape
                 
         if ndim > 2 and ncomp > 1:
-            retpow = np.empty((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]))
+            retpow = np.zeros((ncomp,ncomp,lteb1.shape[-2],lteb1.shape[-1]),dtype=dtype)
             for i in range(ncomp):
                 retpow[i,i] = self.f2power(lteb1[i],lteb2[i],pixel_units)
-                if not(skip_cross):
-                    for i in range(ncomp):
-                        for j in range(i+1,ncomp):
-                            retpow[i,j] = self.f2power(lteb1[i],lteb2[j],pixel_units)
-                            retpow[j,i] = retpow[i,j]
+            if not(skip_cross):
+                for i in range(ncomp):
+                    for j in range(i+1,ncomp):
+                        retpow[i,j] = self.f2power(lteb1[i],lteb2[j],pixel_units)
+                        retpow[j,i] = retpow[i,j]
             return retpow,lteb1,lteb2
         else:
             if lteb1.ndim>2:
@@ -377,9 +459,20 @@ def get_real_attributes_generic(Ny,Nx,pixScaleY,pixScaleX):
 
 def diagonal_cov(power2d):
     ny,nx = power2d.shape[-2:]
-    Cflat = np.zeros((nx*ny,nx*ny))
-    np.fill_diagonal(Cflat,power2d.reshape(-1))
-    return Cflat.reshape((ny,nx,ny,nx))
+    assert power2d.ndim==2 or power2d.ndim==4
+    if power2d.ndim == 2: power2d = power2d[None,None]
+    ncomp = len(power2d)
+    
+    Cflat = np.zeros((ncomp,ncomp,nx*ny,nx*ny))
+
+    # ncomp=3 at most so let's just for loop it without trying to be clever
+    # Sigurd suggests
+    # np.einsum("...ii->...i", Cflat)[:] = power2d.reshape(Cflat.shape[:-1])
+    # but warns it might break with older numpy versions
+    for i in range(ncomp):
+        for j in range(ncomp):
+            np.fill_diagonal(Cflat[i,j],power2d[i,j].reshape(-1))
+    return Cflat.reshape((ncomp,ncomp,ny,nx,ny,nx))
 
 
 def ncov(shape,wcs,noise_uk_arcmin):
@@ -388,12 +481,17 @@ def ncov(shape,wcs,noise_uk_arcmin):
     noise_uK_pixel = noise_uK_rad/normfact
     return np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
 
-def pixcov(shape,wcs,fourierCov):
-    fourierCov = fourierCov.astype(np.float32, copy=False)
-    bny,bnx = shape
-    from numpy.fft import fft2,ifft2
+def pixcov(shape,wcs,fourier_cov):
+    #fourier_cov = fourier_cov.astype(np.float32, copy=False)
+    fourier_cov = fourier_cov.astype(np.complex64, copy=False)
+    bny,bnx = shape[-2:]
+    #from numpy.fft import fft2 as hfft,ifft2 as hifft # TODO: update to fast fft
+    from enlib.fft import fft as hfft,ifft as hifft # This doesn't work ValueError:
+    # Invalid scheme: The output array and input array dtypes do not correspond to a valid fftw scheme.
 
-    pcov = fft2((ifft2(fourierCov,axes=(-4,-3))),axes=(-2,-1)).real
+
+    #pcov = hfft((hifft(fourier_cov,axes=(-4,-3))),axes=(-2,-1)).real
+    pcov = hfft((hifft(fourier_cov,axes=(-4,-3),normalize=True)),axes=(-2,-1)).real # gotta normalize if using enlib.fft
     return pcov*bnx*bny/enmap.area(shape,wcs)
 
 def get_lnlike(covinv,instamp):
@@ -450,7 +548,7 @@ def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,wei
     res = resolution(shape,wcs)
     pix_apod = int(taper_width_degrees*np.pi/180./res)
     pix_pad = int(pad_width_degrees*np.pi/180./res)
-    taper = cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod,padY=pix_pad,padX=pix_pad)*weight
+    taper = enmap.enmap(cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod,padY=pix_pad,padX=pix_pad)*weight,wcs)
     w2 = np.mean(taper**2.)
     return taper,w2
 
@@ -491,11 +589,21 @@ def cosine_window(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
     return win
 
 def filter_map(imap,kfilter):
-    return np.real(ifft(fft(imap,axes=[-2,-1])*kfilter,axes=[-2,-1],normalize=True)) 
+    return enmap.enmap(np.real(ifft(fft(imap,axes=[-2,-1])*kfilter,axes=[-2,-1],normalize=True)) ,imap.wcs)
 
 def gauss_beam(ell,fwhm):
     tht_fwhm = np.deg2rad(fwhm / 60.)
     return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
+
+def sigma_from_fwhm(fwhm):
+    return fwhm/2./np.sqrt(2.*np.log(2.))
+
+def gauss_beam_real(rs,fwhm):
+    """rs in radians ; fwhm in arcmin"""
+    tht_fwhm = np.deg2rad(fwhm / 60.)
+    sigma = sigma_from_fwhm(tht_fwhm)
+    return np.exp(-(rs**2.) / 2./sigma**2.)
+
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
     output = np.ones(shape[-2:], dtype = int)
@@ -569,7 +677,7 @@ def cilc(kmaps,cinv,response_a,response_b):
 
     numer = brb * arM - arb*brM
     norm = (ara*brb-arb**2.)
-    return numer/norm
+    return np.nan_to_num(numer/norm)
 
 def ilc_def_response(response,cinv):
     """Default CMB response -- vector of ones"""
@@ -609,7 +717,7 @@ def cilc_noise(cinv,response_a,response_b):
 
     numer = (brb)**2. * ara + (arb)**2.*brb - brb*arb*arb - arb*brb*bra
     denom = (ara*brb-arb**2.)**2.
-    return numer/denom
+    return np.nan_to_num(numer/denom)
 
 
 def ilc_comb_a_b(response_a,response_b,cinv):
@@ -617,7 +725,7 @@ def ilc_comb_a_b(response_a,response_b,cinv):
     pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
     return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
 
-def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
+def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -626,18 +734,41 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise):
     noises -- 1d, 2d or float noise powers (in uK^2-radian^2)
     components -- list of strings representing foreground components recognized by fgGenerator
     fnoise -- A szar.foregrounds.fgNoises object (or derivative) containing foreground power definitions
+
+    Returns beam-deconvolved covariance matrix
     """
 
     nfreqs = len(noises)
-    cshape = (nfreqs,nfreqs,1,1) if cmb_ps.ndim==2 else (nfreqs,nfreqs,1)
+    if cmb_ps.ndim==2:
+        cshape = (nfreqs,nfreqs,1,1)
+    elif cmb_ps.ndim==1:
+        cshape = (nfreqs,nfreqs,1)
+    else:
+        raise ValueError
+    
     Covmat = np.tile(cmb_ps,cshape)
 
+    if plot:
+        pl = io.Plotter(yscale='log',ylabel="$\\ell^2 C_{\\ell}$",xlabel="$\\ell$")
+        pl.add(ells,cmb_ps*ells**2.,color='k',lw=3)
     for i,(kbeam1,freq1,noise1) in enumerate(zip(kbeams,freqs,noises)):
         for j,(kbeam2,freq2,noise2) in enumerate(zip(kbeams,freqs,noises)):
             if i==j:
-                Covmat[i,j,:] += noise1/kbeam1**2.
+                instnoise = np.nan_to_num(noise1/kbeam1**2.)
+                Covmat[i,j,:] += instnoise
+                if plot:
+                    pl.add(ells,instnoise*ells**2.,lw=2,ls="--",label=str(freq1))
+
             for component in components:
-                Covmat[i,j,:] += fnoise.get_noise(component,freq1,freq2,ells)
+                fgnoise = fnoise.get_noise(component,freq1,freq2,ells)
+                Covmat[i,j,:] += fgnoise
+                if plot:
+                    pl.add(ells,fgnoise*ells**2.,lw=2,alpha=0.5,label=component+"_"+str(freq1)+"_"+str(freq2))
+    if plot:
+        pl._ax.set_xlim(0,6000)
+        pl._ax.set_ylim(1,1e5)
+        pl.legend(loc='upper left',labsize=10)
+        pl.done(plot_save)
 
 
     cinv = np.linalg.inv(Covmat.T).T
@@ -665,12 +796,10 @@ def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
     """
     by Thibaut Louis
 
-    my_map  -- masked map
-    my_map_2  -- random map with same power
-    Mask -- mask
-    power_spec -- 2d S+N power
-    nxside
-    nyside
+    imap  -- masked map
+    rand_map  -- random map with same power
+    mask -- mask
+    power2d -- 2d S+N power : IMPORTANT, this must be non-zero up to pixel scale
     eps
 
     """
@@ -734,12 +863,12 @@ def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
     delta_array=np.zeros(shape=(i_max))
     
     while i<i_max and delta_new > eps**2*delta_o:
-        # print ""
-        # print "number of iterations:", i
-        # print ""
-        # print "eps**2*delta_o=",eps**2*delta_o
-        # print ""
-        # print "delta new=",delta_new
+        # print ("")
+        # print ("number of iterations:", i)
+        # print ("")
+        # print ("eps**2*delta_o=",eps**2*delta_o)
+        # print ("")
+        # print ("delta new=",delta_new)
         
         q=apply_px_c_inv_px(d)
         alpha=delta_new/(np.inner(d,q))
@@ -771,8 +900,19 @@ def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
 
 ## WORKING WITH DATA
 
+class DataNoise(object):
+
+    def __init__(self,splits,wmaps,taper):
+
+        h0 = wmaps[0]
+        ht = np.zeros(h0.shape)
+        for h1 in wmaps:
+            ht[h1!=0] += (h1[h1!=0]**-2)
+        ht[ht!=0] = 1./ht[ht!=0]
+
 
 class NoiseModel(object):
+    # Deprecated?
 
     def __init__(self,splits=None,wmap=None,mask=None,kmask=None,directory=None,spec_smooth_width=2.,skip_beam=True,skip_mask=True,skip_kmask=True,skip_cross=True,iau=False):
         """
@@ -872,40 +1012,76 @@ class NoiseModel(object):
         assert self.shape[-2:]==beam_2d_transform.shape
         self.kbeam2d = beam_2d_transform
     
-def noise_from_splits(splits,fourier_calc=None,nthread=0):
-    
+def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
+    """
+    Calculate noise power spectra by subtracting cross power of splits 
+    from autopower of splits. Optionally calculate cross power spectra
+    of T,E,B from I,Q,U.
 
-    import itertools
+    splits -- (nsplits,ncomp,Ny,Nx) arrays
 
-    if fourier_calc is None:
-        shape = splits[0].shape
+    ncomp can be 1 for T only, or 3 for I,Q,U
+    ncomp could be > 3 for e.g. I1,Q1,U1,I2,Q2,U2 for 2 arrays
+
+    """
+
+    try:
+        wcs = splits.wcs
+    except:
         wcs = splits[0].wcs
+        
+    splits = enmap.enmap(np.asarray(splits),wcs).astype(np.float32)
+    assert splits.ndim==3 or splits.ndim==4
+    if splits.ndim == 3: splits = splits[:,None,:,:]
+    ncomp = splits[1]
+        
+    if fourier_calc is None:
+        shape = splits.shape[-3:] if do_cross else splits.shape[-2:]
         fourier_calc = FourierCalc(shape,wcs)
     
-    Nsplits = len(splits)
+    Nsplits = splits.shape[0]
+
+    if do_cross: assert ncomp==3
+
+    print(splits.shape, " Starting fts...")
 
     # Get fourier transforms of I,Q,U
-    ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
-
-    kteb_splits = []
-    # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
-    for ksplit in ksplits:
-        kteb_splits.append( ksplit.copy())
-        if (splits[0].ndim==3 and splits[0].shape[0]==3):
-            kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
+    with bench.show("ksplits"):
+        ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
+    del splits
+    
+    if do_cross:
+        kteb_splits = []
+        # Rotate I,Q,U to T,E,B for cross power (not necssary for noise)
+        for ksplit in ksplits:
+            kteb_splits.append( ksplit.copy())
+            if (ndim==3 and ncomp==3):
+                kteb_splits[-1][...,-2:,:,:] = enmap.map_mul(fourier_calc.rot, kteb_splits[-1][...,-2:,:,:])
             
     # get auto power of I,Q,U
-    auto = sum([fourier_calc.power2d(kmap=ksplit)[0] for ksplit in ksplits])/Nsplits
+    auto = 0.
+    for ksplit in ksplits:
+        auto += fourier_calc.power2d(kmap=ksplit,dtype=np.float32)[0].astype(np.float32)
+    auto /= Nsplits
 
     # do cross powers of I,Q,U
-    cross_splits = [y for y in itertools.combinations(ksplits,2)]
-    Ncrosses = len(cross_splits)
-    assert Ncrosses==(Nsplits*(Nsplits-1)/2)
-    cross = sum([fourier_calc.power2d(kmap=ksplit1,kmap2=ksplit2)[0] for (ksplit1,ksplit2) in cross_splits])/Ncrosses
-
-    # do cross powers of T,E,B
-    cross_teb_splits = [y for y in itertools.combinations(kteb_splits,2)]
-    cross_teb = sum([fourier_calc.power2d(kmap=ksplit1,kmap2=ksplit2)[0] for (ksplit1,ksplit2) in cross_teb_splits])/Ncrosses
+    Ncrosses = (Nsplits*(Nsplits-1)/2)
+    cross = 0.
+    for i in range(len(ksplits)):
+        for j in range(i+1,len(ksplits)):
+            cross += fourier_calc.power2d(kmap=ksplits[i],kmap2=ksplits[j],dtype=np.float32)[0].astype(np.float32)
+    cross /= Ncrosses
+    del ksplits
+        
+    if do_cross:
+        # do cross powers of T,E,B
+        cross_teb = 0.
+        for i in range(len(ksplits)):
+            for j in range(i+1,len(ksplits)):
+                cross_teb += fourier_calc.power2d(kmap=kteb_splits[i],kmap2=kteb_splits[j],dtype=np.float32)[0].astype(np.float32)
+        cross_teb /= Ncrosses
+    else:
+        cross_teb = None
 
     # get noise model for I,Q,U
     noise = (auto-cross)/Nsplits
@@ -916,154 +1092,281 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0):
 
 ### FULL SKY
 
-def enmap_from_healpix_alms(shape,wcs,hp_map_file=None,hp_map=None,ncomp=1,lmax=0,rot="gal,equ",rot_method="alm"):
-        """Project a healpix map to an enmap of chosen shape and wcs. The wcs
-        is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
-        is in galactic coordinates, this can be specified by hp_coords, and a
-        slow conversion is done. No coordinate systems other than equatorial
-        or galactic are currently supported. Only intensity maps are supported.
-        If interpolate is True, bilinear interpolation using 4 nearest neighbours
-        is done.
-
-        shape -- 2-tuple (Ny,Nx)
-        wcs -- enmap wcs object in equatorial coordinates
-        hp_map -- array-like healpix map
-        hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
-        interpolate -- boolean
+class HealpixProjector(object):
+    def __init__(self,shape,wcs,rot=None,ncomp=1):
+        from enlib import coordinates
+        self.pmap = enmap.posmap(shape, wcs)
         
-        """
-        
-        import healpy
-        from enlib import coordinates, curvedsky, sharp, utils
-
-        # equatorial to galactic euler zyz angles
-        euler = np.array([57.06793215,  62.87115487, -167.14056929])*utils.degree
-
-        # If multiple templates are specified, the output file is
-        # interpreted as an output directory.
-
-        print("Loading map...")
         assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
+        pmap = enmap.posmap(shape, wcs)
+        
+        if rot:
+            # Rotate by displacing coordinates and then fixing the polarization
+            print("Computing pixel positions")
+            if rot:
+                print("Computing rotated positions")
+                s1,s2 = rot.split(",")
+                opos = coordinates.transform(s2, s1, pmap[::-1], pol=ncomp==3)
+                pmap[...] = opos[1::-1]
+                if len(opos) == 3: self.psi = -opos[2].copy()
+                del opos
+        self.pmap = pmap
+        self.ncomp = ncomp
+        self.rot = rot
+        
+    def project(self,ihealmap,unit=1,lmax=0,first=0,return_hp=False):
+        from enlib import sharp, coordinates, curvedsky
+        import healpy as hp
+
         dtype = np.float64
         ctype = np.result_type(dtype,0j)
         # Read the input maps
-        if hp_map_file is not None:
-            print(hp_map_file)
-            m = np.atleast_2d(healpy.read_map(hp_map_file, field=tuple(range(0,ncomp)))).astype(dtype)
-        else:
-            assert hp_map is not None
-            m = np.atleast_2d(hp_map).astype(dtype)
-
+        print("Reading " + ihealmap)
+        m = np.atleast_2d(hp.read_map(ihealmap, field=tuple(range(first,first+self.ncomp)))).astype(dtype)
+        if unit != 1: m /= unit
         # Prepare the transformation
-        print("SHT prep...")
-
-        nside = healpy.npix2nside(m.shape[1])
+        print("Preparing SHT")
+        nside = hp.npix2nside(m.shape[1])
         lmax  = lmax or 3*nside
         minfo = sharp.map_info_healpix(nside)
         ainfo = sharp.alm_info(lmax)
         sht   = sharp.sht(minfo, ainfo)
-        alm   = np.zeros((ncomp,ainfo.nelem), dtype=ctype)
+        alm   = np.zeros((self.ncomp,ainfo.nelem), dtype=ctype)
         # Perform the actual transform
-        print("SHT...")
+        print("T -> alm")
+        print( m.dtype, alm.dtype)
         sht.map2alm(m[0], alm[0])
-        
-        if ncomp == 3:
-                sht.map2alm(m[1:3],alm[1:3], spin=2)
-        del m
+        if self.ncomp == 3:
+            print("P -> alm")
+            sht.map2alm(m[1:3],alm[1:3], spin=2)
 
+        print("Projecting")
+        res  = curvedsky.alm2map_pos(alm, self.pmap)
+        if self.rot and self.ncomp==3:
+            print("Rotating polarization vectors")
+            res[1:3] = enmap.rotate_pol(res[1:3], self.psi)
 
-        if rot and rot_method != "alm":
-                print("rotate...")
-                pmap = posmap(shape, wcs)
-                s1,s2 = rot.split(",")
-                opos = coordinates.transform(s2, s1, pmap[::-1], pol=ncomp==3)
-                pmap[...] = opos[1::-1]
-                if len(opos) == 3: psi = -opos[2].copy()
-                del opos
-                res  = curvedsky.alm2map_pos(alm, pmap)
-                if ncomp==3:
-                        res[1:3] = rotate_pol(res[1:3], psi)
+        if return_hp:
+            return res,m
         else:
-                print(" alm rotate...")
-                # We will project directly onto target map if possible
-                if rot:
-                        s1,s2 = rot.split(",")
-                        if s1 != s2:
-                                print("rotating alm...")
-                                # Note: rotate_alm does not actually modify alm
-                                # if it is single precision
-                                if s1 == "gal" and (s2 == "equ" or s2 == "cel"):
-                                        healpy.rotate_alm(alm, euler[0], euler[1], euler[2])
-                                elif s2 == "gal" and (s1 == "equ" or s1 == "cel"):
-                                        healpy.rotate_alm(alm,-euler[2],-euler[1],-euler[0])
-                                else:
-                                        raise NotImplementedError
-                        print("done rotating alm...")
-                res = enmap.zeros((len(alm),)+shape[-2:], wcs, dtype)
-                res = curvedsky.alm2map(alm, res)
-        return res
-
-
-def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
-        """Project a healpix map to an enmap of chosen shape and wcs. The wcs
-        is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
-        is in galactic coordinates, this can be specified by hp_coords, and a
-        slow conversion is done. No coordinate systems other than equatorial
-        or galactic are currently supported. Only intensity maps are supported.
-        If interpolate is True, bilinear interpolation using 4 nearest neighbours
-        is done.
-
-        shape -- 2-tuple (Ny,Nx)
-        wcs -- enmap wcs object in equatorial coordinates
-        hp_map -- array-like healpix map
-        hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
-        interpolate -- boolean
+            return res
         
-        """
+def enmap_from_healpix_file(ihealmap,shape,wcs,ncomp=1,unit=1,lmax=0,rot_method="not-alm",rot=None,first=0):
+    from enlib import utils, sharp, coordinates, curvedsky
+    import healpy as hp
+    
+    # equatorial to galactic euler zyz angles
+    euler = np.array([57.06793215,  62.87115487, -167.14056929])*utils.degree
+
+    
+    assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
+    dtype = np.float64
+    ctype = np.result_type(dtype,0j)
+    # Read the input maps
+    print("Reading " + ihealmap)
+    m = np.atleast_2d(hp.read_map(ihealmap, field=tuple(range(first,first+ncomp)))).astype(dtype)
+    if unit != 1: m /= unit
+    # Prepare the transformation
+    print("Preparing SHT")
+    nside = hp.npix2nside(m.shape[1])
+    lmax  = lmax or 3*nside
+    minfo = sharp.map_info_healpix(nside)
+    ainfo = sharp.alm_info(lmax)
+    sht   = sharp.sht(minfo, ainfo)
+    alm   = np.zeros((ncomp,ainfo.nelem), dtype=ctype)
+    # Perform the actual transform
+    print("T -> alm")
+    print( m.dtype, alm.dtype)
+    sht.map2alm(m[0], alm[0])
+    if ncomp == 3:
+        print("P -> alm")
+        sht.map2alm(m[1:3],alm[1:3], spin=2)
+    del m
+
+
+    if rot and rot_method != "alm":
+        # Rotate by displacing coordinates and then fixing the polarization
+        print("Computing pixel positions")
+        pmap = enmap.posmap(shape, wcs)
+        if rot:
+            print("Computing rotated positions")
+            s1,s2 = rot.split(",")
+            opos = coordinates.transform(s2, s1, pmap[::-1], pol=ncomp==3)
+            pmap[...] = opos[1::-1]
+            if len(opos) == 3: psi = -opos[2].copy()
+            del opos
+        print("Projecting")
+        res  = curvedsky.alm2map_pos(alm, pmap)
+        if rot and ncomp==3:
+            print("Rotating polarization vectors")
+            res[1:3] = enmap.rotate_pol(res[1:3], psi)
+    else:
+        # We will project directly onto target map if possible
+        if rot:
+            print("Rotating alms")
+            s1,s2 = rot.split(",")
+            if s1 != s2:
+                # Note: rotate_alm does not actually modify alm
+                # if it is single precision
+                if s1 == "gal" and (s2 == "equ" or s2 == "cel"):
+                    hp.rotate_alm(alm, euler[0], euler[1], euler[2])
+                elif s2 == "gal" and (s1 == "equ" or s1 == "cel"):
+                    hp.rotate_alm(alm,-euler[2],-euler[1],-euler[0])
+                else:
+                    raise NotImplementedError
+        print("Projecting")
+        res = enmap.zeros((len(alm),)+shape[-2:], wcs, dtype)
+        res = curvedsky.alm2map(alm, res)
+    return res
+
+# def enmap_from_healpix_alms(shape,wcs,hp_map_file=None,hp_map=None,ncomp=1,lmax=0,rot="gal,equ",rot_method="alm"):
+#         """Project a healpix map to an enmap of chosen shape and wcs. The wcs
+#         is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
+#         is in galactic coordinates, this can be specified by hp_coords, and a
+#         slow conversion is done. No coordinate systems other than equatorial
+#         or galactic are currently supported. Only intensity maps are supported.
+#         If interpolate is True, bilinear interpolation using 4 nearest neighbours
+#         is done.
+
+#         shape -- 2-tuple (Ny,Nx)
+#         wcs -- enmap wcs object in equatorial coordinates
+#         hp_map -- array-like healpix map
+#         hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
+#         interpolate -- boolean
         
-        import healpy as hp
-        from astropy.coordinates import SkyCoord
-        import astropy.units as u
-
-
-        eq_coords = ['fk5','j2000','equatorial']
-        gal_coords = ['galactic']
+#         """
         
-        imap = enmap.zeros(shape,wcs)
-        Ny,Nx = shape
+#         import healpy
+#         from enlib import coordinates, curvedsky, sharp, utils
 
-        pixmap = enmap.pixmap(shape,wcs)
-        y = pixmap[0,...].T.ravel()
-        x = pixmap[1,...].T.ravel()
-        posmap = enmap.posmap(shape,wcs)
+#         # equatorial to galactic euler zyz angles
+#         euler = np.array([57.06793215,  62.87115487, -167.14056929])*utils.degree
 
-        ph = posmap[1,...].T.ravel()
-        th = posmap[0,...].T.ravel()
+#         # If multiple templates are specified, the output file is
+#         # interpreted as an output directory.
 
-        if hp_coords.lower() not in eq_coords:
-                # This is still the slowest part. If there are faster coord transform libraries, let me know!
-                assert hp_coords.lower() in gal_coords
-                gc = SkyCoord(ra=ph*u.degree, dec=th*u.degree, frame='fk5')
-                gc = gc.transform_to('galactic')
-                phOut = gc.l.deg
-                thOut = gc.b.deg
-        else:
-                thOut = th
-                phOut = ph
+#         print("Loading map...")
+#         assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
+#         dtype = np.float64
+#         ctype = np.result_type(dtype,0j)
+#         # Read the input maps
+#         if hp_map_file is not None:
+#             print(hp_map_file)
+#             m = np.atleast_2d(healpy.read_map(hp_map_file, field=tuple(range(0,ncomp)))).astype(dtype)
+#         else:
+#             assert hp_map is not None
+#             m = np.atleast_2d(hp_map).astype(dtype)
 
-        thOut = np.pi/2. - thOut #polar angle is 0 at north pole
+#         # Prepare the transformation
+#         print("SHT prep...")
 
-        # Not as slow as you'd expect
-        if interpolate:
-                imap[y,x] = hp.get_interp_val(hp_map, thOut, phOut)
-        else:
-                ind = hp.ang2pix( hp.get_nside(hp_map), thOut, phOut )
-                imap[:] = 0.
-                imap[[y,x]]=hp_map[ind]
+#         nside = healpy.npix2nside(m.shape[1])
+#         lmax  = lmax or 3*nside
+#         minfo = sharp.map_info_healpix(nside)
+#         ainfo = sharp.alm_info(lmax)
+#         sht   = sharp.sht(minfo, ainfo)
+#         alm   = np.zeros((ncomp,ainfo.nelem), dtype=ctype)
+#         # Perform the actual transform
+#         print("SHT...")
+#         sht.map2alm(m[0], alm[0])
+        
+#         if ncomp == 3:
+#                 sht.map2alm(m[1:3],alm[1:3], spin=2)
+#         del m
+
+
+#         if rot and rot_method != "alm":
+#                 print("rotate...")
+#                 pmap = posmap(shape, wcs)
+#                 s1,s2 = rot.split(",")
+#                 opos = coordinates.transform(s2, s1, pmap[::-1], pol=ncomp==3)
+#                 pmap[...] = opos[1::-1]
+#                 if len(opos) == 3: psi = -opos[2].copy()
+#                 del opos
+#                 res  = curvedsky.alm2map_pos(alm, pmap)
+#                 if ncomp==3:
+#                         res[1:3] = rotate_pol(res[1:3], psi)
+#         else:
+#                 print(" alm rotate...")
+#                 # We will project directly onto target map if possible
+#                 if rot:
+#                         s1,s2 = rot.split(",")
+#                         if s1 != s2:
+#                                 print("rotating alm...")
+#                                 # Note: rotate_alm does not actually modify alm
+#                                 # if it is single precision
+#                                 if s1 == "gal" and (s2 == "equ" or s2 == "cel"):
+#                                         healpy.rotate_alm(alm, euler[0], euler[1], euler[2])
+#                                 elif s2 == "gal" and (s1 == "equ" or s1 == "cel"):
+#                                         healpy.rotate_alm(alm,-euler[2],-euler[1],-euler[0])
+#                                 else:
+#                                         raise NotImplementedError
+#                         print("done rotating alm...")
+#                 res = enmap.zeros((len(alm),)+shape[-2:], wcs, dtype)
+#                 res = curvedsky.alm2map(alm, res)
+#         return res
+
+
+# def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
+#         """Project a healpix map to an enmap of chosen shape and wcs. The wcs
+#         is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
+#         is in galactic coordinates, this can be specified by hp_coords, and a
+#         slow conversion is done. No coordinate systems other than equatorial
+#         or galactic are currently supported. Only intensity maps are supported.
+#         If interpolate is True, bilinear interpolation using 4 nearest neighbours
+#         is done.
+
+#         shape -- 2-tuple (Ny,Nx)
+#         wcs -- enmap wcs object in equatorial coordinates
+#         hp_map -- array-like healpix map
+#         hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
+#         interpolate -- boolean
+        
+#         """
+        
+#         import healpy as hp
+#         from astropy.coordinates import SkyCoord
+#         import astropy.units as u
+
+
+#         eq_coords = ['fk5','j2000','equatorial']
+#         gal_coords = ['galactic']
+        
+#         imap = enmap.zeros(shape,wcs)
+#         Ny,Nx = shape
+
+#         pixmap = enmap.pixmap(shape,wcs)
+#         y = pixmap[0,...].T.ravel()
+#         x = pixmap[1,...].T.ravel()
+#         posmap = enmap.posmap(shape,wcs)
+
+#         ph = posmap[1,...].T.ravel()
+#         th = posmap[0,...].T.ravel()
+
+#         if hp_coords.lower() not in eq_coords:
+#                 # This is still the slowest part. If there are faster coord transform libraries, let me know!
+#                 assert hp_coords.lower() in gal_coords
+#                 gc = SkyCoord(ra=ph*u.degree, dec=th*u.degree, frame='fk5')
+#                 gc = gc.transform_to('galactic')
+#                 phOut = gc.l.deg* np.pi/180.
+#                 thOut = gc.b.deg* np.pi/180.
+#         else:
+#                 thOut = th
+#                 phOut = ph
+
+#         thOut = np.pi/2. - thOut #polar angle is 0 at north pole
+
+#         # Not as slow as you'd expect
+#         if interpolate:
+#                 imap[y,x] = hp.get_interp_val(hp_map, thOut, phOut)
+#         else:
+#                 ind = hp.ang2pix( hp.get_nside(hp_map), thOut, phOut )
+#                 imap[:] = 0.
+#                 imap[[y,x]]=hp_map[ind]
 
                 
                 
-        return enmap.ndmap(imap,wcs)
+#         return enmap.ndmap(imap,wcs)
 
 
 
@@ -1190,13 +1493,13 @@ def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alph
 
 class ACTMapReader(object):
 
-    def __init__(self,config_yaml_path):
+    def __init__(self,map_root,beam_root,config_yaml_path):
 
         with open(config_yaml_path, 'r') as ymlfile:
             self._cfg = yaml.load(ymlfile,Loader=yaml.BaseLoader)
 
-        self.map_root = self._cfg['map_root']
-        self.beam_root = self._cfg['beam_root']
+        self.map_root = map_root #self._cfg['map_root']
+        self.beam_root = beam_root #self._cfg['beam_root']
 
         
         self.boxes = {}
@@ -1222,8 +1525,8 @@ class ACTMapReader(object):
 
 class SigurdCoaddReader(ACTMapReader):
     
-    def __init__(self,config_yaml_path):
-        ACTMapReader.__init__(self,config_yaml_path)
+    def __init__(self,map_root,beam_root,config_yaml_path):
+        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
         eg_file = self._fstring(split=-1,freq="150",day_night="daynight",planck=True)
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
 
@@ -1274,20 +1577,26 @@ class SigurdCoaddReader(ACTMapReader):
         return ls, bells
 
 
-class SigurdBNReader(ACTMapReader):
+class SigurdMR2Reader(ACTMapReader):
     
-    def __init__(self,config_yaml_path):
-        ACTMapReader.__init__(self,config_yaml_path)
+    def __init__(self,map_root,beam_root,config_yaml_path):
+        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
         eg_file = self._fstring(split=-1,season="s15",array="pa1",freq="150",day_night="night")
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
 
-    def get_map(self,split,season,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
+    def get_map(self,split,season,patch,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
 
-        patch = "boss"
+        assert patch=="boss"
         fstr = self._fstring(split,season,array,freq,day_night,weight)
         cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
         selection = self.sel_from_region(region)
         fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
+
+        if weight:
+            ndim = fmap.ndim
+            if ndim==4: fmap = fmap[0,0]
+            if ndim==3: fmap = fmap[0]
+            
 
         if get_identifier:
             identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
@@ -1299,7 +1608,7 @@ class SigurdBNReader(ACTMapReader):
         # Change this function if the map naming scheme changes
         splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)+"_"
         weightstr = "div" if weight else "map0500"
-        return self.map_root+"mr2/"+season+"/boss_north/"+season+"_boss_"+array+"_f"+freq+"_"+day_night+"_nohwp"+splitstr+"sky_"+weightstr+"_mono.fits"
+        return self.map_root+"mr2/"+season+"/boss_north/"+season+"_boss_"+array+"_f"+freq.zfill(3)+"_"+day_night+"_nohwp"+splitstr+"sky_"+weightstr+"_mono.fits"
 
 
     def get_beam(self,season,array,freq="150",day_night="night"):
@@ -1309,10 +1618,10 @@ class SigurdBNReader(ACTMapReader):
         return ls, bells
 
     
-class SimoneC7V5Reader(ACTMapReader):
+class SimoneMR2Reader(ACTMapReader):
     
-    def __init__(self,config_yaml_path):
-        ACTMapReader.__init__(self,config_yaml_path)
+    def __init__(self,map_root,beam_root,config_yaml_path):
+        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
         
     def get_beam(self,season,patch,array,freq="150",day_night="night"):
         beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
@@ -1578,8 +1887,12 @@ class Purify(object):
         self.windict = init_deriv_window(window,px)
         lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes(shape,wcs)
 
-    def lteb_from_iqu(self,imap,method='pure'):
-        fT, fE, fB = iqu_to_pure_lteb(imap[0],imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method)
+    def lteb_from_iqu(self,imap,method='pure',flip_q=True):
+        """
+        maps must not have window applied!
+        """
+        sgnq = -1 if flip_q else 1
+        fT, fE, fB = iqu_to_pure_lteb(imap[0],sgnq*imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method)
         return fT,-fE,-fB
         
 
@@ -1610,6 +1923,9 @@ def init_deriv_window(window,px):
 
 
 def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure'):
+    """
+    maps must not have window applied!
+    """
 
     window = windowDict
 
@@ -1620,13 +1936,13 @@ def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure')
     d2Win_dy2=window['d2Win_dy2']
     d2Win_dxdy=window['d2Win_dxdy']
 
-    T_temp=T_map.copy()#*win
+    T_temp=T_map.copy()*win
     fT=fft(T_temp,axes=[-2,-1])
     
-    Q_temp=Q_map.copy()#*win
+    Q_temp=Q_map.copy()*win
     fQ=fft(Q_temp,axes=[-2,-1])
     
-    U_temp=U_map.copy()#*win
+    U_temp=U_map.copy()*win
     fU=fft(U_temp,axes=[-2,-1])
     
     fE=fT.copy()
@@ -1801,3 +2117,140 @@ class PatchArray(object):
     def get_noise_sim(self,seed=None,scalar=False):
         return self.ngenerator.get_map(seed=seed,scalar=scalar)
     
+
+
+
+def gauss_kern(sigmaY,sigmaX,nsigma=5.0):
+    """
+    @ brief Returns a normalized 2D gauss kernel array for convolutions
+    ^
+    | Y
+    |
+    ------>
+      X 
+    """
+    sizeY = int(nsigma*sigmaY)
+    sizeX = int(nsigma*sigmaX)
+    
+    y, x = np.mgrid[-sizeY:sizeY+1, -sizeX:sizeX+1]
+    g = np.exp(-(x**2/(2.*sigmaX**2)+y**2/(2.*sigmaY**2)))
+    return g / g.sum()
+
+
+def gkern_interp(shape,wcs,rs,bprof,fwhm_guess,nsigma=20.0):
+    """
+    @ brief Returns a normalized 2D kernel array for convolutions
+    given a 1D profile shape. 
+    rs in radians
+    bprof is profile
+    fwhm_guess is in arcmin
+    """
+
+    fwhm_guess *= np.pi/(180.*60.)
+    # Approximate pixel size
+    py,px = enmap.pixshape(shape, wcs, signed=False)
+    sigma = fwhm_guess/(np.sqrt(8.*np.log(2.)))
+
+    modrmap = enmap.modrmap(shape,wcs)
+
+    ny,nx = shape
+
+    sy = int(nsigma*sigma/py)
+    sx = int(nsigma*sigma/px)
+    
+    if ((ny%2==0) and (sy%2==1)) or ((ny%2==1) and (sy%2==0)): sy+=1
+    if ((nx%2==0) and (sx%2==1)) or ((nx%2==1) and (sx%2==0)): sx+=1
+    
+    
+    rmap = crop_center(modrmap,sy,sx)
+
+    g = interp(rs,bprof)(rmap)
+
+    return g / g.sum()
+
+
+def convolve_profile(imap,rs,bprof,fwhm_guess,nsigma=20.0):
+    """
+    rs in radians
+    bprof is profile
+    fwhm_guess is in arcmin
+    """
+    g = gkern_interp(imap.shape,imap.wcs,rs,bprof,fwhm_guess,nsigma=nsigma)
+    print(g.shape)
+    return convolve(imap,g)
+
+def convolve(imap,kernel):
+    from scipy import signal
+
+    g = kernel
+    ncomps = imap.shape[0] if imap.ndim>2 else 1
+    imaps = imap.reshape((ncomps,imap.shape[-2],imap.shape[-1]))
+    data = []
+    for i in range(imaps.shape[0]):
+        omap = signal.convolve(imaps[i],g, mode='same')
+        data.append(omap)
+
+    if ncomps==1:
+        data = np.array(data).reshape((imap.shape[-2],imap.shape[-1]))
+    else:
+        data = np.array(data).reshape((ncomps,imap.shape[-2],imap.shape[-1]))
+    
+    return enmap.enmap(data,imap.wcs)
+
+
+def convolve_gaussian(imap,fwhm=None,nsigma=5.0):
+    """
+    @brief convolve a map with a Gaussian beam (real space operation)
+    @param kernel real-space 2D kernel
+    @param fwhm Full Width Half Max in arcmin
+    @param nsigma Number of sigmas the Gaussian kernel is defined out to.
+
+
+    """
+    
+
+    """
+    @param sigmaY standard deviation of Gaussian in pixel units in the Y direction
+    @param sigmaX standard deviation of Gaussian in pixel units in the X direction
+
+    """
+
+    fwhm *= np.pi/(180.*60.)
+    py,px = enmap.pixshape(imap.shape, imap.wcs)
+    sigmaY = fwhm/(np.sqrt(8.*np.log(2.))*py)
+    sigmaX = fwhm/(np.sqrt(8.*np.log(2.))*px)
+
+    g = gauss_kern(sigmaY, sigmaX,nsigma=nsigma)
+        
+    return convolve(imap,g)
+
+
+
+
+class MultiArray(object):
+
+    def __init__(self,shape,wcs,taper=None):
+        self.flat_cmb_inited = False
+        pass
+
+    def add_array(self,label,freq_ghz,beam_arcmin=None,noise_uk_arcmin_T=None,noise_uk_arcmin_P=None,ps_noise=None,beam2d=None,beam_func=None):
+        pass
+
+    def get_full_sky_cmb_sim(self,sim_root,index):
+        pass
+
+    def init_flat_cmb_sim(self,ps_cmb,flat_lensing=False,fixed_kappa=None,buffer_deg=None):
+        self.flat_cmb_inited = True
+
+    def lens_cmb(self,imap,input_kappa=None):
+        pass
+
+    def get_flat_sky_cmb_sim(self,lens_with_kappa=False,seed_cmb=None,seed_kappa=None):
+        assert self.flat_cmb_inited
+        assert not(self.lensed_power)
+        
+        self.fcmbsim.get_map(seed=seed_cmb)
+        pass
+    
+    def get_noise_sim(self,label,pol=True,buffer_deg=None):
+        pass

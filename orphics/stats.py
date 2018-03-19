@@ -3,6 +3,7 @@ import numpy as np
 import time
 import itertools
 import scipy
+from scipy.stats import binned_statistic as binnedstat
 
 try:
     from pandas import DataFrame
@@ -238,8 +239,8 @@ class OQE(object):
 
         
     def _inv(self,cov):
-        #return np.linalg.pinv(cov)
-        #return scipy.linalg.pinv2(cov)
+        # return np.linalg.pinv(cov)
+        # return scipy.linalg.pinv2(cov)
         return np.linalg.inv(cov)
 
 
@@ -266,6 +267,13 @@ class CinvUpdater(object):
 
         
 
+def eig_pow(C,exponent=-1,lim=1.e-8):
+    e,v = np.linalg.eigh(C)
+    emax = np.max(e)
+    mask = e<emax*lim
+    e[~mask] **= exponent
+    e[mask]=0.
+    return (v*e).dot(v.T)
 
 def sm_update(Ainv, u, v=None):
     """Compute the value of (A + uv^T)^-1 given A^-1, u, and v. 
@@ -458,14 +466,46 @@ class bin2D(object):
         self.digitized = np.digitize(np.ndarray.flatten(modrmap), bin_edges,right=True)
         self.bin_edges = bin_edges
     def bin(self,data2d,weights=None):
+        
         if weights is None:
             res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/np.bincount(self.digitized)[1:-1]
         else:
-            weights = self.digitized*0.+weights
+            #weights = self.digitized*0.+weights
             res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/np.bincount(self.digitized,weights.reshape(-1))[1:-1]
         return self.centers,res
 
 
+class bin1D:
+    '''
+    * Takes data defined on x0 and produces values binned on x.
+    * Assumes x0 is linearly spaced and continuous in a domain?
+    * Assumes x is continuous in a subdomain of x0.
+    * Should handle NaNs correctly.
+    '''
+    
+
+    def __init__(self, bin_edges):
+
+        self.update_bin_edges(bin_edges)
+
+
+    def update_bin_edges(self,bin_edges):
+        
+        self.bin_edges = bin_edges
+        self.numbins = len(bin_edges)-1
+
+
+    def binned(self,x,y):
+
+
+        # pretty sure this treats nans in y correctly, but should double-check!
+        bin_means = binnedstat(x,y,bins=self.bin_edges,statistic=np.nanmean)[0]
+
+
+        
+        return (self.bin_edges[:-1]+self.bin_edges[1:])/2.,bin_means
+
+        
     
 def bin_in_annuli(data2d, modrmap, bin_edges):
     binner = bin2D(modrmap, bin_edges)

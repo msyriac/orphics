@@ -56,10 +56,13 @@ taper,w2 = maps.get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=No
 plot_powers(cmb*taper,suffix="tapered",w2=w2)    
 
 print("Pure...")
+from orphics import pure
+#windict = pure.init_deriv_window(taper,px*np.pi/180./60.)
 windict = maps.init_deriv_window(taper,px*np.pi/180./60.)
 lxMap,lyMap,modLMap,angLMap,lx,ly = maps.get_ft_attributes(shape,wcs)
-cmb *= taper
-fT, fE, fB = maps.iqu_to_pure_lteb(cmb[0],-cmb[1],-cmb[2],modlmap,angLMap,windowDict=windict,method='pure')
+#cmb *= taper
+#fT, fE, fB =  pure.iqu_to_pure_lteb(cmb[0],cmb[1],cmb[2],modlmap,angLMap,windowDict=windict,method='pure')
+fT, fE, fB =  maps.iqu_to_pure_lteb(cmb[0]*taper,cmb[1]*taper,cmb[2]*taper,modlmap,angLMap,windowDict=windict,method='pure')
 power = np.zeros((3,3,shape[-2],shape[-1]))
 power[0,0,:,:] = fc.f2power(fT,fT)
 power[1,1,:,:] = fc.f2power(fE,fE)

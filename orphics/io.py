@@ -10,7 +10,7 @@ import itertools
 try:
     dout_dir = os.environ['WWW']+"plots/"
 except:
-    dout_dir = "."
+    dout_dir = "./"
 
 class DummyFile(object):
     def write(self, x): pass
