@@ -13,8 +13,8 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 def binary_mask(mask,threshold=0.5):
     m = mask.copy()
-    m[m>0.5] = 1
-    m[m<0.5] = 0
+    m[m>threshold] = 1
+    m[m<threshold] = 0
     return m
         
 
@@ -169,7 +169,16 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
     return shape, wcs
 
 
-#def resample
+def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None):
+    pix_high = enmap.pixmap(shape[-2:],wcs)
+    pix_low = pix_high/float(ndown)
+    cov_low = enmap.downgrade(cov, ndown)
+    if exp is not None:
+        covexp = enmap.enmap(enmap.multi_pow(cov_low,exp),wcs)
+    else:
+        covexp = enmap.enmap(cov_low,wcs)
+    return covexp.at(pix_low, order=order, mask_nan=False, unit="pix")
+    
 
 class MapGen(object):
         """
@@ -177,7 +186,7 @@ class MapGen(object):
         pre-calculate some things to speed up random map generation.
         """
         
-        def __init__(self,shape,wcs,cov=None,covsqrt=None,pixel_units=False,smooth="auto",ndown=None,order=0):
+        def __init__(self,shape,wcs,cov=None,covsqrt=None,pixel_units=False,smooth="auto",ndown=None,order=1):
                 self.shape = shape
                 self.wcs = wcs
                 if covsqrt is not None:
@@ -185,13 +194,8 @@ class MapGen(object):
                 else:
                     if cov.ndim==4:
                             if not(pixel_units): cov = cov * np.prod(shape[-2:])/enmap.area(shape,wcs )
-                            print ("sqrt...")
                             if ndown:
-                                pix_high = enmap.pixmap(shape[-2:],wcs)
-                                pix_low = pix_high/float(ndown)
-                                cov_low = enmap.downgrade(cov, ndown)
-                                covsqrt_low = enmap.enmap(enmap.multi_pow(cov_low,0.5),wcs)
-                                self.covsqrt = covsqrt_low.at(pix_low, order=order, mask_nan=False, unit="pix")
+                                self.covsqrt = downsample_power(shape,wcs,cov,ndown,order,exp=0.5)
                             else:
                                 self.covsqrt = enmap.multi_pow(cov, 0.5)
                     else:
@@ -1043,11 +1047,9 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
 
     if do_cross: assert ncomp==3
 
-    print(splits.shape, " Starting fts...")
 
     # Get fourier transforms of I,Q,U
-    with bench.show("ksplits"):
-        ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
+    ksplits = [fourier_calc.iqu2teb(split, nthread=nthread, normalize=False, rot=False) for split in splits]
     del splits
     
     if do_cross:
