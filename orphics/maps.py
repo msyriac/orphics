@@ -1586,9 +1586,10 @@ class SigurdMR2Reader(ACTMapReader):
         eg_file = self._fstring(split=-1,season="s15",array="pa1",freq="150",day_night="night")
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
 
-    def get_map(self,split,season,patch,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
+    def get_map(self,split,season,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
 
-        assert patch=="boss"
+        
+        patch="boss"
         fstr = self._fstring(split,season,array,freq,day_night,weight)
         cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
         selection = self.sel_from_region(region)
@@ -1622,15 +1623,19 @@ class SigurdMR2Reader(ACTMapReader):
     
 class SimoneMR2Reader(ACTMapReader):
     
-    def __init__(self,map_root,beam_root,config_yaml_path):
+    def __init__(self,map_root,beam_root,config_yaml_path,patch):
         ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
+        eg_file = self._fstring(split=-1,season="s15",patch=patch,array="pa1",freq="150",day_night="night",pol="I")
+        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
+        self.patch = patch
         
-    def get_beam(self,season,patch,array,freq="150",day_night="night"):
+    def get_beam(self,season,array,freq="150",day_night="night"):
+        patch = self.patch
         beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
-    def get_map(self,split,season,patch,array,freq="150",day_night="night",full_map=False,weight=False,get_identifier=False,t_only=False):
-
+    def get_map(self,split,season,array,freq="150",day_night="night",full_map=True,weight=False,get_identifier=False,t_only=False,region=None):
+        patch = self.patch
         maps = []
         maplist = ['srcfree_I','Q','U'] if not(t_only) else ['srcfree_I']
         for pol in maplist if not(weight) else [None]:
