@@ -12,9 +12,9 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
 def binary_mask(mask,threshold=0.5):
-    m = mask.copy()
-    m[m>threshold] = 1
+    m = np.abs(mask)
     m[m<threshold] = 0
+    m[m>threshold] = 1
     return m
         
 
@@ -76,7 +76,13 @@ def resample_fft(imap,res):
     oshape,owcs = enmap.scale_geometry(shape, wcs, scale)
     return enmap.enmap(resample.resample_fft(imap,oshape[-2:]),owcs)
 
-    
+
+def resampled_geometry(shape,wcs,res):
+    inres = resolution(shape,wcs)
+    scale = inres/res
+    oshape,owcs = enmap.scale_geometry(shape, wcs, scale)
+    return oshape,owcs
+
 
 def split_sky(dec_width,num_decs,ra_width,dec_start=0.,ra_start=0.,ra_extent=90.):
 
@@ -729,7 +735,7 @@ def ilc_comb_a_b(response_a,response_b,cinv):
     pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
     return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
 
-def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None):
+def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,kmask=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -742,6 +748,7 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_s
     Returns beam-deconvolved covariance matrix
     """
 
+    kmask = 1. if kmask is None else kmask
     nfreqs = len(noises)
     if cmb_ps.ndim==2:
         cshape = (nfreqs,nfreqs,1,1)
@@ -757,8 +764,9 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_s
         pl.add(ells,cmb_ps*ells**2.,color='k',lw=3)
     for i,(kbeam1,freq1,noise1) in enumerate(zip(kbeams,freqs,noises)):
         for j,(kbeam2,freq2,noise2) in enumerate(zip(kbeams,freqs,noises)):
+            print("Populating covariance for ",freq1,"x",freq2)
             if i==j:
-                instnoise = np.nan_to_num(noise1/kbeam1**2.)
+                instnoise = np.nan_to_num(noise1*kmask/kbeam1**2.)
                 Covmat[i,j,:] += instnoise
                 if plot:
                     pl.add(ells,instnoise*ells**2.,lw=2,ls="--",label=str(freq1))
@@ -774,9 +782,29 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_s
         pl.legend(loc='upper left',labsize=10)
         pl.done(plot_save)
 
+    return Covmat
 
-    cinv = np.linalg.inv(Covmat.T).T
-    return cinv
+def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,eigpow=True):
+    """
+    ells -- either 1D or 2D fourier wavenumbers
+    cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
+    kbeams -- 1d or 2d beam transforms
+    freqs -- array of floats with frequency bandpasses
+    noises -- 1d, 2d or float noise powers (in uK^2-radian^2)
+    components -- list of strings representing foreground components recognized by fgGenerator
+    fnoise -- A szar.foregrounds.fgNoises object (or derivative) containing foreground power definitions
+
+    Returns beam-deconvolved inv covariance matrix
+    """
+    Covmat = ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot,plot_save)
+    print("Inverting covariance...")
+
+    if eigpow:
+        from enlib import utils
+        return utils.eigpow(Covmat, -1.,axes=[0,1])
+    else:
+        cinv = np.linalg.inv(Covmat.T).T
+        return cinv
 
 
 def minimum_ell(shape,wcs):
