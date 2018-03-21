@@ -171,6 +171,7 @@ class MapGen(object):
                 else:
                         self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
+
         def get_map(self,seed=None,scalar=False,iau=True):
                 if seed is not None: np.random.seed(seed)
                 data = enmap.map_mul(self.covsqrt, enmap.rand_gauss_harm(self.shape, self.wcs))
