@@ -1,5 +1,5 @@
 from __future__ import print_function 
-from enlib import enmap, utils, bench
+from enlib import enmap, utils, bench, resample
 import numpy as np
 from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
@@ -69,7 +69,6 @@ def resample_fft(imap,res):
     Returns an enmap instead of an array.
     imap must be periodic/windowed
     """
-    from enlib import resample
     shape,wcs = imap.shape,imap.wcs
     inres = resolution(shape,wcs)
     scale = inres/res
@@ -175,15 +174,20 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
     return shape, wcs
 
 
-def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None):
+def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=False):
+    afftshift = np.fft.fftshift if fftshift else lambda x: x
+    aifftshift = np.fft.ifftshift if fftshift else lambda x: x
     pix_high = enmap.pixmap(shape[-2:],wcs)
     pix_low = pix_high/float(ndown)
-    cov_low = enmap.downgrade(np.fft.fftshift(cov), ndown)
+    if fft:
+        cov_low = resample.resample_fft(afftshift(cov), [s/ndown for s in shape])
+    else:
+        cov_low = enmap.downgrade(afftshift(cov), ndown)
     if exp is not None:
         covexp = enmap.enmap(enmap.multi_pow(cov_low,exp),wcs)
     else:
         covexp = enmap.enmap(cov_low,wcs)
-    return np.fft.ifftshift(covexp.at(pix_low, order=order, mask_nan=False, unit="pix"))
+    return aifftshift(covexp.at(pix_low, order=order, mask_nan=False, unit="pix"))
     
 
 class MapGen(object):
