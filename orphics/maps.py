@@ -178,12 +178,12 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
 def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None):
     pix_high = enmap.pixmap(shape[-2:],wcs)
     pix_low = pix_high/float(ndown)
-    cov_low = enmap.downgrade(cov, ndown)
+    cov_low = enmap.downgrade(np.fft.fftshift(cov), ndown)
     if exp is not None:
         covexp = enmap.enmap(enmap.multi_pow(cov_low,exp),wcs)
     else:
         covexp = enmap.enmap(cov_low,wcs)
-    return covexp.at(pix_low, order=order, mask_nan=False, unit="pix")
+    return np.fft.ifftshift(covexp.at(pix_low, order=order, mask_nan=False, unit="pix"))
     
 
 class MapGen(object):
@@ -749,7 +749,7 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
     Returns beam-deconvolved covariance matrix
     """
 
-    kmask = 1. if kmask is None else kmask
+    kmask = np.ones(ells.shape,dtype=np.int) if kmask is None else kmask
     nfreqs = len(noises)
     if cmb_ps.ndim==2:
         cshape = (nfreqs,nfreqs,1,1)
@@ -767,7 +767,8 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
         for j,(kbeam2,freq2,noise2) in enumerate(zip(kbeams,freqs,noises)):
             print("Populating covariance for ",freq1,"x",freq2)
             if i==j:
-                instnoise = np.nan_to_num(noise1*kmask/kbeam1**2.)
+                instnoise = np.nan_to_num(noise1/kbeam1**2.)
+                instnoise[kmask==0] = np.inf
                 Covmat[i,j,:] += instnoise
                 if plot:
                     pl.add(ells,instnoise*ells**2.,lw=2,ls="--",label=str(freq1))
