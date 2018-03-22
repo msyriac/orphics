@@ -657,7 +657,7 @@ def silc(kmaps,cinv,response=None):
     weighted = ilc_map_term(kmaps,cinv,response)
     # Get response^T Cinv response
     norm = ilc_comb_a_b(response,response,cinv)
-    return weighted/norm
+    return np.nan_to_num(weighted/norm)
 
 def cilc(kmaps,cinv,response_a,response_b):
     """Constrained ILC -- Make a constrained internal linear combination (ILC) of given fourier space maps at different frequencies
@@ -716,7 +716,7 @@ def ilc_map_term(kmaps,cinv,response):
 def silc_noise(cinv,response=None):
     """ Derived from Eq 4 of arXiv:1006.5599"""
     response = ilc_def_response(response,cinv)
-    return (1./ilc_comb_a_b(response,response,cinv))
+    return np.nan_to_num(1./ilc_comb_a_b(response,response,cinv))
 
 def cilc_noise(cinv,response_a,response_b):
     """ Derived from Eq 18 of arXiv:1006.5599 """
