@@ -1071,7 +1071,8 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
     splits = enmap.enmap(np.asarray(splits),wcs).astype(np.float32)
     assert splits.ndim==3 or splits.ndim==4
     if splits.ndim == 3: splits = splits[:,None,:,:]
-    ncomp = splits[1]
+    ncomp = splits.shape[1]
+    ndim = splits.ndim
         
     if fourier_calc is None:
         shape = splits.shape[-3:] if do_cross else splits.shape[-2:]
@@ -1079,7 +1080,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
     
     Nsplits = splits.shape[0]
 
-    if do_cross: assert ncomp==3
+    if do_cross: assert ncomp==3 or ncomp==1
 
 
     # Get fourier transforms of I,Q,U
@@ -1107,7 +1108,6 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
         for j in range(i+1,len(ksplits)):
             cross += fourier_calc.power2d(kmap=ksplits[i],kmap2=ksplits[j],dtype=np.float32)[0].astype(np.float32)
     cross /= Ncrosses
-    del ksplits
         
     if do_cross:
         # do cross powers of T,E,B
@@ -1118,6 +1118,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
         cross_teb /= Ncrosses
     else:
         cross_teb = None
+    del ksplits
 
     # get noise model for I,Q,U
     noise = (auto-cross)/Nsplits
