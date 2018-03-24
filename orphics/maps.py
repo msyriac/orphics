@@ -4,7 +4,7 @@ import numpy as np
 from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
-from orphics import io
+from orphics import io,cosmology
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
@@ -2306,17 +2306,78 @@ class MultiArray(object):
 
     def __init__(self,shape,wcs,taper=None):
         self.flat_cmb_inited = False
-        pass
+        self.ngens = []
+        self.labels = []
+        self.freqs = []
+        self.beams = []
+        self.fgs = []
+        self.fgens = {}
+        self.ref_freqs = {}
+        self.freq_scale_func = {}
+        self.shape = shape
+        self.wcs = wcs
+        self.pol = True if len(shape[-3:])==3 else False
 
-    def add_array(self,label,freq_ghz,beam_arcmin=None,noise_uk_arcmin_T=None,noise_uk_arcmin_P=None,ps_noise=None,beam2d=None,beam_func=None):
-        pass
+    def add_array(self,label,freq_ghz,beam_arcmin=None,noise_uk_arcmin_T=None,noise_uk_arcmin_P=None,ps_noise=None,beam2d=None,beam_func=None,lknee_T=0,lknee_P=0,alpha_T=1,alpha_P=1,dimensionless=False):
+        
+        self.labels.append(label)
+        self.freqs.append(freq_ghz)
+        
+        modlmap = enmap.modlmap(self.shape,self.wcs)
+        if beam2d is None: beam2d = gauss_beam(modlmap,beam_arcmin)
+        
+        nT = cosmology.white_noise_with_atm_func(modlmap,noise_uk_arcmin_T,lknee_T,alpha_T,dimensionless)
+        Ny,Nx = modlmap.shape
+        if self.pol:
+            nP = cosmology.white_noise_with_atm_func(modlmap,noise_uk_arcmin_P,lknee_P,alpha_P,dimensionless)
+            ps_noise = np.zeros((3,3,Ny,Nx))
+            ps_noise[0,0] = nT
+            ps_noise[1,1] = nP
+            ps_noise[2,2] = nP
+        else:
+            ps_noise = np.zeros((1,1,Ny,Nx))
+            ps_noise[0,0] = nT
+            nP = 0
+
+        self.beams.append(beam2d)
+        ps_noise[:,:,modlmap<2] = 0
+        self.ngens.append( MapGen(self.shape,self.wcs,ps_noise) )
+        return np.nan_to_num(nT/beam2d**2.),np.nan_to_num(nP/beam2d**2.)
+        
 
     def get_full_sky_cmb_sim(self,sim_root,index):
         pass
 
     def init_flat_cmb_sim(self,ps_cmb,flat_lensing=False,fixed_kappa=None,buffer_deg=None):
         self.flat_cmb_inited = True
+        self.mgen = MapGen(self.shape,self.wcs,ps_cmb)
 
+    def add_gaussian_foreground(self,label,ps_fg,ref_freq,freq_scale_func):
+        self.fgens[label] = MapGen(self.shape,self.wcs,ps_fg)
+        self.ref_freqs[label] = ref_freq
+        self.freq_scale_func[label] = freq_scale_func
+        self.fgs.append(label)
+        
+    
+    def get_sky(self,foregrounds = None):
+        cmb = self.mgen.get_map()
+        foregrounds = self.fgs if foregrounds is None else foregrounds
+
+        observed = []
+        for i in range(len(self.labels)):
+            noise = self.ngens[i].get_map()
+            freq = self.freqs[i]
+
+            fgs = 0.
+            for foreground in foregrounds:
+                fgs += self.fgens[foreground].get_map()*self.freq_scale_func[foreground](freq)/self.freq_scale_func[foreground](self.ref_freqs[foreground])
+
+            sky = filter_map(cmb + fgs,self.beams[i])
+            observed.append( sky + noise )
+            
+        
+        return np.stack(observed)
+        
     def lens_cmb(self,imap,input_kappa=None):
         pass
 

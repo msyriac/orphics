@@ -142,7 +142,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True
     if high_res:
         high_res_plot_img(array,filename,verbose=verbose,**kwargs)
     else:
-        pl = Plotter(ftsize=ftsize)
+        pl = Plotter(ftsize=ftsize,xlabel="",ylabel="")
         pl.plot2d(array,**kwargs)
         pl.done(filename,verbose=verbose)
 
@@ -184,7 +184,17 @@ class Plotter(object):
         self._fig=plt.figure(**kwargs)
         self._ax=self._fig.add_subplot(1,1,1)
 
-        
+
+        # Some self-disciplining :)
+        try:
+            force_label = os.environ['FORCE_ORPHICS_LABEL']
+            force_label = True if force_label.lower().strip() == "true" else False
+        except:
+            force_label = False
+
+        if force_label:
+            assert xlabel is not None, "Please provide an xlabel for your plot"
+            assert ylabel is not None, "Please provide a ylabel for your plot"
 
 
 
