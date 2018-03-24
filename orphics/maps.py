@@ -2359,24 +2359,29 @@ class MultiArray(object):
         self.fgs.append(label)
         
     
-    def get_sky(self,foregrounds = None):
-        cmb = self.mgen.get_map()
+    def get_sky(self,foregrounds = None,cmb_seed=None,noise_seed=None,fg_seed=None,return_fg=False):
+        cmb = self.mgen.get_map(seed=cmb_seed)
         foregrounds = self.fgs if foregrounds is None else foregrounds
 
         observed = []
+        if return_fg: input_fg = []
         for i in range(len(self.labels)):
-            noise = self.ngens[i].get_map()
+            noise = self.ngens[i].get_map(seed=noise_seed)
             freq = self.freqs[i]
 
             fgs = 0.
             for foreground in foregrounds:
-                fgs += self.fgens[foreground].get_map()*self.freq_scale_func[foreground](freq)/self.freq_scale_func[foreground](self.ref_freqs[foreground])
+                fgs += self.fgens[foreground].get_map(seed=fg_seed)*self.freq_scale_func[foreground](freq)/self.freq_scale_func[foreground](self.ref_freqs[foreground])
 
             sky = filter_map(cmb + fgs,self.beams[i])
             observed.append( sky + noise )
+            if return_fg: input_fg.append(fgs.copy())
+
             
-        
-        return np.stack(observed)
+        if return_fg:
+            return np.stack(observed),np.stack(input_fg)
+        else:
+            return np.stack(observed)
         
     def lens_cmb(self,imap,input_kappa=None):
         pass
