@@ -174,20 +174,53 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
     return shape, wcs
 
 
-def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=False):
+def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False):
+    """
+    Smooth a power spectrum by averaging. This can be used to, for example:
+    1. calculate a PS for use in a noise model
+    2. calculate an ILC covariance empirically in Fourier-Cartesian domains
+
+    shape -- tuple spec
+    """
+
+    
+    ndown = np.array(ndown).ravel()
+    if ndown.size==1:
+        Ny,Nx = shape[-2:]
+        nmax = max(Ny,Nx)
+        nmin = min(Ny,Nx)
+        ndown1 = ndown[0]
+        ndown2 = int(ndown*nmax*1./nmin)
+        ndown = np.array((ndown2,ndown1)) if Ny>Nx else np.array((ndown1,ndown2))
+    else:
+        ndown = np.array((ndown,ndown))
+        
+    cov = logfunc(cov)
     afftshift = np.fft.fftshift if fftshift else lambda x: x
     aifftshift = np.fft.ifftshift if fftshift else lambda x: x
-    pix_high = enmap.pixmap(shape[-2:],wcs)
-    pix_low = pix_high/float(ndown)
     if fft:
-        cov_low = resample.resample_fft(afftshift(cov), [s/ndown for s in shape])
+        dshape = np.array(shape)
+        dshape[-2] /= ndown[0]
+        dshape[-1] /= ndown[1]
+        cov_low = resample.resample_fft(afftshift(cov), dshape.astype(np.int))
     else:
         cov_low = enmap.downgrade(afftshift(cov), ndown)
+    if not(fft_up):
+        pix_high = enmap.pixmap(shape[-2:],wcs)
+        pix_low = pix_high/ndown.reshape((2,1,1))
+        
     if exp is not None:
         covexp = enmap.enmap(enmap.multi_pow(cov_low,exp),wcs)
     else:
         covexp = enmap.enmap(cov_low,wcs)
-    return aifftshift(covexp.at(pix_low, order=order, mask_nan=False, unit="pix"))
+
+
+    if fft_up:
+        retcov = resample.resample_fft(covexp, shape)
+    else:
+        retcov = covexp.at(pix_low, order=order, mask_nan=False, unit="pix")
+        
+    return ilogfunc(aifftshift(retcov))
     
 
 class MapGen(object):
