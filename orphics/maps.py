@@ -180,7 +180,7 @@ def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=F
     1. calculate a PS for use in a noise model
     2. calculate an ILC covariance empirically in Fourier-Cartesian domains
 
-    shape -- tuple spec
+    shape -- tuple specifying shape of 
     """
 
     
@@ -199,7 +199,7 @@ def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=F
     afftshift = np.fft.fftshift if fftshift else lambda x: x
     aifftshift = np.fft.ifftshift if fftshift else lambda x: x
     if fft:
-        dshape = np.array(shape)
+        dshape = np.array(cov.shape)
         dshape[-2] /= ndown[0]
         dshape[-1] /= ndown[1]
         cov_low = resample.resample_fft(afftshift(cov), dshape.astype(np.int))
