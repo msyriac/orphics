@@ -794,7 +794,7 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
         cshape = (nfreqs,nfreqs,1)
     else:
         raise ValueError
-    
+
     Covmat = np.tile(cmb_ps,cshape)
 
     if plot:
@@ -2365,18 +2365,22 @@ class MultiArray(object):
 
         observed = []
         if return_fg: input_fg = []
+
+        fgmaps = {}
+        for foreground in foregrounds:
+            fgmaps[foreground] = self.fgens[foreground].get_map(seed=fg_seed)
+            
         for i in range(len(self.labels)):
             noise = self.ngens[i].get_map(seed=noise_seed)
             freq = self.freqs[i]
 
             fgs = 0.
             for foreground in foregrounds:
-                fgs += self.fgens[foreground].get_map(seed=fg_seed)*self.freq_scale_func[foreground](freq)/self.freq_scale_func[foreground](self.ref_freqs[foreground])
+                fgs += fgmaps[foreground] * self.freq_scale_func[foreground](freq) / self.freq_scale_func[foreground](self.ref_freqs[foreground])
 
             sky = filter_map(cmb + fgs,self.beams[i])
             observed.append( sky + noise )
-            if return_fg: input_fg.append(fgs.copy())
-
+            if return_fg: input_fg.append( fgs.copy() )
             
         if return_fg:
             return np.stack(observed),np.stack(input_fg)
@@ -2395,3 +2399,23 @@ class MultiArray(object):
     
     def get_noise_sim(self,label,pol=True,buffer_deg=None):
         pass
+
+
+    def fft_data(self,imaps,kmask=None):
+
+        kmask = np.ones(imaps.shape[-2:]) if kmask is None else kmask
+
+        retks = []
+        for i in range(len(self.labels)):
+            retk = np.nan_to_num(enmap.fft(imaps[i])*kmask/self.beams[i])
+            retk[kmask==0] = 0.
+            retks.append(retk)
+
+        return np.stack(retks)
+
+
+    # def analytical_ilc_cov(self):
+    #     pass
+
+    
+        
