@@ -1,3 +1,4 @@
+from __future__ import print_function
 import os,sys
 from tempfile import mkstemp
 from shutil import move,copyfile
@@ -22,7 +23,6 @@ class CAMBInterface(object):
         in the root of CAMB.
 
         camb_loc is the path to the directory containing the "camb" executable.
-
 
         """
 
@@ -92,14 +92,12 @@ class CAMBInterface(object):
                 for line in old_file:
                     #if pattern in line:
                     if "".join(line.split())[:len(pattern)+1]==(pattern+"="):
-                        #print "".join(line.split())[:len(pattern)+1]
                         line = subst+"\n"
                         flag = True
                     new_file.write(line)
                 if not(flag) and ('transfer_redshift' in pattern):
                     line = subst+"\n"
                     flag = True
-                    #print line
                     new_file.write(line)
                                                                                    
             if not(flag):
@@ -110,8 +108,8 @@ class CAMBInterface(object):
         remove(file_path)
         move(abs_path, file_path)
 
-
-        
+    def __del__(self):
+        remove(self.ifile)        
 
 def test():
     # Demo
