@@ -9,7 +9,7 @@ import numpy as np
 # test that different MPI jobs get different temp ini files
 
 class CAMBInterface(object):
-
+    # A lot of this was written by Nam Ho Nguyen
 
     def __init__(self,ini_template,camb_loc):
 
