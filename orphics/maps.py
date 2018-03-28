@@ -773,6 +773,21 @@ def ilc_comb_a_b(response_a,response_b,cinv):
     pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
     return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
 
+
+def ilc_empirical_cov(kmaps,ndown=16,order=1,fftshift=True):
+
+    assert kmaps.ndim==3
+    ncomp = kmaps.shape[0]
+
+    retpow = np.zeros((ncomp,ncomp,kmaps.shape[-2],kmaps.shape[-1]))
+    for i in range(ncomp):
+        for j in range(i+1,ncomp):
+            retpow[i,j] = np.real(kmaps[i]*kmaps[j].conj())
+            retpow[j,i] = retpow[i,j].copy()
+    
+    return downsample_power(retpow.shape,kmaps[0].wcs,retpow,ndown=ndown,order=order,exp=None,fftshift=fftshift,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False)
+
+
 def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,kmask=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
