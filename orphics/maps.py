@@ -4,7 +4,7 @@ import numpy as np
 from enlib.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
-from orphics import io,cosmology
+from orphics import io,cosmology,stats
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
@@ -774,18 +774,31 @@ def ilc_comb_a_b(response_a,response_b,cinv):
     return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
 
 
-def ilc_empirical_cov(kmaps,ndown=16,order=1,fftshift=True):
-
+def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method="isotropic"):
+    assert method in ['isotropic','downsample']
+    
     assert kmaps.ndim==3
     ncomp = kmaps.shape[0]
 
+    if method=='isotropic':
+        modlmap = enmap.modlmap(kmaps[0].shape,kmaps.wcs)
+        binner = stats.bin2D(modlmap,bin_edges)
+        from scipy.interpolate import interp1d
+
+    
     retpow = np.zeros((ncomp,ncomp,kmaps.shape[-2],kmaps.shape[-1]))
     for i in range(ncomp):
         for j in range(i+1,ncomp):
             retpow[i,j] = np.real(kmaps[i]*kmaps[j].conj())
+            if method=='isotropic':
+                cents,p1d = binner.bin(retpow[i,j])
+                retpow[i,j] = interp1d(cents,p1d,fill_value="extrapolate",bounds_error=False)(modlmap)
             retpow[j,i] = retpow[i,j].copy()
-    
-    return downsample_power(retpow.shape,kmaps[0].wcs,retpow,ndown=ndown,order=order,exp=None,fftshift=fftshift,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False)
+
+    if method=='isotropic':
+        return retpow
+    elif method=='downsample':
+        return downsample_power(retpow.shape,kmaps[0].wcs,retpow,ndown=ndown,order=order,exp=None,fftshift=fftshift,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False)
 
 
 def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,kmask=None):
@@ -2429,8 +2442,6 @@ class MultiArray(object):
         return np.stack(retks)
 
 
-    # def analytical_ilc_cov(self):
-    #     pass
 
     
         
