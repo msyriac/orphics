@@ -126,6 +126,15 @@ def list_from_config(Config,section,name):
 
 ### PLOTTING
 
+def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
+    plt.hist(data,bins=bins,**kwargs)
+    if save_file is not None:
+        plt.save_fig(save_file)
+        if verbose: cprint("Saved histogram plot to "+ save_file,color="g")
+    else:
+        plt.show()
+        
+
 def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
     '''
     mollview plot for healpix wrapper
@@ -137,12 +146,12 @@ def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,ret
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,down=None,crange=None,**kwargs):
     if flip: array = np.flipud(array)
     if high_res:
-        high_res_plot_img(array,filename,verbose=verbose,**kwargs)
+        high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,**kwargs)
     else:
-        pl = Plotter(ftsize=ftsize)
+        pl = Plotter(ftsize=ftsize,xlabel="",ylabel="")
         pl.plot2d(array,**kwargs)
         pl.done(filename,verbose=verbose)
 
@@ -163,6 +172,7 @@ def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,
     else:
         downmap = enmap.enmap(array)[None]
     img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
+    #img = enplot.draw_map_field(downmap,enplot.parse_args("--grid 1"),crange=crange)
     if filename is None:
         img.show()
     else:
@@ -184,7 +194,17 @@ class Plotter(object):
         self._fig=plt.figure(**kwargs)
         self._ax=self._fig.add_subplot(1,1,1)
 
-        
+
+        # Some self-disciplining :)
+        try:
+            force_label = os.environ['FORCE_ORPHICS_LABEL']
+            force_label = True if force_label.lower().strip() == "true" else False
+        except:
+            force_label = False
+
+        if force_label:
+            assert xlabel is not None, "Please provide an xlabel for your plot"
+            assert ylabel is not None, "Please provide a ylabel for your plot"
 
 
 
@@ -200,10 +220,10 @@ class Plotter(object):
         plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
 
 
-    def legend(self,loc='upper left',labsize=10,**kwargs):
+    def legend(self,loc='upper left',labsize=10,numpoints=1,**kwargs):
 
         handles, labels = self._ax.get_legend_handles_labels()
-        legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)
+        legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=numpoints,frameon = 1,**kwargs)
 
         return legend
            

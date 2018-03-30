@@ -3,6 +3,26 @@ import numpy as np
 from orphics import maps,io,stats
 from enlib import enmap,resample,bench
 
+def mask_map(imap,iys,ixs,hole_arc,hole_frac=0.6):
+    shape,wcs = imap.shape,imap.wcs
+    Ny,Nx = shape[-2:]
+    px = maps.resolution(shape,wcs)*60.*180./np.pi
+    hole_n = int(round(hole_arc/px))
+    hole_ny = hole_nx = hole_n
+    oshape,owcs = enmap.geometry(pos=(0.,0.),shape=(2*hole_n,2*hole_n),res=px*np.pi/180./60.)
+    modrmap = enmap.modrmap(oshape,owcs)
+    mask = enmap.ones(shape,wcs)
+    
+    for iy,ix in zip(iys,ixs):
+        if iy<=hole_n or ix<=hole_n or iy>=(Ny-hole_n) or ix>=(Nx-hole_n): continue
+        vslice = imap[np.int(iy-hole_ny):np.int(iy+hole_ny),np.int(ix-hole_nx):np.int(ix+hole_nx)]
+        vslice[modrmap<(hole_frac*hole_arc)*np.pi/180./60.] = np.nan # !!!! could cause a bias
+        mask[np.int(iy-hole_ny):np.int(iy+hole_ny),np.int(ix-hole_nx):np.int(ix+hole_nx)][modrmap<hole_arc*np.pi/180./60.] = 0
+        
+    return mask
+
+
+
 def inpaint_map(imap,ras,decs,radii_tags,radii_dict,tot_power_2d,seed=None):
     """
     Brute-force inpaints a map in circular regions.

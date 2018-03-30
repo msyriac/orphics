@@ -32,13 +32,14 @@ def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
 
     shape = alpha_pix.shape[-2:]
     Scov = ucov.copy()
+    wcs = ucov.wcs
     for i in range(ucov.shape[0]):
-        unlensed = Scov[i,:].copy().reshape(shape)
+        unlensed = enmap.enmap(Scov[i,:].copy().reshape(shape),wcs)
         lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
         if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
         Scov[i,:] = lensed.ravel()
     for j in range(ucov.shape[1]):
-        unlensed = Scov[:,j].copy().reshape(shape)
+        unlensed = enmap.enmap(Scov[:,j].copy().reshape(shape),wcs)
         lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
         if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
         Scov[:,j] = lensed.ravel()
@@ -1650,11 +1651,13 @@ def NFWMatchedFilterSN(clusterCosmology,log10Moverh,c,z,ells,Nls,kellmax,overden
     kappaReal, r500 = NFWkappa(cc,M,c,z,modRMap*180.*60./np.pi,winAtLens,overdensity=overdensity,critical=critical,atClusterZ=atClusterZ)
     
     dAz = cc.results.angular_diameter_distance(z) * cc.h
+    # print ("daz " , dAz , " mpc")
+    # print ("r500 " , r500 , " mpc")
     th500 = r500/dAz
     #fiveth500 = 10.*np.pi/180./60. #5.*th500
     fiveth500 = 5.*th500
-    # print "5theta500 " , fiveth500*180.*60./np.pi , " arcminutes"
-    # print "maximum theta " , modRMap.max()*180.*60./np.pi, " arcminutes"
+    # print ("5theta500 " , fiveth500*180.*60./np.pi , " arcminutes")
+    # print ("maximum theta " , modRMap.max()*180.*60./np.pi, " arcminutes")
 
     kInt = kappaReal.copy()
     kInt[modRMap>fiveth500] = 0.
@@ -1775,7 +1778,6 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
         r500 = cc.rdel_c(M,zdensity,overdensity).flatten()[0] # R500 in Mpc/h
     else:
         r500 = cc.rdel_m(M,zdensity,overdensity) # R500 in Mpc/h
-
 
     conv=np.pi/(180.*60.)
     theta = thetaArc*conv # theta in radians
