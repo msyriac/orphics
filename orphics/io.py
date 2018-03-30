@@ -137,10 +137,10 @@ def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,ret
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,down=None,crange=None,**kwargs):
     if flip: array = np.flipud(array)
     if high_res:
-        high_res_plot_img(array,filename,verbose=verbose,**kwargs)
+        high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,**kwargs)
     else:
         pl = Plotter(ftsize=ftsize,xlabel="",ylabel="")
         pl.plot2d(array,**kwargs)
@@ -163,6 +163,7 @@ def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,
     else:
         downmap = enmap.enmap(array)[None]
     img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
+    #img = enplot.draw_map_field(downmap,enplot.parse_args("--grid 1"),crange=crange)
     if filename is None:
         img.show()
     else:
@@ -210,10 +211,10 @@ class Plotter(object):
         plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
 
 
-    def legend(self,loc='upper left',labsize=10,**kwargs):
+    def legend(self,loc='upper left',labsize=10,numpoints=1,**kwargs):
 
         handles, labels = self._ax.get_legend_handles_labels()
-        legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 1,**kwargs)
+        legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=numpoints,frameon = 1,**kwargs)
 
         return legend
            

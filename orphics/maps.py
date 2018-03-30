@@ -193,7 +193,10 @@ def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=F
         ndown2 = int(ndown*nmax*1./nmin)
         ndown = np.array((ndown2,ndown1)) if Ny>Nx else np.array((ndown1,ndown2))
     else:
-        ndown = np.array((ndown,ndown))
+        assert ndown.size==2
+        ndown = np.array((ndown[0],ndown[1]))
+    print("Downsampling power spectrum by factor ", ndown)
+        
         
     cov = logfunc(cov)
     afftshift = np.fft.fftshift if fftshift else lambda x: x
@@ -1721,9 +1724,9 @@ class SimoneMR2Reader(ACTMapReader):
     
     def __init__(self,map_root,beam_root,config_yaml_path,patch):
         ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
-        eg_file = self._fstring(split=-1,season="s15",patch=patch,array="pa1",freq="150",day_night="night",pol="I")
-        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
         self.patch = patch
+        eg_file = self._fstring(split=-1,season="s15" if (patch=="deep56" or patch=="deep8") else "s13",array="pa1",freq="150",day_night="night",pol="I")
+        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
         
     def get_beam(self,season,array,freq="150",day_night="night"):
         patch = self.patch
@@ -1753,12 +1756,14 @@ class SimoneMR2Reader(ACTMapReader):
             return retval
         
 
-    def _fstring(self,split,season,patch,array,freq,day_night,pol):
+    def _fstring(self,split,season,array,freq,day_night,pol):
+        patch = self.patch
         # Change this function if the map naming scheme changes
         splitstr = "set0123" if split<0 or split>3 else "set"+str(split)
         return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
 
-    def _hstring(self,season,patch,array,freq,day_night):
+    def _hstring(self,season,array,freq,day_night):
+        patch = self.patch
         splitstr = "set0123"
         return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
 

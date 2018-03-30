@@ -13,6 +13,32 @@ except:
     warnings.warn("Could not find pandas. Install using pip; FisherMatrix will not work otherwise")
     class DataFrame:
         pass
+
+class Solver(object):
+    def __init__(self,C,u=None):
+        N = C.shape[0]
+        if u is None: self.u = np.ones((N,1))
+        Cinvu = np.linalg.solve(C,u)
+        self.precalc = np.dot(Cinvu,np.linalg.solve(np.dot(u.T,Cinvu),u.T))
+        self.C = C
+    def solve(self,x):
+        Cinvx = np.linalg.solve(self.C,x)
+        correction = np.dot(self.precalc,Cinvx)
+        return Cinvx - correction
+    
+def solve(C,x,u=None):
+    """
+    Typically, you do not want to invert your covariance matrix C, but really just want
+    Cinv . x , for some vector x.
+    You can get that with np.linalg.solve(C,x).
+    This function goes one step further and deprojects a common mode for the entire
+    covariance matrix, which is often what is needed.
+    """
+    N = C.shape[0]
+    if u is None: u = np.ones((N,1))
+    s = Solver(C,u=u)
+    return s.solve(x)
+
     
 def check_fisher_sanity(fmat,param_list):
     Ny,Nx = fmat.shape
@@ -193,17 +219,24 @@ class OQE(object):
     Subsequently, given a data vector, it returns the OQEstimate
     as a dictionary in the parameters. 
     """
-    def __init__(self,fid_cov,dcov_dict,fid_params_dict):
+    def __init__(self,fid_cov,dcov_dict,fid_params_dict,invert=False,deproject=True):
 
         self.params = dcov_dict.keys()
         self.fids = fid_params_dict
         Nparams = len(self.params)
-        self.Cinv = self._inv(fid_cov)
+        if invert:
+            self.Cinv = self._inv(fid_cov)
+            
 
         self.biases = {}
         self.ps = {}
         for param in self.params:
-            self.ps[param] = np.dot(self.Cinv,dcov_dict[param])
+            if not(invert):
+                if deproject:
+                    solution = solve(fid_cov,dcov_dict[param])
+                else:
+                    solution = np.linalg.solve(fid_cov,dcov_dict[param])
+            self.ps[param] = np.dot(self.Cinv,dcov_dict[param]) if invert else solution
             self.biases[param] = np.trace(self.ps[param])
 
         self.Fisher = np.zeros((Nparams,Nparams))
@@ -240,8 +273,8 @@ class OQE(object):
         
     def _inv(self,cov):
         # return np.linalg.pinv(cov)
-        # return scipy.linalg.pinv2(cov)
         return np.linalg.inv(cov)
+        #return scipy.linalg.pinv2(cov)
 
 
 class CinvUpdater(object):
