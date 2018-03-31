@@ -126,10 +126,21 @@ def list_from_config(Config,section,name):
 
 ### PLOTTING
 
+def blend(fg_file,bg_file,alpha,save_file=None,verbose=True):
+    from PIL import Image
+    foreground = Image.open(fg_file)
+    background = Image.open(bg_file)
+    blended = Image.blend(foreground, background, alpha=alpha)
+    if save_file is not None:
+        blended.save(save_file)
+        if verbose: cprint("Saved blended image to "+ save_file,color="g")
+    return blended
+    
+
 def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
     plt.hist(data,bins=bins,**kwargs)
     if save_file is not None:
-        plt.save_fig(save_file)
+        plt.savefig(save_file)
         if verbose: cprint("Saved histogram plot to "+ save_file,color="g")
     else:
         plt.show()
