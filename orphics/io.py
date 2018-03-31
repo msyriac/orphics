@@ -126,6 +126,15 @@ def list_from_config(Config,section,name):
 
 ### PLOTTING
 
+def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
+    plt.hist(data,bins=bins,**kwargs)
+    if save_file is not None:
+        plt.save_fig(save_file)
+        if verbose: cprint("Saved histogram plot to "+ save_file,color="g")
+    else:
+        plt.show()
+        
+
 def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
     '''
     mollview plot for healpix wrapper
