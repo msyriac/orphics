@@ -6,7 +6,15 @@ Utilities for dealing with galaxy catalogs, projecting catalogs into pixelated m
 import numpy as np
 from enlib import enmap, coordinates
 import healpy as hp
+from astropy.io import fits
 
+def load_fits(fits_file,column_names,hdu_num=1):
+    hdu = fits.open(fits_file)
+    columns = {}
+    for col in column_names:
+        columns[col] = hdu[hdu_num].data[col]
+    hdu.close()
+    return columns
 
 def dndz(z,z0=1./3.):
     """A simple 1-parameter dndz parameterization.
