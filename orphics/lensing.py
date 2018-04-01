@@ -194,8 +194,8 @@ class QuadNorm(object):
         self.fMaskXX = {}
         self.fMaskYY = {}
 
-        self.lmax_T=bigell #9000.
-        self.lmax_P=bigell #9000.
+        self.lmax_T=bigell
+        self.lmax_P=bigell
         self.defaultMaskT = maps.mask_kspace(self.shape,self.wcs,lmin=2,lmax=self.lmax_T)
         self.defaultMaskP = maps.mask_kspace(self.shape,self.wcs,lmin=2,lmax=self.lmax_P)
         #del lx
@@ -844,7 +844,7 @@ class NlGenerator(object):
 
         Clkk2d = theorySpectra.gCl("kk",self.N.modLMap)    
         self.N.addClkk2DPower(Clkk2d)
-            
+        self.N.bigell = bigell
 
         if bin_edges is not None:
             self.bin_edges = bin_edges
@@ -857,8 +857,8 @@ class NlGenerator(object):
 
     def updateNoiseAdvanced(self,beamTX,noiseTX,beamPX,noisePX,tellminX,tellmaxX,pellminX,pellmaxX,beamTY,noiseTY,beamPY,noisePY,tellminY,tellmaxY,pellminY,pellmaxY,lkneesX=[0,0],alphasX=[1,1],lkneesY=[0,0],alphasY=[1,1],lxcutTX=None,lxcutTY=None,lycutTX=None,lycutTY=None,lxcutPX=None,lxcutPY=None,lycutPX=None,lycutPY=None,fgFuncX=None,fgFuncY=None,beamFileTX=None,beamFilePX=None,beamFileTY=None,beamFilePY=None,noiseFuncTX=None,noiseFuncTY=None,noiseFuncPX=None,noiseFuncPY=None):
 
-        self.N.lmax_T = max(tellmaxX,tellmaxY)
-        self.N.lmax_P = max(pellmaxX,pellmaxY)
+        self.N.lmax_T = self.N.bigell
+        self.N.lmax_P = self.N.bigell
 
         lkneeTX, lkneePX = lkneesX
         lkneeTY, lkneePY = lkneesY
@@ -927,8 +927,8 @@ class NlGenerator(object):
         tellmaxY = setDefault(tellmaxY,tellmaxX)
         pellmaxY = setDefault(pellmaxY,pellmaxX)
 
-        self.N.lmax_T = max(tellmaxX,tellmaxY)
-        self.N.lmax_P = max(pellmaxX,pellmaxY)
+        self.N.lmax_T = self.N.bigell
+        self.N.lmax_P = self.N.bigell
 
         
         nTX,nPX = maps.whiteNoise2D([noiseTX,noisePX],beamX,self.N.modLMap, \
