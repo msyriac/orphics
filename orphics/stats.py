@@ -263,7 +263,6 @@ class OQE(object):
     def estimate(self,data):
         vec = []
         for param in self.params:
-            #fcore = np.dot(np.dot(data.T,np.dot(self.ps[param],self.Cinv)),data)
             cinvdat = np.dot(self.Cinv,data) if self.invert else self.solver(data)
             fcore = np.dot(np.dot(data.T,self.ps[param]),cinvdat)
             bsubbed = fcore - self.biases[param]

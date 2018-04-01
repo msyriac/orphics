@@ -241,6 +241,11 @@ class Plotter(object):
     def add(self,x,y,**kwargs):
 
         return self._ax.plot(x,y,**kwargs)
+
+
+    def hist(self,data,**kwargs):
+        return self._ax.hist(data,**kwargs)
+    
         
     def add_err(self,x,y,yerr,ls='none',**kwargs):
 
