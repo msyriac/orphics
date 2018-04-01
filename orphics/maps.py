@@ -532,6 +532,7 @@ def ncov(shape,wcs,noise_uk_arcmin):
     noise_uK_pixel = noise_uK_rad/normfact
     return np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
 
+
 def pixcov(shape,wcs,fourier_cov):
     #fourier_cov = fourier_cov.astype(np.float32, copy=False)
     fourier_cov = fourier_cov.astype(np.complex64, copy=False)
