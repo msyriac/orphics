@@ -1218,15 +1218,16 @@ class HealpixProjector(object):
         self.ncomp = ncomp
         self.rot = rot
         
-    def project(self,ihealmap,unit=1,lmax=0,first=0,return_hp=False):
+    def project(self,ihealmap=None,hpmap=None,unit=1,lmax=0,first=0,return_hp=False):
         from enlib import sharp, coordinates, curvedsky
         import healpy as hp
 
         dtype = np.float64
         ctype = np.result_type(dtype,0j)
         # Read the input maps
-        print("Reading " + ihealmap)
-        m = np.atleast_2d(hp.read_map(ihealmap, field=tuple(range(first,first+self.ncomp)))).astype(dtype)
+        print("Reading " + str(ihealmap))
+        hpmap = hp.read_map(ihealmap, field=tuple(range(first,first+self.ncomp))) if hpmap is None else hpmap
+        m = np.atleast_2d(hpmap).astype(dtype)
         if unit != 1: m /= unit
         # Prepare the transformation
         print("Preparing SHT")

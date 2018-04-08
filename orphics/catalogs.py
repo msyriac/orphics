@@ -8,11 +8,11 @@ from enlib import enmap, coordinates
 import healpy as hp
 from astropy.io import fits
 
-def load_fits(fits_file,column_names,hdu_num=1):
+def load_fits(fits_file,column_names,hdu_num=1,Nmax=None):
     hdu = fits.open(fits_file)
     columns = {}
     for col in column_names:
-        columns[col] = hdu[hdu_num].data[col]
+        columns[col] = hdu[hdu_num].data[col][:Nmax]
     hdu.close()
     return columns
 
