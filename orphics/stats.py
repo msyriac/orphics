@@ -218,7 +218,7 @@ class OQE(object):
     Subsequently, given a data vector, it returns the OQEstimate
     as a dictionary in the parameters. 
     """
-    def __init__(self,fid_cov,dcov_dict,fid_params_dict,invert=False,deproject=True):
+    def __init__(self,fid_cov,dcov_dict,fid_params_dict,invert=False,deproject=True,templates=None):
 
         self.params = dcov_dict.keys()
         self.fids = fid_params_dict
@@ -227,12 +227,14 @@ class OQE(object):
         if invert:
             self.Cinv = self._inv(fid_cov)
             
+
+        if templates is not None: assert deproject
         self.biases = {}
         self.ps = {}
         for param in self.params:
             if not(invert):
                 if deproject:
-                    solution = solve(fid_cov,dcov_dict[param])
+                    solution = solve(fid_cov,dcov_dict[param],u=templates)
                 else:
                     solution = np.linalg.solve(fid_cov,dcov_dict[param])
             self.ps[param] = np.dot(self.Cinv,dcov_dict[param]) if invert else solution.copy()
@@ -252,7 +254,7 @@ class OQE(object):
 
         if not(invert):
             if deproject:
-                self.s = Solver(fid_cov)
+                self.s = Solver(fid_cov,u=templates)
                 self.solver = lambda x: self.s.solve(x)
             else:
                 self.solver = lambda x: np.linalg.solve(fid_cov,x)
@@ -263,7 +265,6 @@ class OQE(object):
     def estimate(self,data):
         vec = []
         for param in self.params:
-            #fcore = np.dot(np.dot(data.T,np.dot(self.ps[param],self.Cinv)),data)
             cinvdat = np.dot(self.Cinv,data) if self.invert else self.solver(data)
             fcore = np.dot(np.dot(data.T,self.ps[param]),cinvdat)
             bsubbed = fcore - self.biases[param]

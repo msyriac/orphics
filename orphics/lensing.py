@@ -151,7 +151,7 @@ def beam_cov(ucov,kbeam):
     return Scov
 
 
-def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False):
+def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000):
     if noise2d is None: noise2d = np.zeros(shape[-2:])
     if beam2d is None: beam2d = np.ones(shape[-2:])
     return Estimator(shape,wcs,
@@ -174,7 +174,7 @@ def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask
                      loadPickledNormAndFilters=None,
                      savePickledNormAndFilters=None,
                      uEqualsL=unlensed_equals_lensed,
-                     bigell=9000,
+                     bigell=bigell,
                      mpi_comm=None,
                      lEqualsU=False)
 
