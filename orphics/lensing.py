@@ -17,6 +17,77 @@ import time
 import cPickle as pickle
 
 
+def lensing_noise(ells,ntt,nee,nbb,
+                  ellmin_t,ellmin_e,ellmin_b,
+                  ellmax_t,ellmax_e,ellmax_b,
+                  camb_theory_file_root=None,
+                  estimators = ['TT'],
+                  do_mv = True,
+                  delens = False,
+                  theory=None,
+                  dimensionless=False,
+                  unlensed_equals_lensed=True,
+                  grad_cut=None,
+                  ellmin_k = None,
+                  ellmax_k = None,
+                  y_ells=None,y_ntt=None,y_nee=None,y_nbb=None,
+                  y_ellmin_t=None,y_ellmin=None,y_ellmin_b=None,
+                  y_ellmax_t=None,y_ellmax_e=None,y_ellmax_b=None,
+                  lxcut_t=None,lycut_t=None,y_lxcut_t=None,y_lycut_t=None,
+                  lxcut_e=None,lycut_e=None,y_lxcut_e=None,y_lycut_e=None,
+                  lxcut_b=None,lycut_b=None,y_lxcut_b=None,y_lycut_b=None,
+                  width_deg=5.,px_res_arcmin=1.0):
+    
+    shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
+    modlmap = enmap.modlmap(shape,wcs)
+    if theory is not None:
+        assert camb_theory_file is None
+    else:
+        theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
+                                                     useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
+
+            
+    if y_ells is None: y_ells=ells
+    if y_ntt is None: y_ntt=ntt
+    if y_nee is None: y_nee=nee
+    if y_nbb is None: y_nbb=nbb
+    if y_ellmin_t is None: y_ellmin_t=ellmin_t
+    if y_ellmin_e is None: y_ellmin_e=ellmin_e
+    if y_ellmin_b is None: y_ellmin_b=ellmin_b
+    if y_ellmax_t is None: y_ellmax_t=ellmax_t
+    if y_ellmax_e is None: y_ellmax_e=ellmax_e
+    if y_ellmax_b is None: y_ellmax_b=ellmax_b
+
+    if ellmin_k is None: ellmin_k = min(ellmin_t,ellmin_e,ellmin_b,y_ellmin_t,y_ellmin_e,y_ellmin_b)
+    if ellmax_k is None: ellmax_k = max(ellmax_t,ellmax_e,ellmax_b,y_ellmax_t,y_ellmax_e,y_ellmax_b)
+
+    pol = False if estimators==['TT'] else True
+
+
+    qest = Estimator(shape,wcs,
+                     theory,
+                     theorySpectraForNorm=theory,
+                     noiseX2dTEB=[nTX,nEX,nBX],
+                     noiseY2dTEB=[nTY,nEY,nBY],
+                     noiseX_is_total = False,
+                     noiseY_is_total = False,
+                     fmaskX2dTEB=[kmask_TX,kmask_EX,kmask_BX],
+                     fmaskY2dTEB=[kmask_TY,kmask_EY,kmask_BY],
+                     fmaskKappa=kmask_K,
+                     kBeamX = None,
+                     kBeamY = None,
+                     doCurl=False,
+                     TOnly=not(pol),
+                     halo=True,
+                     gradCut=grad_cut,
+                     verbose=False,
+                     loadPickledNormAndFilters=None,
+                     savePickledNormAndFilters=None,
+                     uEqualsL=unlensed_equals_lensed,
+                     bigell=9000,
+                     mpi_comm=None,
+                     lEqualsU=False)
+    
     
 
 def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
