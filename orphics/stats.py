@@ -282,7 +282,7 @@ class OQE(object):
     def _inv(self,cov):
         # return np.linalg.pinv(cov)
         return np.linalg.inv(cov)
-        #return scipy.linalg.pinv2(cov)
+        # return scipy.linalg.pinv2(cov)
 
 
 class CinvUpdater(object):

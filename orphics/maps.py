@@ -151,7 +151,7 @@ def bounds_from_list(blist):
     return np.array(blist).reshape((2,2))*np.pi/180.
         
 
-def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",pol=False,height_deg=None,height_arcmin=None,xoffset_degree=0.,yoffset_degree=0.):
+def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",pol=False,height_deg=None,height_arcmin=None,xoffset_degree=0.,yoffset_degree=0.,extra=False):
     """
     Get shape and wcs for a rectangular patch of specified size and coordinate center
     """
@@ -171,7 +171,13 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
     pos = [[-vwidth*arcmin+yoffset_degree*degree,-hwidth*arcmin+xoffset_degree*degree],[vwidth*arcmin+yoffset_degree*degree,hwidth*arcmin+xoffset_degree*degree]]
     shape, wcs = enmap.geometry(pos=pos, res=px_res_arcmin*arcmin, proj=proj)
     if pol: shape = (3,)+shape
-    return shape, wcs
+    if extra:
+        modlmap = enmap.modlmap(shape,wcs)
+        lmax = modlmap.max()
+        ells = np.arange(0,lmax,1.)
+        return shape,wcs,modlmap,ells
+    else:
+        return shape, wcs
 
 
 def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False):

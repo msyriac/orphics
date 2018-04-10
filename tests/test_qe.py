@@ -202,7 +202,7 @@ for i,task in enumerate(my_tasks):
             cpatch = lens(unlensed,kpatch)
         # enmap.write_fits(filename("lensed"),cpatch)
         # enmap.write_fits(filename("unlensed"),unlensed)
-        # enmap.write_fits(filename("kappa"),kpatch)
+        enmap.write_fits(filename("kappa"),kpatch)
 
     if i==0:
         qest, ngen, kbeam, binner, taper, fc, purifier = init_geometry(shape[-2:],wcs)
