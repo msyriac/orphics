@@ -3,7 +3,8 @@ import numpy as np
 import time
 import itertools
 import scipy
-from scipy.stats import binned_statistic as binnedstat
+from scipy.stats import binned_statistic as binnedstat,chi2
+from scipy.optimize import curve_fit
 
 try:
     from pandas import DataFrame
@@ -14,6 +15,36 @@ except:
     class DataFrame:
         pass
 
+def fit_linear_model(x,y,ycov,funcs,dofs=None):
+    """
+    Given measurements with known uncertainties, this function fits those to a linear model:
+    y = a0*funcs[0](x) + a1*funcs[1](x) + ...
+    and returns the best fit coefficients a0,a1,... and their uncertainties as a covariance matrix
+    """
+    C = ycov
+    y = y.reshape((y.size,1))
+    A = np.zeros((y.size,len(funcs)))
+    for i,func in enumerate(funcs):
+        A[:,i] = func(x)
+    cov = np.linalg.inv(np.dot(A.T,np.linalg.solve(C,A)))
+    b = np.dot(A.T,np.linalg.solve(C,y))
+    X = np.dot(cov,b)
+    YAX = y - np.dot(A,X)
+    chisquare = np.dot(YAX.T,np.linalg.solve(C,YAX))
+    dofs = len(x)-len(funcs)-1 if dofs is None else dofs
+    pte = 1 - chi2.cdf(chisquare, dofs)    
+    return X,cov,chisquare/dofs,pte
+    
+def fit_gauss(x,y,mu_guess=None,sigma_guess=None):
+    ynorm = np.trapz(y,x)
+    ynormalized = y/ynorm
+    gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
+    popt,pcov = curve_fit(gaussian,x,ynormalized,p0=[mu_guess,sigma_guess])
+    fit_mean = popt[0]
+    fit_sigma = popt[1]
+    return fit_mean,fit_sigma,ynorm,ynormalized
+
+    
 class Solver(object):
     def __init__(self,C,u=None):
         N = C.shape[0]
@@ -282,7 +313,7 @@ class OQE(object):
     def _inv(self,cov):
         # return np.linalg.pinv(cov)
         return np.linalg.inv(cov)
-        #return scipy.linalg.pinv2(cov)
+        # return scipy.linalg.pinv2(cov)
 
 
 class CinvUpdater(object):
