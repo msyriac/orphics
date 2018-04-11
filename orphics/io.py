@@ -247,9 +247,12 @@ class Plotter(object):
         return self._ax.hist(data,**kwargs)
     
         
-    def add_err(self,x,y,yerr,ls='none',**kwargs):
-
-        self._ax.errorbar(x,y,yerr=yerr,ls=ls,**kwargs)
+    def add_err(self,x,y,yerr,ls='none',band=False,alpha=0.5,**kwargs):
+        if band:
+            self._ax.plot(x,y,ls=ls,**kwargs)
+            self._ax.fill_between(x, y-yerr, y+yerr, alpha=alpha)
+        else:
+            self._ax.errorbar(x,y,yerr=yerr,ls=ls,**kwargs)
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=18,extent=None,ticksize=12,**kwargs):
         '''

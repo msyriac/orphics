@@ -20,7 +20,6 @@ Pol estimators for noiseless and lmax=5000 seem to have large N2-like bias.
 
 """
 
-
 # Parse command line
 parser = argparse.ArgumentParser(description='Verify all estimators.')
 parser.add_argument("SimRoot", type=str,help='Path to sims + root name. e.g. /home/msyriac/sims/run1')
@@ -289,7 +288,7 @@ for i,task in enumerate(my_tasks):
     
     for pcomb in polcombs:
         recon = qest.kappa_from_map(pcomb,lt,le,lb,alreadyFTed=True)-mfs[pcomb]
-        enmap.write_fits(filename("recon_"+pcomb),cpatch[0])
+        enmap.write_fits(filename("recon_"+pcomb),recon)
         if args.debug and task==0: io.plot_img(recon,io.dout_dir+"recon"+pcomb+".png",high_res=False)
         if args.save_meanfield is None: 
             p2d,krecon = fc.f1power(recon,kinp)

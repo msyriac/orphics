@@ -1748,7 +1748,7 @@ class SimoneMR2Reader(ACTMapReader):
         maps = []
         maplist = ['srcfree_I','Q','U'] if not(t_only) else ['srcfree_I']
         for pol in maplist if not(weight) else [None]:
-            fstr = self._hstring(season,patch,array,freq,day_night) if weight else self._fstring(split,season,patch,array,freq,day_night,pol)
+            fstr = self._hstring(season,array,freq,day_night) if weight else self._fstring(split,season,array,freq,day_night,pol)
             cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
             fmap = enmap.read_map(fstr)*np.sqrt(cal) 
             if not(full_map):
