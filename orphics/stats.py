@@ -14,6 +14,39 @@ except:
     class DataFrame:
         pass
 
+def fit_linear_model(x,y,ycov,funcs):
+    """
+    Given measurements with known uncertainties, this function fits those to a linear model:
+    y = a0*funcs[0](x) + a1*funcs[1](x) + ...
+    and returns the best fit coefficients a0,a1,... and their uncertainties as a covariance matrix
+    """
+    C = ycov
+    y = y.reshape((1,y.size))
+    A = np.zeros((y.size,len(funcs)))
+    for i,func in enumerate(funcs):
+        A[:,i] = func(x)
+    cov = np.linalg.inv(np.dot(A.T,np.linalg.solve(C,A)))
+    b = np.dot(A.T,np.linalg.solve(C,y))
+    return np.dot(cov,b),cov
+    
+def fit_gauss(x,y,mu_guess=None,sigma_guess=None,debug=False):
+    ynorm = np.trapz(y,x)
+    ynormalized = y/ynorm
+    gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
+    from scipy.optimize import curve_fit
+    popt,pcov = curve_fit(gaussian,x,ynormalized,p0=[mu_guess,sigma_guess])
+    fit_mean = popt[0]
+    fit_sigma = popt[1]
+
+    if debug:
+        from orphics import io
+        pl = io.Plotter()
+        pl.add(x,ynormalized)
+        pl.add(x,gaussian(x,fit_mean,fit_sigma),ls="--")
+        pl.done(io.dout_dir+'fit.png')
+    return fit_mean,fit_sigma,ynorm,ynormalized
+
+    
 class Solver(object):
     def __init__(self,C,u=None):
         N = C.shape[0]
