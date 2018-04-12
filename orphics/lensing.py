@@ -1891,7 +1891,6 @@ def proj_rho_nfw(theta,comL,M,c,R):
 
 # Generic profile projected along line of sight (M/L^2) as a function of angle on the sky in radians
 # rhoFunc is density (M/L^3) as a function of distance from center of cluster
-@timeit
 def projected_rho(thetas,comL,rhoFunc,pmaxN=2000,numps=500000):
     # default integration times are good to 0.01% for z=0.1 to 3
     # increase numps for lower z/theta and pmaxN for higher z/theta
@@ -1901,7 +1900,7 @@ def projected_rho(thetas,comL,rhoFunc,pmaxN=2000,numps=500000):
     return g
 
 
-def kappa_nfw(theta,z,comLMpcOverh,M,c,R,windowAtLens):
+def kappa_nfw_generic(theta,z,comLMpcOverh,M,c,R,windowAtLens):
     return 4.*np.pi*Gval*(1+z)*comLMpcOverh*windowAtLens*proj_rho_nfw(theta,comLMpcOverh,M,c,R)/cval**2.
 
 def kappa_generic(theta,z,comLMpcOverh,rhoFunc,windowAtLens,pmaxN=2000,numps=500000):
@@ -1909,4 +1908,20 @@ def kappa_generic(theta,z,comLMpcOverh,rhoFunc,windowAtLens,pmaxN=2000,numps=500
     # increase numps for lower z/theta and pmaxN for higher z/theta
     return 4.*np.pi*Gval*(1+z)*comLMpcOverh*windowAtLens*projected_rho(theta,comLMpcOverh,rhoFunc,pmaxN,numps)/cval**2.
 
+def kappa_from_rhofunc(M,c,R,theta,cc,z,rhoFunc=None):
+    if rhoFunc is None: rhoFunc = rho_nfw(M,c,R)
+    sgn = 1. if M>0. else -1.
+    comS = cc.results.comoving_radial_distance(cc.cmbZ)*cc.h
+    comL = cc.results.comoving_radial_distance(z)*cc.h
+    winAtLens = (comS-comL)/comS
+    kappa = kappa_generic(theta,z,comL,rhoFunc,winAtLens)
+    return sgn*kappa
 
+def kappa_nfw(M,c,R,theta,cc,z):
+    sgn = 1. if M>0. else -1.
+    comS = cc.results.comoving_radial_distance(cc.cmbZ)*cc.h
+    comL = cc.results.comoving_radial_distance(z)*cc.h
+    winAtLens = (comS-comL)/comS
+    kappa = kappa_nfw_generic(theta,z,comL,np.abs(M),c,R,winAtLens)
+
+    return sgn*kappa
