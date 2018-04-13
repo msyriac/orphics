@@ -367,7 +367,7 @@ class QuadNorm(object):
         power2d is a flipper power2d object            
         '''
         self.clkk2d = power2dData.copy()+0.j
-        self.clpp2d = 0.j+self.clkk2d.copy()*4./(self.modLMap**2.)/((self.modLMap+1.)**2.)
+        self.clpp2d = 0.j+np.nan_to_num(self.clkk2d.copy()*4./(self.modLMap**2.)/((self.modLMap+1.)**2.))
 
 
     def WXY(self,XY):
@@ -824,62 +824,67 @@ class QuadNorm(object):
       
 
 
-    def delensClBB(self,Nlkk,halo=True):
-        self.Nlppnow = Nlkk*4./(self.modLMap**2.)/((self.modLMap+1.)**2.)
-        clPPArr = self.clpp2d
-        cltotPPArr = clPPArr + self.Nlppnow
-        cltotPPArr[np.isnan(cltotPPArr)] = np.inf
-        
-        clunlenEEArr = self.uClFid2d['EE'].copy()
-        clunlentotEEArr = (self.lClFid2d['EE'].copy()+self.noiseYY2d['EE'])
-        clunlentotEEArr[self.fMaskYY['EE']==0] = np.inf
-        clunlenEEArr[self.fMaskYY['EE']==0] = 0.
-        clPPArr[self.fMaskYY['EE']==0] = 0.
-        cltotPPArr[self.fMaskYY['EE']==0] = np.inf
-        
+    def delensClBB(self,Nlkk,fmask=None,halo=True):
+        """
+        Delens ClBB with input Nlkk curve
+        """
 
-        #if halo: clunlenEEArr[np.where(self.modLMap >= self.gradCut)] = 0.
-                
+        # Set the phi noise = Clpp + Nlpp
+        Nlppnow = Nlkk*4./(self.modLMap**2.)/((self.modLMap+1.)**2.)
+        clPPArr = self.clpp2d
+        cltotPPArr = clPPArr + Nlppnow
+        cltotPPArr[np.isnan(cltotPPArr)] = np.inf
+
+        # Get uClEE
+        clunlenEEArr = self.uClFid2d['EE'].copy()
+        # Get lClEE + NEE
+        clunlentotEEArr = (self.lClFid2d['EE'].copy()+self.noiseYY2d['EE'])
+
+        # Mask
+        clunlentotEEArr[self.fMaskYY['EE']==0] = np.inf
+        if fmask is None:
+            fmask = self.fMaskYY['EE']
+
+        cltotPPArr[fmask==0] = np.inf
+
+        # Trig required for responses
         sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
         cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
-
         lx = self.lxMap
         ly = self.lyMap
-
-            
         lxhat = self.lxHatMap
         lyhat = self.lyHatMap
-
         sinf = sin2phi(lxhat,lyhat)
         sinsqf = sinf**2.
         cosf = cos2phi(lxhat,lyhat)
         cossqf = cosf**2.
 
-        
+        # Use ffts to calculate each term instead of convolving 
         allTerms = []
         for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
             for trigfactOut,trigfactIn in zip([sinsqf,cossqf,1.j*np.sqrt(2.)*sinf*cosf],[cossqf,sinsqf,1.j*np.sqrt(2.)*sinf*cosf]):
-                preF1 = trigfactIn*ellsq*clunlenEEArr
-                preG1 = ellsq*clPPArr
+                preF1 = trigfactIn*ellsq*clunlenEEArr 
+                preG1 = ellsq*clPPArr  
 
-                preF2 = trigfactIn*ellsq*clunlenEEArr**2.*np.nan_to_num(1./clunlentotEEArr)
-                preG2 = ellsq*clPPArr**2.*np.nan_to_num(1./cltotPPArr)
+                preF2 = trigfactIn*ellsq*clunlenEEArr**2.*np.nan_to_num(1./clunlentotEEArr) * self.fMaskYY['EE']
+                preG2 = ellsq*clPPArr**2.*np.nan_to_num(1./cltotPPArr) * fmask
 
-                allTerms += [trigfactOut*(fft(ifft(preF1,axes=[-2,-1],normalize=True)*ifft(preG1,axes=[-2,-1],normalize=True) - ifft(preF2,axes=[-2,-1],normalize=True)*ifft(preG2,axes=[-2,-1],normalize=True),axes=[-2,-1]))]
+                t1 = ifft(preF1,axes=[-2,-1],normalize=True)*ifft(preG1,axes=[-2,-1],normalize=True) # Orig B
+                t2 = ifft(preF2,axes=[-2,-1],normalize=True)*ifft(preG2,axes=[-2,-1],normalize=True) # Delensed part
+                
+                allTerms += [trigfactOut*(fft(t1 - t2,axes=[-2,-1]))]
 
 
-        
+        # Sum all terms
         ClBBres = np.real(np.sum( allTerms, axis = 0))
 
-        
+        # Pixel factors
         ClBBres[np.where(np.logical_or(self.modLMap >= self.bigell, self.modLMap == 0.))] = 0.
         ClBBres *= self.Nx * self.Ny 
-        ClBBres[self.fMaskYY['EE']==0] = 0.
-                
-        
         area =self.Nx*self.Ny*self.pixScaleX*self.pixScaleY
         bbNoise2D = ((np.sqrt(ClBBres)/self.pixScaleX/self.pixScaleY)**2.)*(area/(self.Nx*self.Ny*1.0)**2)
 
+        # Set lensed BB to delensed level
         self.lClFid2d['BB'] = bbNoise2D.copy()
 
         
