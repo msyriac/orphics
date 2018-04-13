@@ -1099,8 +1099,9 @@ class NlGenerator(object):
         
         return centers, Nlbinned
 
-    def getNlIterative(self,polCombs,kmin,kmax,tellmax,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False):
-        
+    def getNlIterative(self,polCombs,kmin,kmax,tellmax,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False,max_iterations=np.inf,eff_at=None,kappa_min,kappa_max):
+
+        fmask = maps.mask_space(self.shape,self.wcs,ellmin=kappa_min,ellmax=kappa_max)
         Nleach = {}
         bin_edges = np.arange(kmin-dell/2.,kmax+dell/2.,dell)#+dell
         for polComb in polCombs:
@@ -1125,10 +1126,11 @@ class NlGenerator(object):
             from orphics.tools.io import Plotter
             pl = Plotter(scaleY='log',scaleX='log')
             pl.add(ellsOrig,oclbb*ellsOrig**2.,color='black',lw=2)
-            
+
         ctol = np.inf
         inum = 0
         while ctol>dTolPercentage:
+            if inum >= max_iterations: break
             bNlsinv = 0.
             polPass = list(polCombs)
             if verbose: print("Performing iteration ", inum+1)
@@ -1144,7 +1146,7 @@ class NlGenerator(object):
             Nldelens = Nlmv(Nleach,polPass,centers,nlkk,bin_edges)
             Nldelens2d = interp1d(bin_edges,Nldelens,fill_value=0.,bounds_error=False)(self.N.modLMap)
 
-            bbNoise2D = self.N.delensClBB(Nldelens2d,halo)
+            bbNoise2D = self.N.delensClBB(Nldelens2d,fmask=fmask,halo=halo)
             ells, dclbb = delensBinner.bin(bbNoise2D)
             dclbb = sanitizePower(dclbb)
             dclbb[ells<pellmin] = oclbb[ellsOrig<pellmin].copy()
@@ -1166,8 +1168,16 @@ class NlGenerator(object):
             import os
             pl.done(os.environ['WWW']+'delens.png')
         self.N.lClFid2d['BB'] = origBB.copy()
-        efficiency = ((origclbb-dclbb)*100./origclbb).max()
 
+        def find_nearest(array,value):
+            idx = (np.abs(array-value)).argmin()
+            return idx
+
+        if eff_at is None:
+            efficiency = ((origclbb-dclbb)*100./origclbb).max()
+        else:
+            id_ell = find_nearest(ellsOrig,eff_at)
+            efficiency = ((origclbb[id_ell]-dclbb[id_ell])*100./origclbb[id_ell])
 
         new_ells,new_bb = fillLowEll(ells,dclbb,pellmin)
         new_k_ells,new_nlkk = fillLowEll(bin_edges,sanitizePower(Nldelens),kmin)
