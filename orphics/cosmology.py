@@ -711,6 +711,7 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
     theory.loadGenericCls(ells,clkk,"kk",lpad=lpad,fill_zero=fill_zero)
 
 
+    theory.dimensionless = get_dimensionless
     return theory
 
 
@@ -899,7 +900,7 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
         theory.loadCls(ell,clee,'EE',lensed=False,interporder="linear",lpad=lpad)
         theory.loadCls(ell,clbb,'BB',lensed=False,interporder="linear",lpad=lpad)
 
-
+    theory.dimensionless = get_dimensionless
     return theory
 
 

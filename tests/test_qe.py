@@ -20,7 +20,6 @@ Pol estimators for noiseless and lmax=5000 seem to have large N2-like bias.
 
 """
 
-
 # Parse command line
 parser = argparse.ArgumentParser(description='Verify all estimators.')
 parser.add_argument("SimRoot", type=str,help='Path to sims + root name. e.g. /home/msyriac/sims/run1')
@@ -189,7 +188,7 @@ for i,task in enumerate(my_tasks):
                 template = enmap.read_fits(filename("lensed","fits",0),box=box if not(args.flat) else None,wcs_override=fwcs if not(args.flat) else None)
                 shape,wcs = template.shape,template.wcs 
             else:
-                shape,wcs = enmap.geometry(pos=box,res=args.res*np.pi/180./60.)
+                shape,wcs = enmap.geometry(pos=box,res=args.res*np.pi/180./60., proj="car")
                 if pol: shape = (3,) + shape
             mgen, kgen = init_flat(shape[-2:],wcs)
         inited = True
@@ -202,7 +201,7 @@ for i,task in enumerate(my_tasks):
             cpatch = lens(unlensed,kpatch)
         # enmap.write_fits(filename("lensed"),cpatch)
         # enmap.write_fits(filename("unlensed"),unlensed)
-        # enmap.write_fits(filename("kappa"),kpatch)
+        enmap.write_fits(filename("kappa"),kpatch)
 
     if i==0:
         qest, ngen, kbeam, binner, taper, fc, purifier = init_geometry(shape[-2:],wcs)
@@ -219,9 +218,9 @@ for i,task in enumerate(my_tasks):
 
     observed = maps.convolve_gaussian(cpatch,args.beam) + nmaps if args.beam>1e-5 and args.noise>1e-5 else cpatch
 
-    # enmap.write_fits(filename("obs_I"),cpatch[0])
-    # enmap.write_fits(filename("obs_Q"),cpatch[1])
-    # enmap.write_fits(filename("obs_U"),cpatch[2])
+    enmap.write_fits(filename("obs_I"),cpatch[0])
+    enmap.write_fits(filename("obs_Q"),cpatch[1])
+    enmap.write_fits(filename("obs_U"),cpatch[2])
 
     if args.purify:
         lt,le,lb = purifier.lteb_from_iqu(observed,method='pure') # no need to multiply by window if purifying
@@ -289,7 +288,7 @@ for i,task in enumerate(my_tasks):
     
     for pcomb in polcombs:
         recon = qest.kappa_from_map(pcomb,lt,le,lb,alreadyFTed=True)-mfs[pcomb]
-        # enmap.write_fits(filename("recon_"+pcomb),cpatch[0])
+        enmap.write_fits(filename("recon_"+pcomb),recon)
         if args.debug and task==0: io.plot_img(recon,io.dout_dir+"recon"+pcomb+".png",high_res=False)
         if args.save_meanfield is None: 
             p2d,krecon = fc.f1power(recon,kinp)

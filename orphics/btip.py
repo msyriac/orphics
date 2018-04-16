@@ -3,6 +3,16 @@ import numpy as np
 from orphics import maps,io,stats
 from enlib import enmap,resample,bench
 
+def dpower(shape,wcs,theory,ls,lbeams,n2d,tshape,twcs,pol=False):
+
+    tmodlmap = enmap.modlmap(tshape,twcs)
+    cmb2d = theory.lCl('TT',tmodlmap)*maps.interp(ls,lbeams)(tmodlmap)**2.
+
+    nshift = np.fft.fftshift(n2d)
+    
+    nlow = enmap.downgrade(nshift, ndown)
+
+
 def mask_map(imap,iys,ixs,hole_arc,hole_frac=0.6):
     shape,wcs = imap.shape,imap.wcs
     Ny,Nx = shape[-2:]
@@ -16,6 +26,7 @@ def mask_map(imap,iys,ixs,hole_arc,hole_frac=0.6):
     for iy,ix in zip(iys,ixs):
         if iy<=hole_n or ix<=hole_n or iy>=(Ny-hole_n) or ix>=(Nx-hole_n): continue
         vslice = imap[np.int(iy-hole_ny):np.int(iy+hole_ny),np.int(ix-hole_nx):np.int(ix+hole_nx)]
+        if np.any(vslice.shape!=oshape): continue
         vslice[modrmap<(hole_frac*hole_arc)*np.pi/180./60.] = np.nan # !!!! could cause a bias
         mask[np.int(iy-hole_ny):np.int(iy+hole_ny),np.int(ix-hole_nx):np.int(ix+hole_nx)][modrmap<hole_arc*np.pi/180./60.] = 0
         
@@ -118,7 +129,7 @@ def make_circular_geometry(shape,wcs,context_arcmin,hole_arcmin,power2d,buffer_f
     bmodlmap = enmap.modlmap(bshape,bwcs)
     modlmap = enmap.modlmap(shape,wcs)
 
-    if verbose: print ("Downsampling...")
+    if verbose: print ("Downsampling power...")
     Niy,Nix = shape[-2:]
     Noy,Nox = bshape[-2:]
     
@@ -126,9 +137,25 @@ def make_circular_geometry(shape,wcs,context_arcmin,hole_arcmin,power2d,buffer_f
     # io.plot_img(np.fft.fftshift(np.log10(power2d)))
     #out_power = resample.resample_fft(power2d,bshape[-2:],axes=[-2,-1])
     #out_power = np.fft.ifftshift(resample.resample_fft(np.fft.fftshift(power2d),bshape[-2:],axes=[-2,-1]))
-    out_power = resample.resample_bin(power2d,factors=[float(Noy)/Niy,float(Nox)/Nix],axes=[-2,-1])
-    # io.plot_img(np.fft.fftshift(np.log10(out_power)))
-    # print(out_power.shape)
+    
+    out_power = resample.resample_bin(power2d,factors=[float(Noy)/Niy,float(Nox)/Nix],axes=[-2,-1]) ## UNCOMMENT
+
+    # TESTING
+    """
+    Lessons:
+    1. resample_bin is not downsampling correctly
+    2. tests continue with p2d made from scratch theory on small stamp geometry
+    3. band limited power spectrum introduces large errors (probably because cinv is not stable)
+    4. can fill p2d with noise, but what if map being inpainted is band limited? get speckles in holes from small scales
+    """
+    # from orphics import cosmology
+    # cc = cosmology.Cosmology(lmax=3000,pickling=True,dimensionless=False)
+    # out_power = cc.theory.lCl('TT',bmodlmap)*maps.gauss_beam(bmodlmap,5.0)**2.+(60.*np.pi/180./60.)**2.
+    
+
+    io.plot_img(np.fft.fftshift(np.log10(power2d)),io.dout_dir+"upower.png")
+    io.plot_img(np.fft.fftshift(np.log10(out_power)),io.dout_dir+"dpower.png")
+
     
     if verbose: print ("Starting slow part...")
     d = maps.diagonal_cov(out_power)
@@ -196,3 +223,74 @@ def fill_hole(masked_stamp,meanMatrix,holeArc,m1,m2,covRoot=None):
     return mean, rand, sim
 
                                                       
+
+
+
+def fill_map(imap,iys,ixs,hole_arc,mean_mul,cov_root,m1,tshape,twcs,seed=None):
+    Ny,Nx = imap.shape[-2:]
+    sny,snx = tshape[-2:]
+    modrmap = enmap.modrmap(tshape,twcs)
+    ttemplate = enmap.empty(tshape,twcs)
+
+    iys = iys.astype(np.int)
+    ixs = ixs.astype(np.int)
+
+    m1 = np.where(modrmap.reshape(-1)<hole_arc*np.pi/180./60.)[0]
+    m2 = np.where(modrmap.reshape(-1)>=hole_arc*np.pi/180./60.)[0]    
+    if seed is not None: np.random.seed(seed)
+
+    # Further improvement possible by pre-calculating random vectors
+    
+    outside = 0
+    j = 0
+    for i,(iy,ix) in enumerate(zip(iys,ixs)):
+
+        sy = iy-sny/2
+        ey = iy+sny/2
+        sx = ix-snx/2
+        ex = ix+snx/2
+        oslice = imap[sy:ey,sx:ex]
+
+        if np.any(oslice.shape!=tshape) or sy<0 or sx<0 or ey>=Ny or ex>=Nx:
+            outside+=1
+            continue
+
+        j += 1
+        ttemplate = oslice.copy()
+        if j==1: io.plot_img(ttemplate,io.dout_dir+"ttemplate.png")
+        
+        masked, maskedMean = prepare_circular_mask(ttemplate,hole_arc)
+        if j==1: io.plot_img(masked,io.dout_dir+"masked.png")
+                
+        masked = np.nan_to_num(masked)
+        mean, rand, sim = fill_hole(masked,mean_mul,hole_arc,m1,m2,cov_root)
+
+
+        a = masked.reshape(-1)
+        # a[m1] = sim+maskedMean
+        a[m1] = mean+maskedMean
+        a[m2] = oslice.reshape(-1)[m2]
+        oslice[:,:] = a.reshape(masked.shape)
+
+        
+        
+    if outside>0: print (outside, " pt source(s) at edge.")
+
+
+
+
+
+    
+def paste(targetTemplate,m,pasteThis):
+    '''Paste the result of an inpaint operation into a rectangular
+    np array in a liteMap
+
+    targetTemplate  - a liteMap with the shape of your cutout stamp
+    m               - a 1d boolean array that specifies where in the unraveled
+                      cutout stamp the hole is
+    pasteThis - the result of an inpaint operation, say from fill_hole
+    '''
+    a = targetTemplate.copy()
+    a.reshape(-1)[m] = pasteThis
+    a.reshape(targetTemplate.shape)
+    return a

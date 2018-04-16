@@ -126,10 +126,21 @@ def list_from_config(Config,section,name):
 
 ### PLOTTING
 
+def blend(fg_file,bg_file,alpha,save_file=None,verbose=True):
+    from PIL import Image
+    foreground = Image.open(fg_file)
+    background = Image.open(bg_file)
+    blended = Image.blend(foreground, background, alpha=alpha)
+    if save_file is not None:
+        blended.save(save_file)
+        if verbose: cprint("Saved blended image to "+ save_file,color="g")
+    return blended
+    
+
 def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
     plt.hist(data,bins=bins,**kwargs)
     if save_file is not None:
-        plt.save_fig(save_file)
+        plt.savefig(save_file)
         if verbose: cprint("Saved histogram plot to "+ save_file,color="g")
     else:
         plt.show()
@@ -230,10 +241,18 @@ class Plotter(object):
     def add(self,x,y,**kwargs):
 
         return self._ax.plot(x,y,**kwargs)
-        
-    def add_err(self,x,y,yerr,ls='none',**kwargs):
 
-        self._ax.errorbar(x,y,yerr=yerr,ls=ls,**kwargs)
+
+    def hist(self,data,**kwargs):
+        return self._ax.hist(data,**kwargs)
+    
+        
+    def add_err(self,x,y,yerr,ls='none',band=False,alpha=0.5,**kwargs):
+        if band:
+            self._ax.plot(x,y,ls=ls,**kwargs)
+            self._ax.fill_between(x, y-yerr, y+yerr, alpha=alpha)
+        else:
+            self._ax.errorbar(x,y,yerr=yerr,ls=ls,**kwargs)
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=18,extent=None,ticksize=12,**kwargs):
         '''

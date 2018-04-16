@@ -3,7 +3,8 @@ import numpy as np
 import time
 import itertools
 import scipy
-from scipy.stats import binned_statistic as binnedstat
+from scipy.stats import binned_statistic as binnedstat,chi2
+from scipy.optimize import curve_fit
 
 try:
     from pandas import DataFrame
@@ -14,6 +15,36 @@ except:
     class DataFrame:
         pass
 
+def fit_linear_model(x,y,ycov,funcs,dofs=None):
+    """
+    Given measurements with known uncertainties, this function fits those to a linear model:
+    y = a0*funcs[0](x) + a1*funcs[1](x) + ...
+    and returns the best fit coefficients a0,a1,... and their uncertainties as a covariance matrix
+    """
+    C = ycov
+    y = y.reshape((y.size,1))
+    A = np.zeros((y.size,len(funcs)))
+    for i,func in enumerate(funcs):
+        A[:,i] = func(x)
+    cov = np.linalg.inv(np.dot(A.T,np.linalg.solve(C,A)))
+    b = np.dot(A.T,np.linalg.solve(C,y))
+    X = np.dot(cov,b)
+    YAX = y - np.dot(A,X)
+    chisquare = np.dot(YAX.T,np.linalg.solve(C,YAX))
+    dofs = len(x)-len(funcs)-1 if dofs is None else dofs
+    pte = 1 - chi2.cdf(chisquare, dofs)    
+    return X,cov,chisquare/dofs,pte
+    
+def fit_gauss(x,y,mu_guess=None,sigma_guess=None):
+    ynorm = np.trapz(y,x)
+    ynormalized = y/ynorm
+    gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
+    popt,pcov = curve_fit(gaussian,x,ynormalized,p0=[mu_guess,sigma_guess])
+    fit_mean = popt[0]
+    fit_sigma = popt[1]
+    return fit_mean,fit_sigma,ynorm,ynormalized
+
+    
 class Solver(object):
     def __init__(self,C,u=None):
         N = C.shape[0]
@@ -101,17 +132,17 @@ class FisherMatrix(DataFrame):
 
     
     def __init__(self,fmat,param_list,delete_params=None,prior_dict=None,skip_inv=False):
-	"""
-	fmat 		-- (n,n) shape numpy array containing initial Fisher matrix for n parameters
-	param_list 	-- n-element list specifying diagonal order of fmat
-	delete_params 	-- list of names of parameters you would like to delete from this 
-			Fisher matrix when you initialize it. This is useful when skip_inv=False if some
-			of your parameters are not constrained. See skip_inv below.
-	prior_dict 	-- a dictionary that maps names of parameters to 1-sigma prior values
-			you would like to add on initialization. This can also be done later with the 
-			add_prior function.
-	skip_inv 	-- If true, this skips calculation of the inverse of the Fisher matrix
-			when the object is initialized.
+        """
+        fmat            -- (n,n) shape numpy array containing initial Fisher matrix for n parameters
+        param_list      -- n-element list specifying diagonal order of fmat
+        delete_params   -- list of names of parameters you would like to delete from this 
+                        Fisher matrix when you initialize it. This is useful when skip_inv=False if some
+                        of your parameters are not constrained. See skip_inv below.
+        prior_dict      -- a dictionary that maps names of parameters to 1-sigma prior values
+                        you would like to add on initialization. This can also be done later with the 
+                        add_prior function.
+        skip_inv        -- If true, this skips calculation of the inverse of the Fisher matrix
+                        when the object is initialized.
 	"""
 	
 	
@@ -218,7 +249,7 @@ class OQE(object):
     Subsequently, given a data vector, it returns the OQEstimate
     as a dictionary in the parameters. 
     """
-    def __init__(self,fid_cov,dcov_dict,fid_params_dict,invert=False,deproject=True):
+    def __init__(self,fid_cov,dcov_dict,fid_params_dict,invert=False,deproject=True,templates=None):
 
         self.params = dcov_dict.keys()
         self.fids = fid_params_dict
@@ -227,12 +258,14 @@ class OQE(object):
         if invert:
             self.Cinv = self._inv(fid_cov)
             
+
+        if templates is not None: assert deproject
         self.biases = {}
         self.ps = {}
         for param in self.params:
             if not(invert):
                 if deproject:
-                    solution = solve(fid_cov,dcov_dict[param])
+                    solution = solve(fid_cov,dcov_dict[param],u=templates)
                 else:
                     solution = np.linalg.solve(fid_cov,dcov_dict[param])
             self.ps[param] = np.dot(self.Cinv,dcov_dict[param]) if invert else solution.copy()
@@ -252,7 +285,7 @@ class OQE(object):
 
         if not(invert):
             if deproject:
-                self.s = Solver(fid_cov)
+                self.s = Solver(fid_cov,u=templates)
                 self.solver = lambda x: self.s.solve(x)
             else:
                 self.solver = lambda x: np.linalg.solve(fid_cov,x)
@@ -263,7 +296,6 @@ class OQE(object):
     def estimate(self,data):
         vec = []
         for param in self.params:
-            #fcore = np.dot(np.dot(data.T,np.dot(self.ps[param],self.Cinv)),data)
             cinvdat = np.dot(self.Cinv,data) if self.invert else self.solver(data)
             fcore = np.dot(np.dot(data.T,self.ps[param]),cinvdat)
             bsubbed = fcore - self.biases[param]
@@ -281,7 +313,7 @@ class OQE(object):
     def _inv(self,cov):
         # return np.linalg.pinv(cov)
         return np.linalg.inv(cov)
-        #return scipy.linalg.pinv2(cov)
+        # return scipy.linalg.pinv2(cov)
 
 
 class CinvUpdater(object):

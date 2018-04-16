@@ -123,4 +123,3 @@ def test():
     citest.call(suppress=False)
     ells,cls = citest.get_cls()
     print(cls.shape)
->>>>>>> 643f81438c2ce00084113b37db154d207b0f4963

@@ -151,7 +151,7 @@ def bounds_from_list(blist):
     return np.array(blist).reshape((2,2))*np.pi/180.
         
 
-def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",pol=False,height_deg=None,height_arcmin=None,xoffset_degree=0.,yoffset_degree=0.):
+def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",pol=False,height_deg=None,height_arcmin=None,xoffset_degree=0.,yoffset_degree=0.,extra=False):
     """
     Get shape and wcs for a rectangular patch of specified size and coordinate center
     """
@@ -171,7 +171,13 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
     pos = [[-vwidth*arcmin+yoffset_degree*degree,-hwidth*arcmin+xoffset_degree*degree],[vwidth*arcmin+yoffset_degree*degree,hwidth*arcmin+xoffset_degree*degree]]
     shape, wcs = enmap.geometry(pos=pos, res=px_res_arcmin*arcmin, proj=proj)
     if pol: shape = (3,)+shape
-    return shape, wcs
+    if extra:
+        modlmap = enmap.modlmap(shape,wcs)
+        lmax = modlmap.max()
+        ells = np.arange(0,lmax,1.)
+        return shape,wcs,modlmap,ells
+    else:
+        return shape, wcs
 
 
 def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False):
@@ -250,7 +256,8 @@ class MapGen(object):
 
         def get_map(self,seed=None,scalar=False,iau=True):
                 if seed is not None: np.random.seed(seed)
-                data = enmap.map_mul(self.covsqrt, enmap.rand_gauss_harm(self.shape, self.wcs))
+                rand = enmap.rand_gauss_harm(self.shape, self.wcs)
+                data = enmap.map_mul(self.covsqrt, rand)
                 kmap = enmap.ndmap(data, self.wcs)
                 if scalar:
                         return enmap.ifft(kmap).real
@@ -532,6 +539,7 @@ def ncov(shape,wcs,noise_uk_arcmin):
     noise_uK_pixel = noise_uK_rad/normfact
     return np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
 
+
 def pixcov(shape,wcs,fourier_cov):
     #fourier_cov = fourier_cov.astype(np.float32, copy=False)
     fourier_cov = fourier_cov.astype(np.complex64, copy=False)
@@ -552,6 +560,8 @@ def get_lnlike(covinv,instamp):
     ans = np.dot(np.dot(vec.T,covinv),vec)
     assert ans.size==1
     return ans[0,0]
+
+
 
 def pixcov_sim(shape,wcs,ps,Nsims,seed=None,mean_sub=True,pad=0):
     if pad>0:
@@ -1215,15 +1225,16 @@ class HealpixProjector(object):
         self.ncomp = ncomp
         self.rot = rot
         
-    def project(self,ihealmap,unit=1,lmax=0,first=0,return_hp=False):
+    def project(self,ihealmap=None,hpmap=None,unit=1,lmax=0,first=0,return_hp=False):
         from enlib import sharp, coordinates, curvedsky
         import healpy as hp
 
         dtype = np.float64
         ctype = np.result_type(dtype,0j)
         # Read the input maps
-        print("Reading " + ihealmap)
-        m = np.atleast_2d(hp.read_map(ihealmap, field=tuple(range(first,first+self.ncomp)))).astype(dtype)
+        print("Reading " + str(ihealmap))
+        hpmap = hp.read_map(ihealmap, field=tuple(range(first,first+self.ncomp))) if hpmap is None else hpmap
+        m = np.atleast_2d(hpmap).astype(dtype)
         if unit != 1: m /= unit
         # Prepare the transformation
         print("Preparing SHT")
@@ -1738,7 +1749,7 @@ class SimoneMR2Reader(ACTMapReader):
         maps = []
         maplist = ['srcfree_I','Q','U'] if not(t_only) else ['srcfree_I']
         for pol in maplist if not(weight) else [None]:
-            fstr = self._hstring(season,patch,array,freq,day_night) if weight else self._fstring(split,season,patch,array,freq,day_night,pol)
+            fstr = self._hstring(season,array,freq,day_night) if weight else self._fstring(split,season,array,freq,day_night,pol)
             cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
             fmap = enmap.read_map(fstr)*np.sqrt(cal) 
             if not(full_map):
