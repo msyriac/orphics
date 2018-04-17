@@ -119,10 +119,10 @@ def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
         ny,nx = shape
         Scov = Scov.reshape((ny,nx,ny,nx))
         bny,bnx = bshape
-        sy = int(ny/2.-bny/2.)
-        ey = int(ny/2.+bny/2.)
-        sx = int(nx/2.-bnx/2.)
-        ex = int(nx/2.+bnx/2.)
+        sy = ny//2-bny//2
+        ey = sy + bny
+        sx = nx//2-bnx//2
+        ex = sx + bnx
         Scov = Scov[sy:ey,sx:ex,sy:ey,sx:ex].reshape((np.prod(bshape),np.prod(bshape)))
     return Scov
 
@@ -1099,11 +1099,12 @@ class NlGenerator(object):
         
         return centers, Nlbinned
 
-    def getNlIterative(self,polCombs,kmin,kmax,tellmax,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False,max_iterations=np.inf,eff_at=None,kappa_min,kappa_max):
+    def getNlIterative(self,polCombs,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False,max_iterations=np.inf,eff_at=60,kappa_min=0,kappa_max=np.inf):
 
-        fmask = maps.mask_space(self.shape,self.wcs,ellmin=kappa_min,ellmax=kappa_max)
+        kmax = max(pellmax,kappa_max)
+        fmask = maps.mask_kspace(self.shape,self.wcs,lmin=kappa_min,lmax=kappa_max)
         Nleach = {}
-        bin_edges = np.arange(kmin-dell/2.,kmax+dell/2.,dell)#+dell
+        bin_edges = np.arange(2,kmax+dell/2.,dell)
         for polComb in polCombs:
             self.updateBins(bin_edges)
             AL = self.N.getNlkk2d(polComb,halo=halo)
@@ -1173,14 +1174,19 @@ class NlGenerator(object):
             idx = (np.abs(array-value)).argmin()
             return idx
 
+        new_ells,new_bb = fillLowEll(ells,dclbb,pellmin)
+        new_k_ells,new_nlkk = fillLowEll(bin_edges,sanitizePower(Nldelens),kmin)
+
+
         if eff_at is None:
             efficiency = ((origclbb-dclbb)*100./origclbb).max()
         else:
-            id_ell = find_nearest(ellsOrig,eff_at)
-            efficiency = ((origclbb[id_ell]-dclbb[id_ell])*100./origclbb[id_ell])
+            id_ellO = find_nearest(ellsOrig,eff_at)
+            id_ellD = find_nearest(new_ells,eff_at)
+            efficiency = ((origclbb[id_ellO]-new_bb[id_ellD])*100./origclbb[id_ellO])
 
-        new_ells,new_bb = fillLowEll(ells,dclbb,pellmin)
-        new_k_ells,new_nlkk = fillLowEll(bin_edges,sanitizePower(Nldelens),kmin)
+            
+        
         
         return new_k_ells,new_nlkk,new_ells,new_bb,efficiency
 

@@ -178,6 +178,7 @@ def get_geometry(pixcov,m1,m2):
     # m2 is context
 
     Cinv = np.linalg.inv(pixcov)
+    # Apply woodbury! to ones everywhere mean or better yet horizontal stripes for each row of the stamp. Correlation length along x can be completely large. Subtracting mean of unmasked region unnecessary.
     cslice = Cinv[m1][:,m1]
     meanMul1 = np.linalg.inv(cslice)
 
