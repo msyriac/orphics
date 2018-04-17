@@ -1151,7 +1151,6 @@ class NlGenerator(object):
             bbNoise2D = self.N.delensClBB(Nldelens2d,fmask=fmask,halo=halo)
             ells, dclbb = delensBinner.bin(bbNoise2D)
             dclbb = sanitizePower(dclbb)
-            dclbb[ells<pellmin] = oclbb[ellsOrig<pellmin].copy()
             if inum>0:
                 newLens = np.nanmean(nlkk)
                 oldLens = np.nanmean(oldNl)
@@ -1175,7 +1174,7 @@ class NlGenerator(object):
             idx = (np.abs(array-value)).argmin()
             return idx
 
-        new_ells,new_bb = fillLowEll(ells,dclbb,pellmin)
+        new_ells,new_bb = ells,dclbb
         new_k_ells,new_nlkk = fillLowEll(bin_edges,sanitizePower(Nldelens),kmin)
 
 
