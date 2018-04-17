@@ -1102,6 +1102,7 @@ class NlGenerator(object):
     def getNlIterative(self,polCombs,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False,max_iterations=np.inf,eff_at=60,kappa_min=0,kappa_max=np.inf):
 
         kmax = max(pellmax,kappa_max)
+        kmin = 2
         fmask = maps.mask_kspace(self.shape,self.wcs,lmin=kappa_min,lmax=kappa_max)
         Nleach = {}
         bin_edges = np.arange(2,kmax+dell/2.,dell)
