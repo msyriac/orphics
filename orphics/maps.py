@@ -32,9 +32,9 @@ def stamp_pixcov(N,theory,n2d,ells=None,beam_ells=None,beam2d=None,iau=False):
     
     modlmap = enmap.modlmap(shape,wcs)
     cmb2d = cosmology.power_from_theory(modlmap,theory,lensed=True,pol=True if ncomp==3 else False)
-    if ncomp==3: cmb2d = rotate_teb_to_iqu(shape,wcs,p2d,iau=iau)
+    if ncomp==3: cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d,iau=iau)
     
-    if beam2d is None: beam2d = maps.interp(ells,beam_ells)(modlmap)
+    if beam2d is None: beam2d = interp(ells,beam_ells)(modlmap)
     return stamp_pixcov_2d(N,cmb2d,beam2d,n2d)
     
 def stamp_pixcov_2d(N,cmb2d,beam2d,n2d):
