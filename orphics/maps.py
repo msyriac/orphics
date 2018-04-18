@@ -11,6 +11,49 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
+
+def rotate_teb_to_iqu(shape,wcs,p2d,iau=False):
+    rot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=True, iau=iau)
+    Rt = np.transpose(rot, (1,0,2,3))
+    tmp = np.einsum("abyx,bcyx->acyx",rot,p2d[1:,1:,:,:])
+    p2dQU = np.einsum("abyx,bcyx->acyx",tmp,Rt)    
+    p2dIQU = p2d.copy()
+    p2dIQU[1:,1:,:,:] = p2dQU
+    return p2dIQU
+
+def stamp_pixcov(N,theory,n2d,ells=None,beam_ells=None,beam2d=None,iau=False):
+    assert n2d.ndim==4
+    ncomp = n2d.shape[0]
+    assert n2d.shape[1]==ncomp
+    assert ncomp==3 or ncomp==1
+    
+    wcs = n2d.wcs
+    shape = n2d.shape[-2:]
+    
+    modlmap = enmap.modlmap(shape,wcs)
+    cmb2d = cosmology.power_from_theory(modlmap,theory,lensed=True,pol=True if ncomp==3 else False)
+    if ncomp==3: cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d,iau=iau)
+    
+    if beam2d is None: beam2d = interp(ells,beam_ells)(modlmap)
+    return stamp_pixcov_2d(N,cmb2d,beam2d,n2d)
+    
+def stamp_pixcov_2d(N,cmb2d,beam2d,n2d):
+    from enlib import jointmap as jm
+    assert n2d.ndim==4
+    ncomp = n2d.shape[0]
+    
+    p2d = cmb2d*beam2d**2.+n2d
+    
+    ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),n2d.wcs)
+    for i in range(ncomp):
+        for j in range(i,ncomp):
+            dcorr = jm.ps2d_to_mat(p2d[i,j], N).reshape((N*N,N*N))
+            ocorr[i,j] = dcorr.copy()
+            ocorr[j,i] = dcorr.copy()
+            
+    return ocorr
+
+
 def binary_mask(mask,threshold=0.5):
     m = np.abs(mask)
     m[m<threshold] = 0
@@ -256,7 +299,8 @@ class MapGen(object):
 
         def get_map(self,seed=None,scalar=False,iau=True):
                 if seed is not None: np.random.seed(seed)
-                data = enmap.map_mul(self.covsqrt, enmap.rand_gauss_harm(self.shape, self.wcs))
+                rand = enmap.rand_gauss_harm(self.shape, self.wcs)
+                data = enmap.map_mul(self.covsqrt, rand)
                 kmap = enmap.ndmap(data, self.wcs)
                 if scalar:
                         return enmap.ifft(kmap).real

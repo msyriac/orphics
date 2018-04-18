@@ -119,10 +119,10 @@ def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
         ny,nx = shape
         Scov = Scov.reshape((ny,nx,ny,nx))
         bny,bnx = bshape
-        sy = int(ny/2.-bny/2.)
-        ey = int(ny/2.+bny/2.)
-        sx = int(nx/2.-bnx/2.)
-        ex = int(nx/2.+bnx/2.)
+        sy = ny//2-bny//2
+        ey = sy + bny
+        sx = nx//2-bnx//2
+        ex = sx + bnx
         Scov = Scov[sy:ey,sx:ex,sy:ey,sx:ex].reshape((np.prod(bshape),np.prod(bshape)))
     return Scov
 
@@ -367,7 +367,7 @@ class QuadNorm(object):
         power2d is a flipper power2d object            
         '''
         self.clkk2d = power2dData.copy()+0.j
-        self.clpp2d = 0.j+self.clkk2d.copy()*4./(self.modLMap**2.)/((self.modLMap+1.)**2.)
+        self.clpp2d = 0.j+np.nan_to_num(self.clkk2d.copy()*4./(self.modLMap**2.)/((self.modLMap+1.)**2.))
 
 
     def WXY(self,XY):
@@ -824,62 +824,67 @@ class QuadNorm(object):
       
 
 
-    def delensClBB(self,Nlkk,halo=True):
-        self.Nlppnow = Nlkk*4./(self.modLMap**2.)/((self.modLMap+1.)**2.)
-        clPPArr = self.clpp2d
-        cltotPPArr = clPPArr + self.Nlppnow
-        cltotPPArr[np.isnan(cltotPPArr)] = np.inf
-        
-        clunlenEEArr = self.uClFid2d['EE'].copy()
-        clunlentotEEArr = (self.lClFid2d['EE'].copy()+self.noiseYY2d['EE'])
-        clunlentotEEArr[self.fMaskYY['EE']==0] = np.inf
-        clunlenEEArr[self.fMaskYY['EE']==0] = 0.
-        clPPArr[self.fMaskYY['EE']==0] = 0.
-        cltotPPArr[self.fMaskYY['EE']==0] = np.inf
-        
+    def delensClBB(self,Nlkk,fmask=None,halo=True):
+        """
+        Delens ClBB with input Nlkk curve
+        """
 
-        #if halo: clunlenEEArr[np.where(self.modLMap >= self.gradCut)] = 0.
-                
+        # Set the phi noise = Clpp + Nlpp
+        Nlppnow = Nlkk*4./(self.modLMap**2.)/((self.modLMap+1.)**2.)
+        clPPArr = self.clpp2d
+        cltotPPArr = clPPArr + Nlppnow
+        cltotPPArr[np.isnan(cltotPPArr)] = np.inf
+
+        # Get uClEE
+        clunlenEEArr = self.uClFid2d['EE'].copy()
+        # Get lClEE + NEE
+        clunlentotEEArr = (self.lClFid2d['EE'].copy()+self.noiseYY2d['EE'])
+
+        # Mask
+        clunlentotEEArr[self.fMaskYY['EE']==0] = np.inf
+        if fmask is None:
+            fmask = self.fMaskYY['EE']
+
+        cltotPPArr[fmask==0] = np.inf
+
+        # Trig required for responses
         sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
         cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
-
         lx = self.lxMap
         ly = self.lyMap
-
-            
         lxhat = self.lxHatMap
         lyhat = self.lyHatMap
-
         sinf = sin2phi(lxhat,lyhat)
         sinsqf = sinf**2.
         cosf = cos2phi(lxhat,lyhat)
         cossqf = cosf**2.
 
-        
+        # Use ffts to calculate each term instead of convolving 
         allTerms = []
         for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
             for trigfactOut,trigfactIn in zip([sinsqf,cossqf,1.j*np.sqrt(2.)*sinf*cosf],[cossqf,sinsqf,1.j*np.sqrt(2.)*sinf*cosf]):
-                preF1 = trigfactIn*ellsq*clunlenEEArr
-                preG1 = ellsq*clPPArr
+                preF1 = trigfactIn*ellsq*clunlenEEArr 
+                preG1 = ellsq*clPPArr  
 
-                preF2 = trigfactIn*ellsq*clunlenEEArr**2.*np.nan_to_num(1./clunlentotEEArr)
-                preG2 = ellsq*clPPArr**2.*np.nan_to_num(1./cltotPPArr)
+                preF2 = trigfactIn*ellsq*clunlenEEArr**2.*np.nan_to_num(1./clunlentotEEArr) * self.fMaskYY['EE']
+                preG2 = ellsq*clPPArr**2.*np.nan_to_num(1./cltotPPArr) * fmask
 
-                allTerms += [trigfactOut*(fft(ifft(preF1,axes=[-2,-1],normalize=True)*ifft(preG1,axes=[-2,-1],normalize=True) - ifft(preF2,axes=[-2,-1],normalize=True)*ifft(preG2,axes=[-2,-1],normalize=True),axes=[-2,-1]))]
+                t1 = ifft(preF1,axes=[-2,-1],normalize=True)*ifft(preG1,axes=[-2,-1],normalize=True) # Orig B
+                t2 = ifft(preF2,axes=[-2,-1],normalize=True)*ifft(preG2,axes=[-2,-1],normalize=True) # Delensed part
+                
+                allTerms += [trigfactOut*(fft(t1 - t2,axes=[-2,-1]))]
 
 
-        
+        # Sum all terms
         ClBBres = np.real(np.sum( allTerms, axis = 0))
 
-        
+        # Pixel factors
         ClBBres[np.where(np.logical_or(self.modLMap >= self.bigell, self.modLMap == 0.))] = 0.
         ClBBres *= self.Nx * self.Ny 
-        ClBBres[self.fMaskYY['EE']==0] = 0.
-                
-        
         area =self.Nx*self.Ny*self.pixScaleX*self.pixScaleY
         bbNoise2D = ((np.sqrt(ClBBres)/self.pixScaleX/self.pixScaleY)**2.)*(area/(self.Nx*self.Ny*1.0)**2)
 
+        # Set lensed BB to delensed level
         self.lClFid2d['BB'] = bbNoise2D.copy()
 
         
@@ -1094,10 +1099,13 @@ class NlGenerator(object):
         
         return centers, Nlbinned
 
-    def getNlIterative(self,polCombs,kmin,kmax,tellmax,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False):
-        
+    def getNlIterative(self,polCombs,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False,max_iterations=np.inf,eff_at=60,kappa_min=0,kappa_max=np.inf):
+
+        kmax = max(pellmax,kappa_max)
+        kmin = 2
+        fmask = maps.mask_kspace(self.shape,self.wcs,lmin=kappa_min,lmax=kappa_max)
         Nleach = {}
-        bin_edges = np.arange(kmin-dell/2.,kmax+dell/2.,dell)#+dell
+        bin_edges = np.arange(2,kmax+dell/2.,dell)
         for polComb in polCombs:
             self.updateBins(bin_edges)
             AL = self.N.getNlkk2d(polComb,halo=halo)
@@ -1120,10 +1128,11 @@ class NlGenerator(object):
             from orphics.tools.io import Plotter
             pl = Plotter(scaleY='log',scaleX='log')
             pl.add(ellsOrig,oclbb*ellsOrig**2.,color='black',lw=2)
-            
+
         ctol = np.inf
         inum = 0
         while ctol>dTolPercentage:
+            if inum >= max_iterations: break
             bNlsinv = 0.
             polPass = list(polCombs)
             if verbose: print("Performing iteration ", inum+1)
@@ -1139,10 +1148,9 @@ class NlGenerator(object):
             Nldelens = Nlmv(Nleach,polPass,centers,nlkk,bin_edges)
             Nldelens2d = interp1d(bin_edges,Nldelens,fill_value=0.,bounds_error=False)(self.N.modLMap)
 
-            bbNoise2D = self.N.delensClBB(Nldelens2d,halo)
+            bbNoise2D = self.N.delensClBB(Nldelens2d,fmask=fmask,halo=halo)
             ells, dclbb = delensBinner.bin(bbNoise2D)
             dclbb = sanitizePower(dclbb)
-            dclbb[ells<pellmin] = oclbb[ellsOrig<pellmin].copy()
             if inum>0:
                 newLens = np.nanmean(nlkk)
                 oldLens = np.nanmean(oldNl)
@@ -1161,11 +1169,24 @@ class NlGenerator(object):
             import os
             pl.done(os.environ['WWW']+'delens.png')
         self.N.lClFid2d['BB'] = origBB.copy()
-        efficiency = ((origclbb-dclbb)*100./origclbb).max()
 
+        def find_nearest(array,value):
+            idx = (np.abs(array-value)).argmin()
+            return idx
 
-        new_ells,new_bb = fillLowEll(ells,dclbb,pellmin)
+        new_ells,new_bb = ells,dclbb
         new_k_ells,new_nlkk = fillLowEll(bin_edges,sanitizePower(Nldelens),kmin)
+
+
+        if eff_at is None:
+            efficiency = ((origclbb-dclbb)*100./origclbb).max()
+        else:
+            id_ellO = find_nearest(ellsOrig,eff_at)
+            id_ellD = find_nearest(new_ells,eff_at)
+            efficiency = ((origclbb[id_ellO]-new_bb[id_ellD])*100./origclbb[id_ellO])
+
+            
+        
         
         return new_k_ells,new_nlkk,new_ells,new_bb,efficiency
 
@@ -1900,7 +1921,7 @@ def projected_rho(thetas,comL,rhoFunc,pmaxN=2000,numps=500000):
     return g
 
 
-def kappa_nfw(theta,z,comLMpcOverh,M,c,R,windowAtLens):
+def kappa_nfw_generic(theta,z,comLMpcOverh,M,c,R,windowAtLens):
     return 4.*np.pi*Gval*(1+z)*comLMpcOverh*windowAtLens*proj_rho_nfw(theta,comLMpcOverh,M,c,R)/cval**2.
 
 def kappa_generic(theta,z,comLMpcOverh,rhoFunc,windowAtLens,pmaxN=2000,numps=500000):
@@ -1908,4 +1929,20 @@ def kappa_generic(theta,z,comLMpcOverh,rhoFunc,windowAtLens,pmaxN=2000,numps=500
     # increase numps for lower z/theta and pmaxN for higher z/theta
     return 4.*np.pi*Gval*(1+z)*comLMpcOverh*windowAtLens*projected_rho(theta,comLMpcOverh,rhoFunc,pmaxN,numps)/cval**2.
 
+def kappa_from_rhofunc(M,c,R,theta,cc,z,rhoFunc=None):
+    if rhoFunc is None: rhoFunc = rho_nfw(M,c,R)
+    sgn = 1. if M>0. else -1.
+    comS = cc.results.comoving_radial_distance(cc.cmbZ)*cc.h
+    comL = cc.results.comoving_radial_distance(z)*cc.h
+    winAtLens = (comS-comL)/comS
+    kappa = kappa_generic(theta,z,comL,rhoFunc,winAtLens)
+    return sgn*kappa
 
+def kappa_nfw(M,c,R,theta,cc,z):
+    sgn = 1. if M>0. else -1.
+    comS = cc.results.comoving_radial_distance(cc.cmbZ)*cc.h
+    comL = cc.results.comoving_radial_distance(z)*cc.h
+    winAtLens = (comS-comL)/comS
+    kappa = kappa_nfw_generic(theta,z,comL,np.abs(M),c,R,winAtLens)
+
+    return sgn*kappa
