@@ -189,7 +189,7 @@ def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=F
     shape -- tuple specifying shape of 
     """
 
-    
+    if ndown<1: return cov
     ndown = np.array(ndown).ravel()
     if ndown.size==1:
         Ny,Nx = shape[-2:]
@@ -1735,7 +1735,8 @@ class SimoneMR2Reader(ACTMapReader):
     def __init__(self,map_root,beam_root,config_yaml_path,patch):
         ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
         self.patch = patch
-        eg_file = self._fstring(split=-1,season="s15" if (patch=="deep56" or patch=="deep8") else "s13",array="pa1",freq="150",day_night="night",pol="I")
+        #eg_file = self._fstring(split=-1,season="s15" if (patch=="deep56" or patch=="deep8") else "s13",array="pa1",freq="150",day_night="night",pol="I")
+        eg_file = self._fstring(split=-1,season="s14" if (patch=="deep56" or patch=="deep8") else "s13",array="pa2" if (patch=="deep56" or patch=="deep8") else "pa1",freq="150",day_night="night",pol="srcfree_I")
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
         
     def get_beam(self,season,array,freq="150",day_night="night"):
@@ -1743,14 +1744,14 @@ class SimoneMR2Reader(ACTMapReader):
         beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
-    def get_map(self,split,season,array,freq="150",day_night="night",full_map=True,weight=False,get_identifier=False,t_only=False,region=None):
+    def get_map(self,split,season,array,freq="150",day_night="night",full_map=True,weight=False,get_identifier=False,t_only=False,box=None):
         patch = self.patch
         maps = []
         maplist = ['srcfree_I','Q','U'] if not(t_only) else ['srcfree_I']
         for pol in maplist if not(weight) else [None]:
             fstr = self._hstring(season,array,freq,day_night) if weight else self._fstring(split,season,array,freq,day_night,pol)
-            cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
-            fmap = enmap.read_map(fstr)*np.sqrt(cal) 
+            cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) #if not(weight) else 1.
+            fmap = enmap.read_fits(fstr,box=box)*np.sqrt(cal) if not(weight) else np.nan_to_num(1./enmap.read_fits(fstr,box=box)**2.)
             if not(full_map):
                 bounds = self.patch_bounds(patch) 
                 retval = fmap.submap(bounds)
@@ -1770,12 +1771,15 @@ class SimoneMR2Reader(ACTMapReader):
         patch = self.patch
         # Change this function if the map naming scheme changes
         splitstr = "set0123" if split<0 or split>3 else "set"+str(split)
-        return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
+        #return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
+        return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
 
     def _hstring(self,season,array,freq,day_night):
         patch = self.patch
         splitstr = "set0123"
-        return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
+        #return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
+        #return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
+        return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_noise.fits"
 
 
 

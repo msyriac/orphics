@@ -944,7 +944,7 @@ class LensForecast:
 
     def loadGG(self,ellsCls,Cls,ngal):
         self.ngalForeground = ngal
-        self.Nls['gg'] = lambda x: 1./(self.ngalForeground*1.18e7)
+        self.Nls['gg'] = lambda x: x*0.+1./(self.ngalForeground*1.18e7)
         self.theory.loadGenericCls(ellsCls,Cls,'gg')
     
         self._haveGG = True

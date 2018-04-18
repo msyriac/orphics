@@ -138,12 +138,14 @@ def blend(fg_file,bg_file,alpha,save_file=None,verbose=True):
     
 
 def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
-    plt.hist(data,bins=bins,**kwargs)
+    ret = plt.hist(data,bins=bins,**kwargs)
     if save_file is not None:
         plt.savefig(save_file)
         if verbose: cprint("Saved histogram plot to "+ save_file,color="g")
     else:
         plt.show()
+
+    return ret
         
 
 def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
@@ -158,6 +160,7 @@ def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,ret
     if return_projected_map: return retimg
 
 def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,down=None,crange=None,**kwargs):
+    if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
         high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,**kwargs)

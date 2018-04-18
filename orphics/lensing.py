@@ -1891,7 +1891,6 @@ def proj_rho_nfw(theta,comL,M,c,R):
 
 # Generic profile projected along line of sight (M/L^2) as a function of angle on the sky in radians
 # rhoFunc is density (M/L^3) as a function of distance from center of cluster
-@timeit
 def projected_rho(thetas,comL,rhoFunc,pmaxN=2000,numps=500000):
     # default integration times are good to 0.01% for z=0.1 to 3
     # increase numps for lower z/theta and pmaxN for higher z/theta
