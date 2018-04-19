@@ -111,13 +111,23 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
 
 def rotate_teb_to_iqu(shape,wcs,p2d,iau=False):
     rot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=True, iau=iau)
+    print(rot.shape)
+    #Rt = np.transpose(rot, (1,0,2,3))
     Rt = np.transpose(rot, (1,0,2,3))
+    #Rt = rot
+    print(Rt.shape)
     #tmp = np.einsum("abyx,bcyx->acyx",rot,p2d[-2:,-2:,:,:])
     tmp = np.einsum("abyx,bcyx->acyx",rot,p2d[1:,1:,:,:])
     p2dQU = np.einsum("abyx,bcyx->acyx",tmp,Rt)    
     p2dIQU = p2d.copy()
     #p2dIQU[-2:,-2:,:,:] = p2dQU
     p2dIQU[1:,1:,:,:] = p2dQU
+
+
+    # modlmap = enmap.modlmap(shape,wcs)
+    # p2dIQU[:,:,modlmap>3000] = 0.
+
+    
     return p2dIQU
 
 def stamp_pixcov(N,theory,n2d,ells=None,beam_ells=None,beam2d=None,iau=False):
@@ -129,12 +139,44 @@ def stamp_pixcov(N,theory,n2d,ells=None,beam_ells=None,beam2d=None,iau=False):
     wcs = n2d.wcs
     shape = n2d.shape[-2:]
 
-
-    
+ 
+   
     modlmap = enmap.modlmap(shape,wcs)
     cmb2d = cosmology.power_from_theory(modlmap,theory,lensed=True,pol=True if ncomp==3 else False)
+
+
+    # ells = np.arange(0,modlmap.max(),1)
+    # ps_cmb_1d = cosmology.power_from_theory(ells,theory,lensed=True,pol=True if ncomp==3 else False)
+    es = np.linalg.eigh(cmb2d.T)[0]
+    print(es.min())
+    print(np.any(es<0.))
+    print(es.shape)
+    numw = range(es.shape[0]*es.shape[1])
+    pl = io.Plotter(xlabel='n',ylabel='e',yscale='log')
+    pl.add(numw,np.sort(np.real(es[:,:,0].ravel())))
+    pl.add(numw,np.sort(np.real(es[:,:,1].ravel())))
+    pl.add(numw,np.sort(np.real(es[:,:,2].ravel())))
+    #pl.hline()
+    pl.legend()
+    pl.done()
+    # sys.exit()
+    
     # if ncomp>1: cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d[3-ncomp:,3-ncomp:,:,:],iau=iau)
     if ncomp>1: cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d,iau=iau)
+
+    es = np.linalg.eigh(cmb2d.T)[0]
+    print(es.min())
+    print(np.any(es<0.))
+    print(es.shape)
+    numw = range(es.shape[0]*es.shape[1])
+    pl = io.Plotter(xlabel='n',ylabel='e',yscale='log')
+    pl.add(numw,np.sort(np.real(es[:,:,0].ravel())))
+    pl.add(numw,np.sort(np.real(es[:,:,1].ravel())))
+    pl.add(numw,np.sort(np.real(es[:,:,2].ravel())))
+    #pl.hline()
+    pl.legend()
+    pl.done()
+    sys.exit()
     
     if beam2d is None: beam2d = interp(ells,beam_ells)(modlmap)
     return stamp_pixcov_2d(N,cmb2d,beam2d,n2d)
@@ -153,10 +195,16 @@ def stamp_pixcov_2d(N,cmb2d,beam2d,n2d):
     
     ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),n2d.wcs)
     for i in range(ncomp):
-        for j in range(i,ncomp):
+        for j in range(ncomp):
             dcorr = jm.ps2d_to_mat(p2d[i,j], N).reshape((N*N,N*N))
             ocorr[i,j] = dcorr.copy()
-            ocorr[j,i] = dcorr.copy()
+            # ocorr[j,i] = dcorr.copy()
+    
+    # for i in range(ncomp):
+    #     for j in range(i,ncomp):
+    #         dcorr = jm.ps2d_to_mat(p2d[i,j], N).reshape((N*N,N*N))
+    #         ocorr[i,j] = dcorr.copy()
+    #         ocorr[j,i] = dcorr.copy()
             
     return ocorr
 
