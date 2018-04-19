@@ -12,6 +12,46 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
 
+def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ells=None,beam_ells =None,beam2d=None,deproject=True,iau=False,res=None):
+
+    # Make a flat stamp geometry
+    if res is None: res = maps.resolution(shape,wcs)
+    if n is None: n = int(context_width/res)
+    tshape,twcs = enmap.geometry(pos=(0,0),shape=(n,n),res=res,proj='car')
+    modrmap = enmap.modrmap(tshape,twcs)
+
+    # Do we have polarization?
+    ncomp = n2d.shape[0]
+    assert ncomp==1 or ncomp==3
+
+    # Select the hole (m1) and context(m2) across all components
+    amodrmap = np.repeat(modrmap.reshape((1,n,n)),ncomp,0)
+    m1 = np.where(amodrmap.reshape(-1)<hole_radius)[0]
+    m2 = np.where(amodrmap.reshape(-1)>=hole_radius)[0]
+
+    # Get the pix-pix covariance on the stamp geometry CMB theory, beam and 2D noise on the big map
+    pcov = maps.stamp_pixcov(n,theory,n2d,ells=ells,beam_ells=beam_ells,beam2d=beam2d,iau=iau)
+    # Make sure that the pcov is in the right order vector(I,Q,U)
+    pcov = np.transpose(pcov,(0,2,1,3))
+    pcov = pcov.reshape((ncomp*N**2,ncomp*N**2))
+    # Invert
+    Cinv = np.linalg.inv(pcov)
+    # Woodbury deproject common mode
+    if deproject:
+        u = np.ones((ncomp*N*N,1))
+        Cinvu = np.linalg.solve(pcov,u)
+        precalc = np.dot(Cinvu,np.linalg.solve(np.dot(u.T,Cinvu),u.T))
+        correction = np.dot(precalc,Cinv)
+        Cinv -= correction
+    # Get matrices for maxlike solution
+    cslice = Cinv[m1][:,m1]
+    mean_mul1 = np.linalg.inv(cslice)
+    mul2 = Cinv[m1][:,m2]
+    mean_mul = np.dot(-mean_mul1,mul2)
+    cov = np.linalg.inv(Cinv[m1][:,m1]) 
+    return pcov,mean_mul, cov
+
+
 def rotate_teb_to_iqu(shape,wcs,p2d,iau=False):
     rot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=True, iau=iau)
     Rt = np.transpose(rot, (1,0,2,3))
@@ -29,6 +69,8 @@ def stamp_pixcov(N,theory,n2d,ells=None,beam_ells=None,beam2d=None,iau=False):
     
     wcs = n2d.wcs
     shape = n2d.shape[-2:]
+
+
     
     modlmap = enmap.modlmap(shape,wcs)
     cmb2d = cosmology.power_from_theory(modlmap,theory,lensed=True,pol=True if ncomp==3 else False)
@@ -41,8 +83,13 @@ def stamp_pixcov_2d(N,cmb2d,beam2d,n2d):
     from enlib import jointmap as jm
     assert n2d.ndim==4
     ncomp = n2d.shape[0]
+
+    wcs = n2d.wcs
+    shape = n2d.shape[-2:]
+    
     
     p2d = cmb2d*beam2d**2.+n2d
+    p2d *= np.prod(shape[-2:])/enmap.area(shape,wcs)
     
     ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),n2d.wcs)
     for i in range(ncomp):
