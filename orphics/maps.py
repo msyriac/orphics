@@ -32,7 +32,7 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
     """
 
     # Make a flat stamp geometry
-    if res is None: res = maps.resolution(shape,wcs)
+    if res is None: res = resolution(shape,wcs)
     if n is None: n = int(context_width/res)
     tshape,twcs = enmap.geometry(pos=(0,0),shape=(n,n),res=res,proj='car')
     modrmap = enmap.modrmap(tshape,twcs)
@@ -47,15 +47,15 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
     m2 = np.where(amodrmap.reshape(-1)>=hole_radius)[0]
 
     # Get the pix-pix covariance on the stamp geometry CMB theory, beam and 2D noise on the big map
-    pcov = maps.stamp_pixcov(n,theory,n2d,ells=ells,beam_ells=beam_ells,beam2d=beam2d,iau=iau)
+    pcov = stamp_pixcov(n,theory,n2d,ells=ells,beam_ells=beam_ells,beam2d=beam2d,iau=iau)
     # Make sure that the pcov is in the right order vector(I,Q,U)
     pcov = np.transpose(pcov,(0,2,1,3))
-    pcov = pcov.reshape((ncomp*N**2,ncomp*N**2))
+    pcov = pcov.reshape((ncomp*n**2,ncomp*n**2))
     # Invert
     Cinv = np.linalg.inv(pcov)
     # Woodbury deproject common mode
     if deproject:
-        u = np.ones((ncomp*N*N,1))
+        u = np.ones((ncomp*n**2,1))
         Cinvu = np.linalg.solve(pcov,u)
         precalc = np.dot(Cinvu,np.linalg.solve(np.dot(u.T,Cinvu),u.T))
         correction = np.dot(precalc,Cinv)
