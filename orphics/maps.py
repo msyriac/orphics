@@ -14,6 +14,23 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ells=None,beam_ells =None,beam2d=None,deproject=True,iau=False,res=None):
 
+    """
+    Make covariances for brute force maxlike inpainting of CMB maps.
+    Eq 3 of arXiv:1109.0286
+
+    shape,wcs -- enmap geometry of big map
+    theory -- orphics cosmology theory object
+    n2d -- (ncomp,ncomp,Ny,Nx) 2D noise power in physical units
+    hole_radius in radians
+    context_width in radians or n as number of pixels
+    ells,beam_ells for 1d beam or beam2d for 2D beam template
+    deproject -- whether to deproject common mode
+    iau -- whether to use IAU convention for polarization
+    res -- specify resolution in radians instead of inferring from enmap geometry
+
+
+    """
+
     # Make a flat stamp geometry
     if res is None: res = maps.resolution(shape,wcs)
     if n is None: n = int(context_width/res)
@@ -43,7 +60,7 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
         precalc = np.dot(Cinvu,np.linalg.solve(np.dot(u.T,Cinvu),u.T))
         correction = np.dot(precalc,Cinv)
         Cinv -= correction
-    # Get matrices for maxlike solution
+    # Get matrices for maxlike solution Eq 3 of arXiv:1109.0286
     cslice = Cinv[m1][:,m1]
     mean_mul1 = np.linalg.inv(cslice)
     mul2 = Cinv[m1][:,m2]
