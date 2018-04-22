@@ -52,43 +52,7 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
     pcov = np.transpose(pcov,(0,2,1,3))
     pcov = pcov.reshape((ncomp*n**2,ncomp*n**2))
 
-    debug = False
-    if debug:
-        print("Decomposing")
-        w,v = np.linalg.eigh(pcov)
-        numw = range(len(w))
-        pl = io.Plotter(xlabel='n',ylabel='e',yscale='log')
-        pl.add(numw,sorted(np.real(w)))
-        pl.done()
-
-        print("pcov diagonal")
-        pl = io.Plotter(xlabel='',ylabel='',yscale='log')
-        l = np.arange(0,ncomp*n**2,1)
-        d = np.asarray(np.diagonal(np.real(pcov)))
-        pl.add(l,d)
-        pl.done()
-
-        # pl = io.Plotter(xlabel='n',ylabel='e',yscale='log')
-        # pl.add(numw,sorted(np.imag(w)))
-        # #pl.hline()
-        # pl.done()
-    
-        rw = np.real(w)
-        print((rw[rw<1e-3]))
-
-        print(rw[rw<0])
-        # ebad = v[rw<1e-3]
-
-        # for e in ebad:
-        #     imaps = e.reshape((3,20,20)).imag
-        #     io.plot_img(imaps[0])
-        #     io.plot_img(imaps[1])
-        #     io.plot_img(imaps[2])
-
-        
-    
     # Invert
-    # Cinv = np.linalg.pinv(pcov)
     Cinv = np.linalg.inv(pcov)
     
     # Woodbury deproject common mode
@@ -105,58 +69,33 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
     cslice = Cinv[m1][:,m1]
     mul2 = Cinv[m1][:,m2]
     mean_mul = -np.linalg.solve(cslice,mul2)
-    # cov = np.linalg.pinv(Cinv[m1][:,m1])
     cov = np.linalg.inv(Cinv[m1][:,m1])
     
-    io.plot_img(Cinv)
     return pcov,mean_mul, cov
 
 
-def rotate_teb_to_iqu(shape,wcs,p2d,iau=False,start=1):
-    rot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=True, iau=iau)
+def rotate_teb_to_iqu(shape,wcs,p2d,iau=False):
+    rot = np.zeros((3,3,p2d.shape[-2],p2d.shape[-1]))
+    rot[0,0,:,:] = 1
+    prot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=True, iau=iau)
+    rot[1:,1:,:,:] = prot
     Rt = np.transpose(rot, (1,0,2,3))
-    tmp = np.einsum("ab...,bc...->ac...",rot,p2d[start:,start:,...].copy())
-    p2dQU = np.einsum("ab...,bc...->ac...",tmp,Rt)    
-    p2dIQU = p2d.copy()
-    p2dIQU[start:,start:,...] = p2dQU.copy()
+    tmp = np.einsum("ab...,bc...->ac...",rot,p2d[:,:,:,:].copy())
+    p2dIQU = np.einsum("ab...,bc...->ac...",tmp,Rt)    
     return p2dIQU
 
 def stamp_pixcov(N,theory,n2d,ells=None,beam_ells=None,beam2d=None,iau=False):
     assert n2d.ndim==4
     ncomp = n2d.shape[0]
     assert n2d.shape[1]==ncomp
-    assert ncomp==3 or ncomp==1 or ncomp==2
+    assert ncomp==3 or ncomp==1
     
     wcs = n2d.wcs
     shape = n2d.shape[-2:]
 
     modlmap = enmap.modlmap(shape,wcs)
     cmb2d = cosmology.power_from_theory(modlmap,theory,lensed=True,pol=True if ncomp>1 else False)
-
-    def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh):
-        es = eigfunc(cmb2d[start:,start:,...].T)[0]
-        print(start,es.min(),np.any(es<0.))
-        numw = range(np.prod(es.shape[:-1]))
-        pl = io.Plotter(xlabel='n',ylabel='e',yscale='log')
-        for ind in range(es.shape[-1]):
-            pl.add(numw,np.sort(np.real(es[...,ind].ravel())))
-            pl.add(numw,np.sort(np.imag(es[...,ind].ravel())),ls="--")
-        pl.done()
-
-
-    if ncomp==2:
-        cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d[1:,1:,:,:],iau=iau,start=0)
-    elif ncomp==3:
-        cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d[:,:,:,:],iau=iau,start=1)
-        
-    # if ncomp>1:
-    #     # eig_analyze(cmb2d,start=0)
-    #     # eig_analyze(cmb2d,start=1)
-    #     # cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d[3-ncomp:,3-ncomp:,:,:],iau=iau)
-    #     cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d,iau=iau,start=3-ncomp)
-    #     # eig_analyze(cmb2d,start=0)
-    #     # eig_analyze(cmb2d,start=1)
-
+    if ncomp==3: cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d,iau=iau)
     
     if beam2d is None: beam2d = interp(ells,beam_ells)(modlmap)
     return stamp_pixcov_2d(N,cmb2d,beam2d,n2d)

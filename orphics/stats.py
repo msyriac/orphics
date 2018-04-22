@@ -15,6 +15,19 @@ except:
     class DataFrame:
         pass
 
+def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh,plot_file=None):
+    es = eigfunc(cmb2d[start:,start:,...].T)[0]
+    print(start,es.min(),np.any(es<0.))
+    numw = range(np.prod(es.shape[:-1]))
+    pl = io.Plotter(xlabel='n',ylabel='e',yscale='log')
+    for ind in range(es.shape[-1]):
+        pl.add(numw,np.sort(np.real(es[...,ind].ravel())))
+        pl.add(numw,np.sort(np.imag(es[...,ind].ravel())),ls="--")
+    pl.done(plot_file)
+
+
+
+    
 def fit_linear_model(x,y,ycov,funcs,dofs=None):
     """
     Given measurements with known uncertainties, this function fits those to a linear model:
