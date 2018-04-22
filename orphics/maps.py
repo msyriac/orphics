@@ -12,18 +12,18 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 ### ENMAP HELPER FUNCTIONS AND CLASSES
 
 
-def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ells=None,beam_ells =None,beam2d=None,deproject=True,iau=False,res=None):
+def make_geometry(shape,wcs,cmb2d_TEB,n2d_IQU,hole_radius,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None):
 
     """
     Make covariances for brute force maxlike inpainting of CMB maps.
     Eq 3 of arXiv:1109.0286
 
     shape,wcs -- enmap geometry of big map
-    theory -- orphics cosmology theory object
-    n2d -- (ncomp,ncomp,Ny,Nx) 2D noise power in physical units
+    cmb2d_TEB -- (ncomp,ncomp,Ny,Nx) 2D CMB power in physical units
+    n2d_IQU -- (ncomp,ncomp,Ny,Nx) 2D noise power in physical units
     hole_radius in radians
     context_width in radians or n as number of pixels
-    ells,beam_ells for 1d beam or beam2d for 2D beam template
+    beam2d -- 2D beam template
     deproject -- whether to deproject common mode
     iau -- whether to use IAU convention for polarization
     res -- specify resolution in radians instead of inferring from enmap geometry
@@ -38,6 +38,7 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
     modrmap = enmap.modrmap(tshape,twcs)
 
     # Do we have polarization?
+    n2d = n2d_IQU
     ncomp = n2d.shape[0]
     assert ncomp==1 or ncomp==2 or ncomp==3
 
@@ -47,7 +48,7 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
     m2 = np.where(amodrmap.reshape(-1)>=hole_radius)[0]
 
     # Get the pix-pix covariance on the stamp geometry CMB theory, beam and 2D noise on the big map
-    pcov = stamp_pixcov(n,theory,n2d,ells=ells,beam_ells=beam_ells,beam2d=beam2d,iau=iau)
+    pcov = stamp_pixcov(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
     # Make sure that the pcov is in the right order vector(I,Q,U)
     pcov = np.transpose(pcov,(0,2,1,3))
     pcov = pcov.reshape((ncomp*n**2,ncomp*n**2))
@@ -57,9 +58,12 @@ def make_geometry(shape,wcs,theory,n2d,hole_radius,context_width=None,n=None,ell
     
     # Woodbury deproject common mode
     if deproject:
-        # need to check this vector
-        u = (np.zeros((n*n,ncomp,ncomp))+np.eye(ncomp)).reshape(n*n*ncomp,ncomp)
-        #u = np.ones((ncomp*n**2,1))
+        # Deproject I,Q,U common mode separately
+        #u = (np.zeros((n*n,ncomp,ncomp))+np.eye(ncomp)).reshape(n*n*ncomp,ncomp)
+        u = np.zeros((n*n*ncomp,ncomp))
+        for i in range(ncomp):
+            u[i*n*n:(i+1)*n*n,i] = 1
+        #u = np.ones((ncomp*n**2,1)) # Deproject mode common to all of I,Q,U
         Cinvu = np.linalg.solve(pcov,u)
         precalc = np.dot(Cinvu,np.linalg.solve(np.dot(u.T,Cinvu),u.T))
         correction = np.dot(precalc,Cinv)
@@ -84,7 +88,8 @@ def rotate_teb_to_iqu(shape,wcs,p2d,iau=False):
     p2dIQU = np.einsum("ab...,bc...->ac...",tmp,Rt)    
     return p2dIQU
 
-def stamp_pixcov(N,theory,n2d,ells=None,beam_ells=None,beam2d=None,iau=False):
+def stamp_pixcov(N,cmb2d_TEB,n2d_IQU,beam2d=None,iau=False):
+    n2d = n2d_IQU
     assert n2d.ndim==4
     ncomp = n2d.shape[0]
     assert n2d.shape[1]==ncomp
@@ -93,15 +98,16 @@ def stamp_pixcov(N,theory,n2d,ells=None,beam_ells=None,beam2d=None,iau=False):
     wcs = n2d.wcs
     shape = n2d.shape[-2:]
 
-    modlmap = enmap.modlmap(shape,wcs)
-    cmb2d = cosmology.power_from_theory(modlmap,theory,lensed=True,pol=True if ncomp>1 else False)
-    if ncomp==3: cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d,iau=iau)
+    if ncomp==3: cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d_TEB,iau=iau)
     
-    if beam2d is None: beam2d = interp(ells,beam_ells)(modlmap)
     return stamp_pixcov_2d(N,cmb2d,beam2d,n2d)
     
-def stamp_pixcov_2d(N,cmb2d,beam2d,n2d):
+def stamp_pixcov_2d(N,cmb2d_IQU,beam2d,n2d_IQU):
+    """Return the pixel covariance for a stamp N pixels across given the 2D IQU CMB power spectrum,
+    2D beam template and 2D IQU noise power spectrum.
+    """
     from enlib import jointmap as jm
+    n2d = n2d_IQU
     assert n2d.ndim==4
     ncomp = n2d.shape[0]
 
@@ -109,14 +115,15 @@ def stamp_pixcov_2d(N,cmb2d,beam2d,n2d):
     shape = n2d.shape[-2:]
     
 
-    p2d = cmb2d*beam2d**2.+n2d
+    p2d = cmb2d_IQU*beam2d**2.+n2d
     p2d *= np.prod(shape[-2:])/enmap.area(shape,wcs)
     
     ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),n2d.wcs)
     for i in range(ncomp):
-        for j in range(ncomp):
+        for j in range(i,ncomp):
             dcorr = jm.ps2d_to_mat(p2d[i,j].copy(), N).reshape((N*N,N*N))
             ocorr[i,j] = dcorr.copy()
+            if i!=j: ocorr[j,i] = dcorr.copy()
             
     return ocorr
 
