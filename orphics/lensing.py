@@ -17,6 +17,48 @@ import time
 import cPickle as pickle
 
 
+def lens_cov_pol(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,n=None,comm=None):
+    """Given the pix-pix covariance matrix for the unlensed CMB,
+    returns the lensed covmat for a given pixel displacement model.
+
+    ucov -- (ncomp,ncomp,Npix,Npix) array where Npix = Ny*Nx
+    alpha_pix -- (2,Ny,Nx) array of lensing displacements in pixel units
+    kbeam -- (Ny,Nx) array of 2d beam wavenumbers
+
+    """
+    from enlib import lensing as enlensing
+
+    assert ucov.ndim==4
+    ncomp = ucov.shape[0]
+    assert ncomp==ucov.shape[1]
+    assert 1 <= ncomp <= 3
+    
+    for py in range(ncomp):
+        for px in range(py,ncomp):
+            Scov = ucov.copy()
+            for i in range(ucov.shape[0]):
+                unlensed = enmap.enmap(Scov[i,:].copy().reshape(shape),wcs)
+                lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+                if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+                Scov[i,:] = lensed.ravel()
+            for j in range(ucov.shape[1]):
+                unlensed = enmap.enmap(Scov[:,j].copy().reshape(shape),wcs)
+                lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+                if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+                Scov[:,j] = lensed.ravel()
+
+    if (bshape is not None) and (bshape!=shape):
+        ny,nx = shape
+        Scov = Scov.reshape((ny,nx,ny,nx))
+        bny,bnx = bshape
+        sy = ny//2-bny//2
+        ey = sy + bny
+        sx = nx//2-bnx//2
+        ex = sx + bnx
+        Scov = Scov[sy:ey,sx:ex,sy:ey,sx:ex].reshape((np.prod(bshape),np.prod(bshape)))
+    return Scov
+
+
 def lensing_noise(ells,ntt,nee,nbb,
                   ellmin_t,ellmin_e,ellmin_b,
                   ellmax_t,ellmax_e,ellmax_b,

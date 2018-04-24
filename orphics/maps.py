@@ -32,7 +32,7 @@ def make_geometry(shape,wcs,cmb2d_TEB,n2d_IQU,hole_radius,context_width=None,n=N
     """
 
     # Make a flat stamp geometry
-    if res is None: res = resolution(shape,wcs)
+    if res is None: res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
     if n is None: n = int(context_width/res)
     tshape,twcs = enmap.geometry(pos=(0,0),shape=(n,n),res=res,proj='car')
     modrmap = enmap.modrmap(tshape,twcs)
@@ -47,8 +47,8 @@ def make_geometry(shape,wcs,cmb2d_TEB,n2d_IQU,hole_radius,context_width=None,n=N
     m1 = np.where(amodrmap.reshape(-1)<hole_radius)[0]
     m2 = np.where(amodrmap.reshape(-1)>=hole_radius)[0]
 
-    # Get the pix-pix covariance on the stamp geometry CMB theory, beam and 2D noise on the big map
-    pcov = stamp_pixcov(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
+    # Get the pix-pix covariance on the stamp geometry given CMB theory, beam and 2D noise on the big map
+    pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
     # Make sure that the pcov is in the right order vector(I,Q,U)
     pcov = np.transpose(pcov,(0,2,1,3))
     pcov = pcov.reshape((ncomp*n**2,ncomp*n**2))
@@ -74,21 +74,28 @@ def make_geometry(shape,wcs,cmb2d_TEB,n2d_IQU,hole_radius,context_width=None,n=N
     mul2 = Cinv[m1][:,m2]
     mean_mul = -np.linalg.solve(cslice,mul2)
     cov = np.linalg.inv(Cinv[m1][:,m1])
+    cov_root = utils.eigpow(cov,0.5)
     
-    return pcov,mean_mul, cov
+    return pcov, mean_mul, cov_root
 
 
-def rotate_teb_to_iqu(shape,wcs,p2d,iau=False):
-    rot = np.zeros((3,3,p2d.shape[-2],p2d.shape[-1]))
+def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
+    """Rotate a 2D power spectrum from TQU to TEB (inverse=False) or
+    back (inverse=True). cov is a (3,3,Ny,Nx) 2D power spectrum.
+    """
+    rot = np.zeros((3,3,cov.shape[-2],cov.shape[-1]))
     rot[0,0,:,:] = 1
-    prot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=True, iau=iau)
+    prot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=inverse, iau=iau)
     rot[1:,1:,:,:] = prot
     Rt = np.transpose(rot, (1,0,2,3))
-    tmp = np.einsum("ab...,bc...->ac...",rot,p2d[:,:,:,:].copy())
-    p2dIQU = np.einsum("ab...,bc...->ac...",tmp,Rt)    
-    return p2dIQU
+    tmp = np.einsum("ab...,bc...->ac...",rot,cov)
+    rp2d = np.einsum("ab...,bc...->ac...",tmp,Rt)    
+    return rp2d
 
-def stamp_pixcov(N,cmb2d_TEB,n2d_IQU,beam2d=None,iau=False):
+def stamp_pixcov_from_theory(N,cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False):
+    """Return the pixel covariance for a stamp N pixels across given the 2D IQU CMB power spectrum,
+    2D beam template and 2D IQU noise power spectrum.
+    """
     n2d = n2d_IQU
     assert n2d.ndim==4
     ncomp = n2d.shape[0]
@@ -98,33 +105,20 @@ def stamp_pixcov(N,cmb2d_TEB,n2d_IQU,beam2d=None,iau=False):
     wcs = n2d.wcs
     shape = n2d.shape[-2:]
 
-    if ncomp==3: cmb2d = rotate_teb_to_iqu(shape,wcs,cmb2d_TEB,iau=iau)
-    
-    return stamp_pixcov_2d(N,cmb2d,beam2d,n2d)
-    
-def stamp_pixcov_2d(N,cmb2d_IQU,beam2d,n2d_IQU):
-    """Return the pixel covariance for a stamp N pixels across given the 2D IQU CMB power spectrum,
-    2D beam template and 2D IQU noise power spectrum.
-    """
+    if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,cmb2d_TEB,iau=iau,inverse=True)
+    p2d = cmb2d*beam2d**2.+n2d
+    return fcov_to_rcorr(shape,wcs,p2d,N)
+
+def fcov_to_rcorr(shape,wcs,p2d,N):
     from enlib import jointmap as jm
-    n2d = n2d_IQU
-    assert n2d.ndim==4
-    ncomp = n2d.shape[0]
-
-    wcs = n2d.wcs
-    shape = n2d.shape[-2:]
-    
-
-    p2d = cmb2d_IQU*beam2d**2.+n2d
+    ncomp = p2d.shape[0]
     p2d *= np.prod(shape[-2:])/enmap.area(shape,wcs)
-    
-    ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),n2d.wcs)
+    ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),wcs)
     for i in range(ncomp):
         for j in range(i,ncomp):
             dcorr = jm.ps2d_to_mat(p2d[i,j].copy(), N).reshape((N*N,N*N))
             ocorr[i,j] = dcorr.copy()
             if i!=j: ocorr[j,i] = dcorr.copy()
-            
     return ocorr
 
 
