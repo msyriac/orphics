@@ -1555,6 +1555,10 @@ class Estimator(object):
         
         kappaft = -self.fmask_func(AL*fft(rawKappa,axes=[-2,-1]))
         #kappaft = np.nan_to_num(-AL*fft(rawKappa,axes=[-2,-1])) # added after beam convolved change
+
+        if returnFt:
+            return kappaft
+        
         self.kappa = ifft(kappaft,axes=[-2,-1],normalize=True).real
         try:
             #raise
@@ -1604,22 +1608,19 @@ class Estimator(object):
         #     pl.done("output/nankappa.png")
         #     sys.exit(0)
 
-        if self.verbose:
-            elapTime = time.time() - startTime
-            print(("Time for core kappa was ", elapTime ," seconds."))
+        # if self.verbose:
+        #     elapTime = time.time() - startTime
+        #     print(("Time for core kappa was ", elapTime ," seconds."))
 
-        if self.doCurl:
-            OmAL = self.OmAL[XY]*fMask
-            rawCurl = ifft(1.j*lx*kPy - 1.j*ly*kPx,axes=[-2,-1],normalize=True).real
-            self.curl = -ifft(OmAL*fft(rawCurl,axes=[-2,-1]),axes=[-2,-1],normalize=True)
-            return self.kappa, self.curl
+        # if self.doCurl:
+        #     OmAL = self.OmAL[XY]*fMask
+        #     rawCurl = ifft(1.j*lx*kPy - 1.j*ly*kPx,axes=[-2,-1],normalize=True).real
+        #     self.curl = -ifft(OmAL*fft(rawCurl,axes=[-2,-1]),axes=[-2,-1],normalize=True)
+        #     return self.kappa, self.curl
 
 
 
-        if returnFt:
-            return self.kappa,kappaft
-        else:
-            return self.kappa
+        return self.kappa
 
 
 

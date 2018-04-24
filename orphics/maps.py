@@ -297,9 +297,9 @@ class MapGen(object):
                             self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
 
-        def get_map(self,seed=None,scalar=False,iau=True):
+        def get_map(self,seed=None,scalar=False,iau=True,real=False):
                 if seed is not None: np.random.seed(seed)
-                rand = enmap.rand_gauss_harm(self.shape, self.wcs)
+                rand = enmap.fft(enmap.rand_gauss(self.shape, self.wcs)) if real else enmap.rand_gauss_harm(self.shape, self.wcs)
                 data = enmap.map_mul(self.covsqrt, rand)
                 kmap = enmap.ndmap(data, self.wcs)
                 if scalar:
