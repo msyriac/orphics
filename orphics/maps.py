@@ -10,6 +10,23 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 
 ### ENMAP HELPER FUNCTIONS AND CLASSES
+def map_ifft(x): return enmap.ifft(x).real
+def corrfun_thumb(corr, n):
+	tmp = np.roll(np.roll(corr, n, -1)[...,:2*n], n, -2)[...,:2*n,:]
+	return np.roll(np.roll(tmp, -n, -1), -n, -2)
+
+def corr_to_mat(corr, n):
+	res = enmap.zeros([n,n,n,n],dtype=corr.dtype)
+	for i in range(n):
+		tmp = np.roll(corr, i, 0)[:n,:]
+		for j in range(n):
+			res[i,j] = np.roll(tmp, j, 1)[:,:n]
+	return res
+def ps2d_to_mat(ps2d, n):
+	corrfun = map_ifft(ps2d+0j)/(ps2d.shape[-2]*ps2d.shape[-1])**0.5
+	thumb   = corrfun_thumb(corrfun, n)
+	mat     = corr_to_mat(thumb, n)
+	return mat
 
 
 def make_geometry(shape,wcs,cmb2d_TEB,n2d_IQU,hole_radius,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None):
@@ -89,6 +106,7 @@ def rotate_teb_to_iqu(shape,wcs,p2d,iau=False):
     return p2dIQU
 
 def stamp_pixcov(N,cmb2d_TEB,n2d_IQU,beam2d=None,iau=False):
+    cmb2d = cmb2d_TEB
     n2d = n2d_IQU
     assert n2d.ndim==4
     ncomp = n2d.shape[0]
@@ -106,7 +124,6 @@ def stamp_pixcov_2d(N,cmb2d_IQU,beam2d,n2d_IQU):
     """Return the pixel covariance for a stamp N pixels across given the 2D IQU CMB power spectrum,
     2D beam template and 2D IQU noise power spectrum.
     """
-    from enlib import jointmap as jm
     n2d = n2d_IQU
     assert n2d.ndim==4
     ncomp = n2d.shape[0]
@@ -121,7 +138,7 @@ def stamp_pixcov_2d(N,cmb2d_IQU,beam2d,n2d_IQU):
     ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),n2d.wcs)
     for i in range(ncomp):
         for j in range(i,ncomp):
-            dcorr = jm.ps2d_to_mat(p2d[i,j].copy(), N).reshape((N*N,N*N))
+            dcorr = ps2d_to_mat(p2d[i,j].copy(), N).reshape((N*N,N*N))
             ocorr[i,j] = dcorr.copy()
             if i!=j: ocorr[j,i] = dcorr.copy()
             
@@ -1920,7 +1937,7 @@ class Stacker(object):
 
 
     
-def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False):
+def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False,res=None):
     Ny,Nx = imap.shape
 
     # see enmap.sky2pix for "corner" options
@@ -1934,7 +1951,10 @@ def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False
         iy,ix = imap.sky2pix(coords=(dec,ra),corner=corner)
 
     
-    res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
+    if res is None:
+        res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
+    else:
+        res = res*180./np.pi*60.
     Npix = int(arcmin_width/res)
     if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
     cutout = imap[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
