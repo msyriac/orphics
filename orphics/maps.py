@@ -9,99 +9,12 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 
-### ENMAP HELPER FUNCTIONS AND CLASSES
-def map_ifft(x): return enmap.ifft(x).real
-def corrfun_thumb(corr, n):
-	tmp = np.roll(np.roll(corr, n, -1)[...,:2*n], n, -2)[...,:2*n,:]
-	return np.roll(np.roll(tmp, -n, -1), -n, -2)
-
-def corr_to_mat(corr, n):
-	res = enmap.zeros([n,n,n,n],dtype=corr.dtype)
-	for i in range(n):
-		tmp = np.roll(corr, i, 0)[:n,:]
-		for j in range(n):
-			res[i,j] = np.roll(tmp, j, 1)[:,:n]
-	return res
-def ps2d_to_mat(ps2d, n):
-	corrfun = map_ifft(ps2d+0j)/(ps2d.shape[-2]*ps2d.shape[-1])**0.5
-	thumb   = corrfun_thumb(corrfun, n)
-	mat     = corr_to_mat(thumb, n)
-	return mat
-
-
-def make_geometry(shape,wcs,hole_radius,cmb2d_TEB=None,n2d_IQU=None,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None,tot_pow2d=None):
-
-    """
-    Make covariances for brute force maxlike inpainting of CMB maps.
-    Eq 3 of arXiv:1109.0286
-
-    shape,wcs -- enmap geometry of big map
-    cmb2d_TEB -- (ncomp,ncomp,Ny,Nx) 2D CMB power in physical units
-    n2d_IQU -- (ncomp,ncomp,Ny,Nx) 2D noise power in physical units
-    hole_radius in radians
-    context_width in radians or n as number of pixels
-    beam2d -- 2D beam template
-    deproject -- whether to deproject common mode
-    iau -- whether to use IAU convention for polarization
-    res -- specify resolution in radians instead of inferring from enmap geometry
-
-
-    """
-
-    # Make a flat stamp geometry
-    if res is None: res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
-    if n is None: n = int(context_width/res)
-    tshape,twcs = enmap.geometry(pos=(0,0),shape=(n,n),res=res,proj='car')
-    modrmap = enmap.modrmap(tshape,twcs)
-
-    # Do we have polarization?
-    n2d = n2d_IQU
-    ncomp = n2d.shape[0]
-    assert ncomp==1 or ncomp==2 or ncomp==3
-
-    # Select the hole (m1) and context(m2) across all components
-    amodrmap = np.repeat(modrmap.reshape((1,n,n)),ncomp,0)
-    m1 = np.where(amodrmap.reshape(-1)<hole_radius)[0]
-    m2 = np.where(amodrmap.reshape(-1)>=hole_radius)[0]
-
-    # Get the pix-pix covariance on the stamp geometry given CMB theory, beam and 2D noise on the big map
-    if tot_pow2d is not None:
-            pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
-    else:
-            pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
-    # Make sure that the pcov is in the right order vector(I,Q,U)
-    pcov = np.transpose(pcov,(0,2,1,3))
-    pcov = pcov.reshape((ncomp*n**2,ncomp*n**2))
-
-    # Invert
-    Cinv = np.linalg.inv(pcov)
-    
-    # Woodbury deproject common mode
-    if deproject:
-        # Deproject I,Q,U common mode separately
-        #u = (np.zeros((n*n,ncomp,ncomp))+np.eye(ncomp)).reshape(n*n*ncomp,ncomp)
-        u = np.zeros((n*n*ncomp,ncomp))
-        for i in range(ncomp):
-            u[i*n*n:(i+1)*n*n,i] = 1
-        #u = np.ones((ncomp*n**2,1)) # Deproject mode common to all of I,Q,U
-        Cinvu = np.linalg.solve(pcov,u)
-        precalc = np.dot(Cinvu,np.linalg.solve(np.dot(u.T,Cinvu),u.T))
-        correction = np.dot(precalc,Cinv)
-        Cinv -= correction
-    
-    # Get matrices for maxlike solution Eq 3 of arXiv:1109.0286
-    cslice = Cinv[m1][:,m1]
-    mul2 = Cinv[m1][:,m2]
-    mean_mul = -np.linalg.solve(cslice,mul2)
-    cov = np.linalg.inv(Cinv[m1][:,m1])
-    cov_root = utils.eigpow(cov,0.5)
-    
-    return pcov, mean_mul, cov_root
-
-
 def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
     """Rotate a 2D power spectrum from TQU to TEB (inverse=False) or
     back (inverse=True). cov is a (3,3,Ny,Nx) 2D power spectrum.
+    WARNING: This function is duplicated in orphics.pixcov to make 
+    that module independent. Ideally, it should be implemented in
+    enlib.enmap.
     """
     rot = np.zeros((3,3,cov.shape[-2],cov.shape[-1]))
     rot[0,0,:,:] = 1
