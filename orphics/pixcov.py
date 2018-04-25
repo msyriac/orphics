@@ -250,8 +250,6 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
             m1 = geometry['m1']  # hole
             m2 = geometry['m2']  # context
             ncomp = geometry['ncomp']
-            #geometry['hole_radius']
-            #geometry['res']
 
             if ncomp==1 or ncomp==3:
                 polslice = np.s_[:ncomp,...]
