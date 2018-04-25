@@ -164,6 +164,8 @@ def make_geometry(shape,wcs,hole_radius,cmb2d_TEB=None,n2d_IQU=None,context_widt
     geometry['meanmul'] = mean_mul
     geometry['n'] = n
     geometry['res'] = res
+    geometry['m1'] = m1
+    geometry['m2'] = m2
     geometry['ncomp'] = ncomp
     geometry['hole_radius'] = hole_radius
     if store_pcov: geometry['pcov'] = pcov
@@ -185,36 +187,14 @@ def paste(stamp,m,paste_this):
     return a
 
 
-def mask_map(imap,iys,ixs,hole_arc,hole_frac=0.6):
-    shape,wcs = imap.shape,imap.wcs
-    Ny,Nx = shape[-2:]
-    px = resolution(shape,wcs)*60.*180./np.pi
-    hole_n = int(round(hole_arc/px))
-    hole_ny = hole_nx = hole_n
-    oshape,owcs = enmap.geometry(pos=(0.,0.),shape=(2*hole_n,2*hole_n),res=px*np.pi/180./60.)
-    modrmap = enmap.modrmap(oshape,owcs)
-    mask = enmap.ones(shape,wcs)
-    
-    for iy,ix in zip(iys,ixs):
-        if iy<=hole_n or ix<=hole_n or iy>=(Ny-hole_n) or ix>=(Nx-hole_n): continue
-        vslice = imap[np.int(iy-hole_ny):np.int(iy+hole_ny),np.int(ix-hole_nx):np.int(ix+hole_nx)]
-        if np.any(vslice.shape!=oshape): continue
-        vslice[modrmap<(hole_frac*hole_arc)*np.pi/180./60.] = np.nan # !!!! could cause a bias
-        mask[np.int(iy-hole_ny):np.int(iy+hole_ny),np.int(ix-hole_nx):np.int(ix+hole_nx)][modrmap<hole_arc*np.pi/180./60.] = 0
-        
-    return mask
-
-
-def inpaint(imap,coords_deg,do_pols,hole_radius_arcmin=5.,npix_context=60,resolution_arcmin=0.5,
+def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arcmin=0.5,
             cmb2d_TEB=None,n2d_IQU=None,beam2d=None,deproject=True,iau=False,tot_pow2d=None,
-            geometry_tags=None,geometry_dict=None):
+            geometry_tags=None,geometry_dicts=None):
     """Inpaint I, Q and U maps jointly accounting for their covariance using brute-force pre-calculated
     pixel covariance matrices.
     imap -- (ncomp,Ny,Nx) map to be filled, where ncomp is 1 or 3
     coords_deg -- (nobj,2) array where nobj is number of objects to inpaint, 
                and the columns are dec and ra in degrees
-    do_pols -- (nobj,) array of booleans whether to inpaint Q/U map for those objects. 
-               Should be true for polarized sources.
 
     # BASIC/DEBUG USAGE : only allows for single geometry for all objects, and will do slow calculation here.
 
@@ -238,36 +218,73 @@ def inpaint(imap,coords_deg,do_pols,hole_radius_arcmin=5.,npix_context=60,resolu
                        then geometry_dicts['ptsrc5arcmin'] should be a geometry dict such that
                        geometry_dicts['ptsrc5arcmin']['meanmul'] and geometry_dicts['ptsrc5arcmin']['covsqrt'] exist.
 
+    # NOTE ON POLARIZATION AND ARRAY SHAPES
     """
-    #for gtags in geometry_tags:
-        
 
+    shape,wcs = imap.shape,imap.wcs
+    Nobj = coords.shape[0]
+    assert coords.ndim==2, "Wrong shape for coordinates."
+    assert imap.ndim==3, "Input maps have to be of shape (ncomp,Ny,Nx)"
     
-def inpaint_map(imap,ras,decs,radii_tags,radii_dict,tot_power_2d,seed=None):
-    """
-    Brute-force inpaints a map in circular regions.
+    if (geometry_tags is None) or (geometry_dicts is None):
+        geometry_tags = ['basic']*Nobj
+        geometry_dicts = {}
+        geometry_dicts['basic'] = 
+        make_geometry(shape,wcs,np.deg2rad(hole_radius_arcmin/60.),cmb2d_TEB=cmb2d_TEB,n2d_IQU=n2d_IQU,context_width=None,n=npix_context,beam2d=beam2d,deproject=deproject,iau=iau,res=np.deg2rad(resolution_arcmin),tot_pow2d=tot_pow2d,store_pcov=False)
 
-    imap -- (Ny,Nx) enmap
-    ras  -- list of RA of centers in degrees, length M
-    decs -- list of DEC of centers in degrees, length M
-    radii -- list of strings specifying radius tag for each object, length M
-    radii_dict -- dict mapping radius tag string to float value of radius in arcminutes, length K
-                  Most expensive operation scales with K.
-    tot_power_2d -- total power in map in physical units (e.g. uK^2 radians)
+    omap = imap.copy()
+    pixs = enmap.sky2pix(np.deg2rad(coords),corner=False)
+    fround = lambda x : int(np.round(x))
+    pad = 1
 
-    """
+    skipped = 0
+    last_tag = ''
+    for i in range(Nobj):
 
+        geotag = geometry_tags[i]
+        if last_tag != geotag:
+            geo = geometry_dicts[geotag]
+            cov_root = geometry['covsqrt']
+            mean_mul = geometry['meanmul'] 
+            Npix = geometry['n']
+            m1 = geometry['m1']  # hole
+            m2 = geometry['m2']  # context
+            ncomp = geometry['ncomp']
+            #geometry['hole_radius']
+            #geometry['res']
 
-    class G:
-        pass
+            if ncomp==1 or ncomp==3:
+                polslice = np.s_[:ncomp,...]
+            elif ncomp==2:
+                polslice = np.s_[1:,...]
+            else:
+                raise ValueError
 
-    geometries = {}
-    tags = radii_dict.keys()
-    for key in tags:
-        geometries[key] = calculate_circular_geometry(shape,wcs)
+        
+        iy,ix = pixs[i,:]
+        if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad):
+            skipped += 1
+            continue
+        stamp = omap[polslice][:,fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
+        if all(cutout.shape!=(Npix,Npix)):
+            skipped += 1
+            continue
+            
 
+        # Set the masked region to be zero
+        stamp[:,m1] = 0.
 
+        # Get the mean infill
+        mean = np.dot(mean_mul,stamp.reshape(-1)[m2])
+        # Get a random realization (this could be moved outside the loop)
+        r = np.random.normal(0.,1.,size=(m1.size))
+        rand = np.dot(cov_root,r)
+        sim = mean + rand         
 
+        rstamp = paste(stamp,m1,sim)
+        stamp[:,:,:] = rstamp[:,:,:]
+    
+    return omap
 
 
 def get_geometry_regions(ncomp,n,res,hole_radius):
@@ -281,95 +298,6 @@ def get_geometry_regions(ncomp,n,res,hole_radius):
     
     return m1,m2
 
-
-
-
-def fill_hole(masked_stamp,meanMatrix,holeArc,m1,m2,covRoot=None):
-    '''Returns the result of an inpaint operation as a 1d unraveled vector
-
-    Arguments
-    ---------
-
-    masked_liteMap_stamp - the cutout stamp that contains a masked hole and
-                           unmasked context
-    meanMatrix           - an (nh,nc) matrix. See docs for make_circular_geometry
-    holeArc              - radius of masked hole in arcminutes
-    m1                   - a 1d boolean selecting the hole region on an unraveled stamp
-    m2                   - a 1d boolean selecting the context region on an unraveled stamp
-    covRoot              - the square root of the covariance matrix inside the hole. See
-                           docs for make_circular_geometry. If unspecified, the random
-                           realization returned is zero.
-
-    Returns
-    -------
-
-    mean  -  a 1d (nh) vector containing the mean inpainted value constrained according
-             to the context
-    rand  -  a 1d (nh) vector containing a random realization inside the hole
-    sim   -  a 1d (nh) vector containing the sum of mean and rand
-
-    '''
-
-    mean = np.dot(meanMatrix,masked_stamp.reshape(-1)[m2])
-    r = np.random.normal(0.,1.,size=(m1.size))
-    if covRoot is not None:
-        rand = np.dot(covRoot,r)
-    else:
-        rand = 0.
-    sim = mean + rand
-    return mean, rand, sim
-
-                                                      
-
-
-
-def fill_map(imap,iys,ixs,hole_arc,mean_mul,cov_root,m1,tshape,twcs,seed=None):
-    Ny,Nx = imap.shape[-2:]
-    sny,snx = tshape[-2:]
-    modrmap = enmap.modrmap(tshape,twcs)
-    ttemplate = enmap.empty(tshape,twcs)
-
-    iys = iys.astype(np.int)
-    ixs = ixs.astype(np.int)
-
-    m1 = np.where(modrmap.reshape(-1)<hole_arc*np.pi/180./60.)[0]
-    m2 = np.where(modrmap.reshape(-1)>=hole_arc*np.pi/180./60.)[0]    
-    if seed is not None: np.random.seed(seed)
-
-    # Further improvement possible by pre-calculating random vectors
-    
-    outside = 0
-    j = 0
-    for i,(iy,ix) in enumerate(zip(iys,ixs)):
-
-        sy = iy-sny/2
-        ey = iy+sny/2
-        sx = ix-snx/2
-        ex = ix+snx/2
-        oslice = imap[sy:ey,sx:ex]
-
-        if np.any(oslice.shape!=tshape) or sy<0 or sx<0 or ey>=Ny or ex>=Nx:
-            outside+=1
-            continue
-
-        j += 1
-        ttemplate = oslice.copy()
-        
-        masked, maskedMean = prepare_circular_mask(ttemplate,hole_arc)
-                
-        masked = np.nan_to_num(masked)
-        mean, rand, sim = fill_hole(masked,mean_mul,hole_arc,m1,m2,cov_root)
-
-
-        a = masked.reshape(-1)
-        # a[m1] = sim+maskedMean
-        a[m1] = mean+maskedMean
-        a[m2] = oslice.reshape(-1)[m2]
-        oslice[:,:] = a.reshape(masked.shape)
-
-        
-        
-    if outside>0: print (outside, " pt source(s) at edge.")
 
 
 
