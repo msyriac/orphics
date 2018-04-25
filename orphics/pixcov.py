@@ -189,7 +189,7 @@ def paste(stamp,m,paste_this):
 
 def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arcmin=0.5,
             cmb2d_TEB=None,n2d_IQU=None,beam2d=None,deproject=True,iau=False,tot_pow2d=None,
-            geometry_tags=None,geometry_dicts=None):
+            geometry_tags=None,geometry_dicts=None,verbose=True):
     """Inpaint I, Q and U maps jointly accounting for their covariance using brute-force pre-calculated
     pixel covariance matrices.
     imap -- (ncomp,Ny,Nx) map to be filled, where ncomp is 1 or 3
@@ -254,6 +254,7 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
     last_tag = ''
     for i in range(Nobj):
 
+        # Get geometry for this object
         geotag = geometry_tags[i]
         if last_tag != geotag:
             geometry = geometry_dicts[geotag]
@@ -271,7 +272,8 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
                 raise NotImplementedError
             else:
                 raise ValueError
-        
+
+        # Slice out stamp
         iy,ix = pixs[:,i]
         if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad):
             skipped += 1
@@ -291,12 +293,14 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
         # Get a random realization (this could be moved outside the loop)
         r = np.random.normal(0.,1.,size=(m1.size))
         rand = np.dot(cov_root,r)
+        # Total
         sim = mean + rand
-        
+
+        # Paste into returned map
         rstamp = paste(stamp,m1,sim)
         stamp[:,:,:] = rstamp[:,:,:]
 
-    print(skipped,i)
+    if verbose: print("Objects skipped due to edges ", skipped , " / ",i)
     return omap
 
 
