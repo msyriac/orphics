@@ -1,6 +1,6 @@
 from __future__ import print_function
 import numpy as np
-from enlib import enmap,resample,bench
+from enlib import enmap,bench,utils
 
 """
 Utilities that manipulate pixel-pixel covariance
@@ -17,21 +17,21 @@ Applications include:
 # requires compilation (but these functions don't)
 def map_ifft(x): return enmap.ifft(x).real
 def corrfun_thumb(corr, n):
-	tmp = np.roll(np.roll(corr, n, -1)[...,:2*n], n, -2)[...,:2*n,:]
-	return np.roll(np.roll(tmp, -n, -1), -n, -2)
+    tmp = np.roll(np.roll(corr, n, -1)[...,:2*n], n, -2)[...,:2*n,:]
+    return np.roll(np.roll(tmp, -n, -1), -n, -2)
 
 def corr_to_mat(corr, n):
-	res = enmap.zeros([n,n,n,n],dtype=corr.dtype)
-	for i in range(n):
-		tmp = np.roll(corr, i, 0)[:n,:]
-		for j in range(n):
-			res[i,j] = np.roll(tmp, j, 1)[:,:n]
-	return res
+    res = enmap.zeros([n,n,n,n],dtype=corr.dtype)
+    for i in range(n):
+        tmp = np.roll(corr, i, 0)[:n,:]
+        for j in range(n):
+            res[i,j] = np.roll(tmp, j, 1)[:,:n]
+    return res
 def ps2d_to_mat(ps2d, n):
-	corrfun = map_ifft(ps2d+0j)/(ps2d.shape[-2]*ps2d.shape[-1])**0.5
-	thumb   = corrfun_thumb(corrfun, n)
-	mat     = corr_to_mat(thumb, n)
-	return mat
+    corrfun = map_ifft(ps2d+0j)/(ps2d.shape[-2]*ps2d.shape[-1])**0.5
+    thumb   = corrfun_thumb(corrfun, n)
+    mat     = corr_to_mat(thumb, n)
+    return mat
 
 ###########
 
@@ -193,10 +193,10 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
     """Inpaint I, Q and U maps jointly accounting for their covariance using brute-force pre-calculated
     pixel covariance matrices.
     imap -- (ncomp,Ny,Nx) map to be filled, where ncomp is 1 or 3
-    coords_deg -- (nobj,2) array where nobj is number of objects to inpaint, 
+    coords_deg -- (2,nobj) array where nobj is number of objects to inpaint, 
                and the columns are dec and ra in degrees
 
-    # BASIC/DEBUG USAGE : only allows for single geometry for all objects, and will do slow calculation here.
+    # BASIC/DEBUG MODE : only allows for single geometry for all objects, and will do slow calculation here.
 
     hole_radius_arcmin -- arcminute radius of hole for all objects
     npix_context       -- number of pixels for how wide the context region should be
@@ -209,7 +209,7 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
     deproject -- whether to deproject common mode (you almost definitely should)
     iau -- whether to use IAU convention for polarization
 
-    # ADVANCED USAGE (recommended!) : allows for multiple pre-calculated geometries. In a full pipeline,
+    # ADVANCED MODE (recommended!) : allows for multiple pre-calculated geometries. In a full pipeline,
     these geometries should be pre-calculated once and used for all simulations.
     geometry_tags -- (nobj,) list of strings indicating key of dictionary 
                       geometry_dict that corresponds to the hole+context geometry to use.
@@ -219,21 +219,34 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
                        geometry_dicts['ptsrc5arcmin']['meanmul'] and geometry_dicts['ptsrc5arcmin']['covsqrt'] exist.
 
     # NOTE ON POLARIZATION AND ARRAY SHAPES
+
+    You may include polarization maps in the leading dimension of imap which is of shape (ncomp,Ny,Nx)
+    Whether or not polarization maps are inpainted depends on each geometry object.
+
+    In basic/debug mode, you supply cmb2D and n2D power spectra of shape (ncomp,ncomp,Ny,Nx). The leading dimensions of these arrays
+    determine whether (all of) the point sources are inpainted just in I (ncomp=1) or I/Q/U (ncomp=3).
+
+    In advanced mode, you have a dictionary of pre-calculated geometries (calculated using make_geometry). You specify which 
+    geometry to use for each point source by passing a list of dictionary keys in geometry_tags, which should be keys in
+    geometry_dicts. (see e.g. above)
+    Whether each point source is inpainted in I or I/Q/U is then determined by the shape of cmb2D and n2D you passed to make_geometry
+    to make each unique geometry object.
     """
 
     shape,wcs = imap.shape,imap.wcs
-    Nobj = coords.shape[0]
-    assert coords.ndim==2, "Wrong shape for coordinates."
+    Nobj = coords_deg.shape[1]
+    Ny,Nx = shape[-2:]
+    assert coords_deg.ndim==2, "Wrong shape for coordinates."
     assert imap.ndim==3, "Input maps have to be of shape (ncomp,Ny,Nx)"
     
     if (geometry_tags is None) or (geometry_dicts is None):
         geometry_tags = ['basic']*Nobj
         geometry_dicts = {}
-        geometry_dicts['basic'] = 
-        make_geometry(shape,wcs,np.deg2rad(hole_radius_arcmin/60.),cmb2d_TEB=cmb2d_TEB,n2d_IQU=n2d_IQU,context_width=None,n=npix_context,beam2d=beam2d,deproject=deproject,iau=iau,res=np.deg2rad(resolution_arcmin),tot_pow2d=tot_pow2d,store_pcov=False)
+        geometry_dicts['basic'] = make_geometry(shape,wcs,np.deg2rad(hole_radius_arcmin/60.),cmb2d_TEB=cmb2d_TEB,n2d_IQU=n2d_IQU,context_width=None,n=npix_context,beam2d=beam2d,deproject=deproject,iau=iau,res=np.deg2rad(resolution_arcmin),tot_pow2d=tot_pow2d,store_pcov=False)
 
     omap = imap.copy()
-    pixs = enmap.sky2pix(np.deg2rad(coords),corner=False)
+    pixs = imap.sky2pix(np.deg2rad(coords_deg),corner=False)
+    print(pixs.shape)
     fround = lambda x : int(np.round(x))
     pad = 1
 
@@ -243,9 +256,9 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
 
         geotag = geometry_tags[i]
         if last_tag != geotag:
-            geo = geometry_dicts[geotag]
+            geometry = geometry_dicts[geotag]
             cov_root = geometry['covsqrt']
-            mean_mul = geometry['meanmul'] 
+            mean_mul = geometry['meanmul']
             Npix = geometry['n']
             m1 = geometry['m1']  # hole
             m2 = geometry['m2']  # context
@@ -254,34 +267,36 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
             if ncomp==1 or ncomp==3:
                 polslice = np.s_[:ncomp,...]
             elif ncomp==2:
-                polslice = np.s_[1:,...]
+                #polslice = np.s_[1:,...]
+                raise NotImplementedError
             else:
                 raise ValueError
-
         
-        iy,ix = pixs[i,:]
+        iy,ix = pixs[:,i]
         if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad):
             skipped += 1
             continue
         stamp = omap[polslice][:,fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
-        if all(cutout.shape!=(Npix,Npix)):
+        if stamp.shape!=(ncomp,Npix,Npix):
             skipped += 1
             continue
-            
 
+    
         # Set the masked region to be zero
-        stamp[:,m1] = 0.
+        cstamp = stamp.copy().reshape(-1)
+        cstamp[m1] = 0.
 
         # Get the mean infill
-        mean = np.dot(mean_mul,stamp.reshape(-1)[m2])
+        mean = np.dot(mean_mul,cstamp[m2])
         # Get a random realization (this could be moved outside the loop)
         r = np.random.normal(0.,1.,size=(m1.size))
         rand = np.dot(cov_root,r)
-        sim = mean + rand         
-
+        sim = mean + rand
+        
         rstamp = paste(stamp,m1,sim)
         stamp[:,:,:] = rstamp[:,:,:]
-    
+
+    print(skipped,i)
     return omap
 
 
@@ -295,10 +310,3 @@ def get_geometry_regions(ncomp,n,res,hole_radius):
     m2 = np.where(amodrmap.reshape(-1)>=hole_radius)[0]
     
     return m1,m2
-
-
-
-
-
-
-    
