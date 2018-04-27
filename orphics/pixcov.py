@@ -65,17 +65,17 @@ def stamp_pixcov_from_theory(N,cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False):
     2D beam template and 2D IQU noise power spectrum.
     """
     n2d = n2d_IQU
-    assert n2d.ndim==4
-    ncomp = n2d.shape[0]
-    assert n2d.shape[1]==ncomp
+    c = cmb2d_TEB
+    assert c.ndim==4
+    ncomp = c.shape[0]
+    assert c.shape[1]==ncomp
     assert ncomp==3 or ncomp==1
-    cmb2d = cmb2d_TEB
     
-    wcs = n2d.wcs
-    shape = n2d.shape[-2:]
+    wcs = c.wcs
+    shape = c.shape[-2:]
 
-    if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,cmb2d_TEB,iau=iau,inverse=True)
-    p2d = cmb2d*beam2d**2.+n2d
+    if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,c,iau=iau,inverse=True)
+    p2d = c*beam2d**2.+n2d
     return fcov_to_rcorr(shape,wcs,p2d,N)
 
 def fcov_to_rcorr(shape,wcs,p2d,N):
