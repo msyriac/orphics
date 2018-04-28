@@ -39,6 +39,7 @@ def lens_cov_pol(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,c
     ucov = np.transpose(ucov,(0,2,1,3))
     ucov = ucov.reshape((ncomp*n**2,ncomp*n**2))
 
+    # Scov = ucov
     npix = ncomp*n**2
 
     from orphics import stats,mpi
@@ -92,11 +93,14 @@ def lens_cov_pol(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,c
                 Scov[:,i] = data_vessel.copy()
     
 
+    Scov = Scov.reshape((ncomp,n*n,ncomp,n*n))
     if (npixout is not None) and (npixout!=n):
-        Scov = Scov.reshape((ncomp,n,n,ncomp,n,n))
         s = n//2-npixout//2
         e = s + npixout
-        Scov = Scov[:,s:e,s:e,:,s:e,s:e].reshape((ncomp*npixout**2,ncomp*npixout**2))
+        Scov = Scov[:,s:e,s:e,:,s:e,s:e].reshape((ncomp,npixout**2,ncomp,npixout**2)) 
+    Scov = np.transpose(Scov,(0,2,1,3))
+        
+        
     return Scov
 
 
