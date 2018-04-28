@@ -17,7 +17,7 @@ import time
 import cPickle as pickle
 
 
-def lens_cov_pol(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,comm=None):
+def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,comm=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,
     returns the lensed covmat for a given pixel displacement model.
 
@@ -35,11 +35,11 @@ def lens_cov_pol(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,c
     if len(shape)==2: shape = (1,)+shape
     n = shape[-2]
     assert n==shape[-1]
-    
+
+    ucov = iucov.copy()
     ucov = np.transpose(ucov,(0,2,1,3))
     ucov = ucov.reshape((ncomp*n**2,ncomp*n**2))
 
-    # Scov = ucov
     npix = ncomp*n**2
 
     from orphics import stats,mpi
@@ -95,6 +95,7 @@ def lens_cov_pol(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,c
 
     Scov = Scov.reshape((ncomp,n*n,ncomp,n*n))
     if (npixout is not None) and (npixout!=n):
+        Scov = Scov.reshape((ncomp,n,n,ncomp,n,n))
         s = n//2-npixout//2
         e = s + npixout
         Scov = Scov[:,s:e,s:e,:,s:e,s:e].reshape((ncomp,npixout**2,ncomp,npixout**2)) 
@@ -177,7 +178,7 @@ def lensing_noise(ells,ntt,nee,nbb,
     
     
 
-def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
+def lens_cov(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,
     returns the lensed covmat for a given pixel displacement model.
 
@@ -188,9 +189,8 @@ def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     """
     from enlib import lensing as enlensing
 
-    shape = alpha_pix.shape[-2:]
     Scov = ucov.copy()
-    wcs = ucov.wcs
+    
     for i in range(ucov.shape[0]):
         unlensed = enmap.enmap(Scov[i,:].copy().reshape(shape),wcs)
         lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
@@ -226,13 +226,14 @@ def beam_cov(ucov,kbeam):
 
     """
     Scov = ucov.copy()
-    shape = alpha_pix.shape[-2:]
+    wcs = ucov.wcs
+    shape = kbeam.shape[-2:]
     for i in range(Scov.shape[0]):
-        lensed = Scov[i,:].copy().reshape(shape) 
+        lensed = enmap.enmap(Scov[i,:].copy().reshape(shape) ,wcs)
         lensed = maps.filter_map(lensed,kbeam)
         Scov[i,:] = lensed.ravel()
     for j in range(Scov.shape[1]):
-        lensed = Scov[:,j].copy().reshape(shape)
+        lensed = enmap.enmap(Scov[:,j].copy().reshape(shape),wcs)
         lensed = maps.filter_map(lensed,kbeam)
         Scov[:,j] = lensed.ravel()
     return Scov
