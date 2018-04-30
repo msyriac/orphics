@@ -17,6 +17,94 @@ import time
 import cPickle as pickle
 
 
+def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,comm=None):
+    """Given the pix-pix covariance matrix for the unlensed CMB,
+    returns the lensed covmat for a given pixel displacement model.
+
+    ucov -- (ncomp,ncomp,Npix,Npix) array where Npix = Ny*Nx
+    alpha_pix -- (2,Ny,Nx) array of lensing displacements in pixel units
+    kbeam -- (Ny,Nx) array of 2d beam wavenumbers
+
+    """
+    from enlib import lensing as enlensing
+
+    assert ucov.ndim==4
+    ncomp = ucov.shape[0]
+    assert ncomp==ucov.shape[1]
+    assert 1 <= ncomp <= 3
+    if len(shape)==2: shape = (1,)+shape
+    n = shape[-2]
+    assert n==shape[-1]
+
+    ucov = iucov.copy()
+    ucov = np.transpose(ucov,(0,2,1,3))
+    ucov = ucov.reshape((ncomp*n**2,ncomp*n**2))
+
+    npix = ncomp*n**2
+
+    from orphics import stats,mpi
+    if comm is None: comm = mpi.MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    numcores = comm.Get_size()
+    num_each,each_tasks = mpi.mpi_distribute(npix,numcores)
+    my_tasks = each_tasks[rank]
+
+    if rank==0: Scov = np.zeros(ucov.shape,dtype=ucov.dtype)
+    
+    for i in my_tasks:
+        unlensed = enmap.enmap(ucov[i,:].copy().reshape(shape),wcs)
+        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        send_dat = lensed.reshape(-1)
+        if rank==0:
+            Scov[i,:] = send_dat.copy()
+        else:
+            comm.Send(send_dat, dest=0, tag=i)
+
+    if rank==0:
+        i = len(my_tasks)
+        data_vessel = np.empty(send_dat.shape, dtype=ucov.dtype)
+        for core in range(1,numcores):
+            for j in range(len(num_each[core])):
+                i += 1
+                self.comm.Recv(data_vessel, source=core, tag=i)
+                Scov[i,:] = data_vessel.copy()
+
+
+    comm.Barrier()
+
+    for i in my_tasks:
+        unlensed = enmap.enmap(Scov[:,i].copy().reshape(shape),wcs)
+        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
+        send_dat = lensed.reshape(-1)
+        if rank==0:
+            Scov[:,i] = send_dat.copy()
+        else:
+            comm.Send(send_dat, dest=0, tag=i)
+
+    if rank==0:
+        i = len(my_tasks)
+        data_vessel = np.empty(send_dat.shape, dtype=Scov.dtype)
+        for core in range(1,numcores):
+            for j in range(len(num_each[core])):
+                i += 1
+                self.comm.Recv(data_vessel, source=core, tag=i)
+                Scov[:,i] = data_vessel.copy()
+    
+
+    Scov = Scov.reshape((ncomp,n*n,ncomp,n*n))
+    if (npixout is not None) and (npixout!=n):
+        Scov = Scov.reshape((ncomp,n,n,ncomp,n,n))
+        s = n//2-npixout//2
+        e = s + npixout
+        Scov = Scov[:,s:e,s:e,:,s:e,s:e].reshape((ncomp,npixout**2,ncomp,npixout**2)) 
+    Scov = np.transpose(Scov,(0,2,1,3))
+        
+        
+    return Scov
+
+
 def lensing_noise(ells,ntt,nee,nbb,
                   ellmin_t,ellmin_e,ellmin_b,
                   ellmax_t,ellmax_e,ellmax_b,
@@ -90,7 +178,7 @@ def lensing_noise(ells,ntt,nee,nbb,
     
     
 
-def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
+def lens_cov(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,
     returns the lensed covmat for a given pixel displacement model.
 
@@ -101,9 +189,8 @@ def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     """
     from enlib import lensing as enlensing
 
-    shape = alpha_pix.shape[-2:]
     Scov = ucov.copy()
-    wcs = ucov.wcs
+    
     for i in range(ucov.shape[0]):
         unlensed = enmap.enmap(Scov[i,:].copy().reshape(shape),wcs)
         lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
@@ -119,10 +206,10 @@ def lens_cov(ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
         ny,nx = shape
         Scov = Scov.reshape((ny,nx,ny,nx))
         bny,bnx = bshape
-        sy = int(ny/2.-bny/2.)
-        ey = int(ny/2.+bny/2.)
-        sx = int(nx/2.-bnx/2.)
-        ex = int(nx/2.+bnx/2.)
+        sy = ny//2-bny//2
+        ey = sy + bny
+        sx = nx//2-bnx//2
+        ex = sx + bnx
         Scov = Scov[sy:ey,sx:ex,sy:ey,sx:ex].reshape((np.prod(bshape),np.prod(bshape)))
     return Scov
 
@@ -139,20 +226,22 @@ def beam_cov(ucov,kbeam):
 
     """
     Scov = ucov.copy()
-    shape = alpha_pix.shape[-2:]
+    wcs = ucov.wcs
+    shape = kbeam.shape[-2:]
     for i in range(Scov.shape[0]):
-        lensed = Scov[i,:].copy().reshape(shape) 
+        lensed = enmap.enmap(Scov[i,:].copy().reshape(shape) ,wcs)
         lensed = maps.filter_map(lensed,kbeam)
         Scov[i,:] = lensed.ravel()
     for j in range(Scov.shape[1]):
-        lensed = Scov[:,j].copy().reshape(shape)
+        lensed = enmap.enmap(Scov[:,j].copy().reshape(shape),wcs)
         lensed = maps.filter_map(lensed,kbeam)
         Scov[:,j] = lensed.ravel()
     return Scov
 
 
-def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=0.,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000):
+def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000):
     if noise2d is None: noise2d = np.zeros(shape[-2:])
+    if noise2d_P is None: noise2d_P = 2.*noise2d
     if beam2d is None: beam2d = np.ones(shape[-2:])
     return Estimator(shape,wcs,
                      theory,
@@ -1099,11 +1188,13 @@ class NlGenerator(object):
         
         return centers, Nlbinned
 
-    def getNlIterative(self,polCombs,kmin,kmax,tellmax,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False,max_iterations=np.inf,eff_at=None,kappa_min,kappa_max):
+    def getNlIterative(self,polCombs,pellmin,pellmax,dell=20,halo=True,dTolPercentage=1.,verbose=True,plot=False,max_iterations=np.inf,eff_at=60,kappa_min=0,kappa_max=np.inf):
 
-        fmask = maps.mask_space(self.shape,self.wcs,ellmin=kappa_min,ellmax=kappa_max)
+        kmax = max(pellmax,kappa_max)
+        kmin = 2
+        fmask = maps.mask_kspace(self.shape,self.wcs,lmin=kappa_min,lmax=kappa_max)
         Nleach = {}
-        bin_edges = np.arange(kmin-dell/2.,kmax+dell/2.,dell)#+dell
+        bin_edges = np.arange(2,kmax+dell/2.,dell)
         for polComb in polCombs:
             self.updateBins(bin_edges)
             AL = self.N.getNlkk2d(polComb,halo=halo)
@@ -1149,7 +1240,6 @@ class NlGenerator(object):
             bbNoise2D = self.N.delensClBB(Nldelens2d,fmask=fmask,halo=halo)
             ells, dclbb = delensBinner.bin(bbNoise2D)
             dclbb = sanitizePower(dclbb)
-            dclbb[ells<pellmin] = oclbb[ellsOrig<pellmin].copy()
             if inum>0:
                 newLens = np.nanmean(nlkk)
                 oldLens = np.nanmean(oldNl)
@@ -1173,14 +1263,19 @@ class NlGenerator(object):
             idx = (np.abs(array-value)).argmin()
             return idx
 
+        new_ells,new_bb = ells,dclbb
+        new_k_ells,new_nlkk = fillLowEll(bin_edges,sanitizePower(Nldelens),kmin)
+
+
         if eff_at is None:
             efficiency = ((origclbb-dclbb)*100./origclbb).max()
         else:
-            id_ell = find_nearest(ellsOrig,eff_at)
-            efficiency = ((origclbb[id_ell]-dclbb[id_ell])*100./origclbb[id_ell])
+            id_ellO = find_nearest(ellsOrig,eff_at)
+            id_ellD = find_nearest(new_ells,eff_at)
+            efficiency = ((origclbb[id_ellO]-new_bb[id_ellD])*100./origclbb[id_ellO])
 
-        new_ells,new_bb = fillLowEll(ells,dclbb,pellmin)
-        new_k_ells,new_nlkk = fillLowEll(bin_edges,sanitizePower(Nldelens),kmin)
+            
+        
         
         return new_k_ells,new_nlkk,new_ells,new_bb,efficiency
 
@@ -1549,6 +1644,10 @@ class Estimator(object):
         
         kappaft = -self.fmask_func(AL*fft(rawKappa,axes=[-2,-1]))
         #kappaft = np.nan_to_num(-AL*fft(rawKappa,axes=[-2,-1])) # added after beam convolved change
+
+        if returnFt:
+            return kappaft
+        
         self.kappa = ifft(kappaft,axes=[-2,-1],normalize=True).real
         try:
             #raise
@@ -1598,22 +1697,19 @@ class Estimator(object):
         #     pl.done("output/nankappa.png")
         #     sys.exit(0)
 
-        if self.verbose:
-            elapTime = time.time() - startTime
-            print(("Time for core kappa was ", elapTime ," seconds."))
+        # if self.verbose:
+        #     elapTime = time.time() - startTime
+        #     print(("Time for core kappa was ", elapTime ," seconds."))
 
-        if self.doCurl:
-            OmAL = self.OmAL[XY]*fMask
-            rawCurl = ifft(1.j*lx*kPy - 1.j*ly*kPx,axes=[-2,-1],normalize=True).real
-            self.curl = -ifft(OmAL*fft(rawCurl,axes=[-2,-1]),axes=[-2,-1],normalize=True)
-            return self.kappa, self.curl
+        # if self.doCurl:
+        #     OmAL = self.OmAL[XY]*fMask
+        #     rawCurl = ifft(1.j*lx*kPy - 1.j*ly*kPx,axes=[-2,-1],normalize=True).real
+        #     self.curl = -ifft(OmAL*fft(rawCurl,axes=[-2,-1]),axes=[-2,-1],normalize=True)
+        #     return self.kappa, self.curl
 
 
 
-        if returnFt:
-            return self.kappa,kappaft
-        else:
-            return self.kappa
+        return self.kappa
 
 
 

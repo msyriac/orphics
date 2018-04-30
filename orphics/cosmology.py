@@ -13,7 +13,7 @@ try:
 except:
     import pickle
 
-import time, re
+import time, re, os
 from scipy.integrate import odeint
 
 defaultConstants = {'TCMB': 2.7255
@@ -833,7 +833,11 @@ def validateMapType(mapXYType):
       bcolors.FAIL+"\""+mapXYType+"\" is an invalid map type. XY must be a two" + \
       " letter combination of T, E and B. e.g TT or TE."+bcolors.ENDC
 
-        
+
+def default_theory():
+    cambRoot = os.path.dirname(__file__)+"/../data/Aug6_highAcc_CDM"
+    return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
+    
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
     '''
     Given a CAMB path+output_root, reads CMB and lensing Cls into 
@@ -944,7 +948,7 @@ class LensForecast:
 
     def loadGG(self,ellsCls,Cls,ngal):
         self.ngalForeground = ngal
-        self.Nls['gg'] = lambda x: 1./(self.ngalForeground*1.18e7)
+        self.Nls['gg'] = lambda x: x*0.+1./(self.ngalForeground*1.18e7)
         self.theory.loadGenericCls(ellsCls,Cls,'gg')
     
         self._haveGG = True

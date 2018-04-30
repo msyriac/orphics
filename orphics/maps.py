@@ -9,7 +9,51 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
 
-### ENMAP HELPER FUNCTIONS AND CLASSES
+def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
+    """Rotate a 2D power spectrum from TQU to TEB (inverse=False) or
+    back (inverse=True). cov is a (3,3,Ny,Nx) 2D power spectrum.
+    WARNING: This function is duplicated in orphics.pixcov to make 
+    that module independent. Ideally, it should be implemented in
+    enlib.enmap.
+    """
+    rot = np.zeros((3,3,cov.shape[-2],cov.shape[-1]))
+    rot[0,0,:,:] = 1
+    prot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=inverse, iau=iau)
+    rot[1:,1:,:,:] = prot
+    Rt = np.transpose(rot, (1,0,2,3))
+    tmp = np.einsum("ab...,bc...->ac...",rot,cov)
+    rp2d = np.einsum("ab...,bc...->ac...",tmp,Rt)    
+    return rp2d
+
+def stamp_pixcov_from_theory(N,cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False):
+    """Return the pixel covariance for a stamp N pixels across given the 2D IQU CMB power spectrum,
+    2D beam template and 2D IQU noise power spectrum.
+    """
+    n2d = n2d_IQU
+    assert n2d.ndim==4
+    ncomp = n2d.shape[0]
+    assert n2d.shape[1]==ncomp
+    assert ncomp==3 or ncomp==1
+    cmb2d = cmb2d_TEB
+    
+    wcs = n2d.wcs
+    shape = n2d.shape[-2:]
+
+    if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,cmb2d_TEB,iau=iau,inverse=True)
+    p2d = cmb2d*beam2d**2.+n2d
+    return fcov_to_rcorr(shape,wcs,p2d,N)
+
+def fcov_to_rcorr(shape,wcs,p2d,N):
+    ncomp = p2d.shape[0]
+    p2d *= np.prod(shape[-2:])/enmap.area(shape,wcs)
+    ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),wcs)
+    for i in range(ncomp):
+        for j in range(i,ncomp):
+            dcorr = ps2d_to_mat(p2d[i,j].copy(), N).reshape((N*N,N*N))
+            ocorr[i,j] = dcorr.copy()
+            if i!=j: ocorr[j,i] = dcorr.copy()
+    return ocorr
+
 
 def binary_mask(mask,threshold=0.5):
     m = np.abs(mask)
@@ -25,10 +69,10 @@ def area_from_mask(mask):
 
 
 def crop_center(img,cropy,cropx):
-    y,x = img.shape
+    y,x = img.shape[-2:]
     startx = x//2-(cropx//2)
     starty = y//2-(cropy//2)
-    return img[starty:starty+cropy,startx:startx+cropx]
+    return img[...,starty:starty+cropy,startx:startx+cropx]
 
 def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None):
     """Get the binned power spectrum of a map in one line of code.
@@ -189,7 +233,7 @@ def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=F
     shape -- tuple specifying shape of 
     """
 
-    
+    if ndown<1: return cov
     ndown = np.array(ndown).ravel()
     if ndown.size==1:
         Ny,Nx = shape[-2:]
@@ -254,9 +298,9 @@ class MapGen(object):
                             self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
 
-        def get_map(self,seed=None,scalar=False,iau=True):
+        def get_map(self,seed=None,scalar=False,iau=True,real=False):
                 if seed is not None: np.random.seed(seed)
-                rand = enmap.rand_gauss_harm(self.shape, self.wcs)
+                rand = enmap.fft(enmap.rand_gauss(self.shape, self.wcs)) if real else enmap.rand_gauss_harm(self.shape, self.wcs)
                 data = enmap.map_mul(self.covsqrt, rand)
                 kmap = enmap.ndmap(data, self.wcs)
                 if scalar:
@@ -1736,7 +1780,8 @@ class SimoneMR2Reader(ACTMapReader):
     def __init__(self,map_root,beam_root,config_yaml_path,patch):
         ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
         self.patch = patch
-        eg_file = self._fstring(split=-1,season="s15" if (patch=="deep56" or patch=="deep8") else "s13",array="pa1",freq="150",day_night="night",pol="I")
+        #eg_file = self._fstring(split=-1,season="s15" if (patch=="deep56" or patch=="deep8") else "s13",array="pa1",freq="150",day_night="night",pol="I")
+        eg_file = self._fstring(split=-1,season="s14" if (patch=="deep56" or patch=="deep8") else "s13",array="pa2" if (patch=="deep56" or patch=="deep8") else "pa1",freq="150",day_night="night",pol="srcfree_I")
         self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
         
     def get_beam(self,season,array,freq="150",day_night="night"):
@@ -1744,14 +1789,14 @@ class SimoneMR2Reader(ACTMapReader):
         beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
         ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
         return ls, bells
-    def get_map(self,split,season,array,freq="150",day_night="night",full_map=True,weight=False,get_identifier=False,t_only=False,region=None):
+    def get_map(self,split,season,array,freq="150",day_night="night",full_map=True,weight=False,get_identifier=False,t_only=False,box=None):
         patch = self.patch
         maps = []
         maplist = ['srcfree_I','Q','U'] if not(t_only) else ['srcfree_I']
         for pol in maplist if not(weight) else [None]:
             fstr = self._hstring(season,array,freq,day_night) if weight else self._fstring(split,season,array,freq,day_night,pol)
-            cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
-            fmap = enmap.read_map(fstr)*np.sqrt(cal) 
+            cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) #if not(weight) else 1.
+            fmap = enmap.read_fits(fstr,box=box)*np.sqrt(cal) if not(weight) else np.nan_to_num(1./enmap.read_fits(fstr,box=box)**2.)
             if not(full_map):
                 bounds = self.patch_bounds(patch) 
                 retval = fmap.submap(bounds)
@@ -1771,12 +1816,15 @@ class SimoneMR2Reader(ACTMapReader):
         patch = self.patch
         # Change this function if the map naming scheme changes
         splitstr = "set0123" if split<0 or split>3 else "set"+str(split)
-        return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
+        #return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
+        return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
 
     def _hstring(self,season,array,freq,day_night):
         patch = self.patch
         splitstr = "set0123"
-        return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
+        #return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
+        #return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
+        return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_noise.fits"
 
 
 
@@ -1799,7 +1847,7 @@ class Stacker(object):
 
 
     
-def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False):
+def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False,res=None):
     Ny,Nx = imap.shape
 
     # see enmap.sky2pix for "corner" options
@@ -1813,7 +1861,10 @@ def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False
         iy,ix = imap.sky2pix(coords=(dec,ra),corner=corner)
 
     
-    res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
+    if res is None:
+        res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
+    else:
+        res = res*180./np.pi*60.
     Npix = int(arcmin_width/res)
     if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
     cutout = imap[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]

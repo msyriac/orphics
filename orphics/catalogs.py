@@ -192,9 +192,8 @@ class BOSSMapper(CatMapper):
     
 class HSCMapper(CatMapper):
 
-    def __init__(self,cat_file=None,pz_file=None,zmin=None,zmax=None,mask_threshold=4.,shape=None,wcs=None,nside=None):
+    def __init__(self,cat_file=None,pz_file=None,zmin=None,zmax=None,mask_threshold=4.,shape=None,wcs=None,nside=None,hp_coords="equatorial",pzname="mlz",pztype="best"):
         if cat_file[-5:]==".fits":
-            from astropy.io import fits
             f = fits.open(cat_file)
             self.cat = f[1].copy()
             f.close()
@@ -209,7 +208,8 @@ class HSCMapper(CatMapper):
         decs = self.cat.data['idec']
         self.wts = self.cat.data['ishape_hsm_regauss_derived_weight']
         if pz_file is not None:
-            raise NotImplementedError
+            fz = fits.open(pz_file)
+            self.zs = fz[1].data[pzname+"_photoz_"+pztype]
 
         CatMapper.__init__(self,ras,decs,shape,wcs,nside,hp_coords=hp_coords)
         self.hsc_wts = self.get_map(weights=self.wts)
