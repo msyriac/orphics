@@ -60,23 +60,24 @@ def resolution(shape,wcs):
 # General pixcov routines
 
 
-def stamp_pixcov_from_theory(N,cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False):
+def stamp_pixcov_from_theory(N,cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False,return_pow=False):
     """Return the pixel covariance for a stamp N pixels across given the 2D IQU CMB power spectrum,
     2D beam template and 2D IQU noise power spectrum.
     """
     n2d = n2d_IQU
-    assert n2d.ndim==4
-    ncomp = n2d.shape[0]
-    assert n2d.shape[1]==ncomp
-    assert ncomp==3 or ncomp==1
     cmb2d = cmb2d_TEB
+    assert cmb2d.ndim==4
+    ncomp = cmb2d.shape[0]
+    assert cmb2d.shape[1]==ncomp
+    assert ncomp==3 or ncomp==1
     
-    wcs = n2d.wcs
-    shape = n2d.shape[-2:]
+    wcs = cmb2d.wcs
+    shape = cmb2d.shape[-2:]
 
-    if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,cmb2d_TEB,iau=iau,inverse=True)
+    if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,cmb2d,iau=iau,inverse=True)
     p2d = cmb2d*beam2d**2.+n2d
-    return fcov_to_rcorr(shape,wcs,p2d,N)
+    if not(return_pow): return fcov_to_rcorr(shape,wcs,p2d,N)
+    return fcov_to_rcorr(shape,wcs,p2d,N), cmb2d
 
 def fcov_to_rcorr(shape,wcs,p2d,N):
     """Convert a 2D PS into a pix-pix covariance
@@ -132,7 +133,10 @@ def make_geometry(shape,wcs,hole_radius,cmb2d_TEB=None,n2d_IQU=None,context_widt
             pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
     else:
             pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
-    # Make sure that the pcov is in the right order vector(I,Q,U)
+    # --- Make sure that the pcov is in the right order vector(I,Q,U) ---
+    # It is currently in (ncomp,ncomp,n,n) order
+    # We transpose it to (ncomp,n,ncomp,n) order
+    # so that when it is reshaped into a 2D array, a row/column will correspond to an (I,Q,U) vector
     pcov = np.transpose(pcov,(0,2,1,3))
     pcov = pcov.reshape((ncomp*n**2,ncomp*n**2))
 

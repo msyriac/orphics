@@ -40,10 +40,10 @@ def area_from_mask(mask):
 
 
 def crop_center(img,cropy,cropx):
-    y,x = img.shape
+    y,x = img.shape[-2:]
     startx = x//2-(cropx//2)
     starty = y//2-(cropy//2)
-    return img[starty:starty+cropy,startx:startx+cropx]
+    return img[...,starty:starty+cropy,startx:startx+cropx]
 
 def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None):
     """Get the binned power spectrum of a map in one line of code.
