@@ -25,35 +25,6 @@ def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
     rp2d = np.einsum("ab...,bc...->ac...",tmp,Rt)    
     return rp2d
 
-def stamp_pixcov_from_theory(N,cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False):
-    """Return the pixel covariance for a stamp N pixels across given the 2D IQU CMB power spectrum,
-    2D beam template and 2D IQU noise power spectrum.
-    """
-    n2d = n2d_IQU
-    assert n2d.ndim==4
-    ncomp = n2d.shape[0]
-    assert n2d.shape[1]==ncomp
-    assert ncomp==3 or ncomp==1
-    cmb2d = cmb2d_TEB
-    
-    wcs = n2d.wcs
-    shape = n2d.shape[-2:]
-
-    if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,cmb2d_TEB,iau=iau,inverse=True)
-    p2d = cmb2d*beam2d**2.+n2d
-    return fcov_to_rcorr(shape,wcs,p2d,N)
-
-def fcov_to_rcorr(shape,wcs,p2d,N):
-    ncomp = p2d.shape[0]
-    p2d *= np.prod(shape[-2:])/enmap.area(shape,wcs)
-    ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),wcs)
-    for i in range(ncomp):
-        for j in range(i,ncomp):
-            dcorr = ps2d_to_mat(p2d[i,j].copy(), N).reshape((N*N,N*N))
-            ocorr[i,j] = dcorr.copy()
-            if i!=j: ocorr[j,i] = dcorr.copy()
-    return ocorr
-
 
 def binary_mask(mask,threshold=0.5):
     m = np.abs(mask)
@@ -1878,14 +1849,14 @@ def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False
 
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
-    # inputs in radians
+    # inputs in radians, outputs in arcmin^2
     stamp = instamp.copy()
     if modrmap is None: modrmap = stamp.modrmap()
     mean = stamp[np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean()
     stamp -= mean
     pix_scale=resolution(stamp.shape,stamp.wcs)*(180*60)/np.pi
     flux = stamp[modrmap<aperture_radius].sum()*pix_scale**2
-    return flux * enmap.area(stamp.shape,stamp.wcs )/ np.prod(stamp.shape[-2:])**2.
+    return flux #* enmap.area(stamp.shape,stamp.wcs )/ np.prod(stamp.shape[-2:])**2.  *((180*60)/np.pi)**2.
 
 
 
