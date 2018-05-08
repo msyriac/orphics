@@ -2,7 +2,7 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from enlib import enmap
+from enlib import enmap, utils, bench
 
 from scipy.integrate import simps
 from scipy.interpolate import splrep,splev
@@ -16,6 +16,8 @@ from orphics.stats import bin2D
 import time
 import cPickle as pickle
 
+from orphics import stats,mpi
+
 
 def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,comm=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,
@@ -28,9 +30,9 @@ def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,
     """
     from enlib import lensing as enlensing
 
-    assert ucov.ndim==4
-    ncomp = ucov.shape[0]
-    assert ncomp==ucov.shape[1]
+    assert iucov.ndim==4
+    ncomp = iucov.shape[0]
+    assert ncomp==iucov.shape[1]
     assert 1 <= ncomp <= 3
     if len(shape)==2: shape = (1,)+shape
     n = shape[-2]
@@ -42,57 +44,28 @@ def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,
 
     npix = ncomp*n**2
 
-    from orphics import stats,mpi
     if comm is None: comm = mpi.MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    numcores = comm.Get_size()
-    num_each,each_tasks = mpi.mpi_distribute(npix,numcores)
-    my_tasks = each_tasks[rank]
 
-    if rank==0: Scov = np.zeros(ucov.shape,dtype=ucov.dtype)
-    
-    for i in my_tasks:
-        unlensed = enmap.enmap(ucov[i,:].copy().reshape(shape),wcs)
+    def efunc(vec):
+        unlensed = enmap.enmap(vec.reshape(shape),wcs)
         lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
-        send_dat = lensed.reshape(-1)
-        if rank==0:
-            Scov[i,:] = send_dat.copy()
-        else:
-            comm.Send(send_dat, dest=0, tag=i)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam) # TODO: replace with convolution
+        # because for ~(60x60) arrays, it is probably much faster. >1 threads means worse performance
+        # with FFTs for these array sizes.
+        return np.asarray(lensed).reshape(-1)
 
-    if rank==0:
-        i = len(my_tasks)
-        data_vessel = np.empty(send_dat.shape, dtype=ucov.dtype)
-        for core in range(1,numcores):
-            for j in range(len(num_each[core])):
-                i += 1
-                self.comm.Recv(data_vessel, source=core, tag=i)
-                Scov[i,:] = data_vessel.copy()
-
-
-    comm.Barrier()
-
-    for i in my_tasks:
-        unlensed = enmap.enmap(Scov[:,i].copy().reshape(shape),wcs)
-        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
-        send_dat = lensed.reshape(-1)
-        if rank==0:
-            Scov[:,i] = send_dat.copy()
-        else:
-            comm.Send(send_dat, dest=0, tag=i)
-
-    if rank==0:
-        i = len(my_tasks)
-        data_vessel = np.empty(send_dat.shape, dtype=Scov.dtype)
-        for core in range(1,numcores):
-            for j in range(len(num_each[core])):
-                i += 1
-                self.comm.Recv(data_vessel, source=core, tag=i)
-                Scov[:,i] = data_vessel.copy()
     
+    Scov = np.zeros(ucov.shape,dtype=ucov.dtype)
+    for i in range(comm.rank, npix, comm.size):
+        Scov[i,:] = efunc(ucov[i,:])
+    Scov2 = utils.allreduce(Scov, comm)
 
+    Scov = np.zeros(ucov.shape,dtype=ucov.dtype)
+    for i in range(comm.rank, npix, comm.size):
+        Scov[:,i] = efunc(Scov2[:,i])
+    Scov = utils.allreduce(Scov, comm)
+
+    
     Scov = Scov.reshape((ncomp,n*n,ncomp,n*n))
     if (npixout is not None) and (npixout!=n):
         Scov = Scov.reshape((ncomp,n,n,ncomp,n,n))

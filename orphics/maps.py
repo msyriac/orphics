@@ -579,9 +579,9 @@ def diagonal_cov(power2d):
 
 def ncov(shape,wcs,noise_uk_arcmin):
     noise_uK_rad = noise_uk_arcmin*np.pi/180./60.
-    normfact = np.sqrt(np.prod(enmap.pixsize(shape,wcs)))
+    normfact = np.sqrt(np.prod(enmap.pixsize(shape[-2:],wcs)))
     noise_uK_pixel = noise_uK_rad/normfact
-    return np.diag([(noise_uK_pixel)**2.]*np.prod(shape))
+    return np.diag([(noise_uK_pixel)**2.]*np.prod(shape[-2:]))
 
 
 def pixcov(shape,wcs,fourier_cov):

@@ -23,6 +23,10 @@ def nostdout():
     sys.stdout = save_stdout
 
 
+@contextlib.contextmanager
+def no_context():
+    yield None
+    
 ## LOGGING
 
 class LoggerWriter:

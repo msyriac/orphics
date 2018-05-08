@@ -59,7 +59,14 @@ def fit_gauss(x,y,mu_guess=None,sigma_guess=None):
 
     
 class Solver(object):
+    """
+    Calculate Cinv . x
+    """
     def __init__(self,C,u=None):
+        """
+        C is an (NxN) covariance matrix
+        u is an (Nxk) template matrix for rank-k deprojection
+        """
         N = C.shape[0]
         if u is None: u = np.ones((N,1))
         Cinvu = np.linalg.solve(C,u)
@@ -329,6 +336,54 @@ class OQE(object):
         # return scipy.linalg.pinv2(cov)
 
 
+
+class OQESlim(object):
+    def __init__(self,fid_cov,dcov_dict,fid_params_dict,templates=None):
+
+        self.params = dcov_dict.keys()
+        self.fids = fid_params_dict
+        Nparams = len(self.params)
+        self.biases = {}
+        self.ps = {}
+        for param in self.params:
+            solution = solve(fid_cov,dcov_dict[param],u=templates)
+            self.ps[param] = solution.copy()
+            self.biases[param] = np.trace(self.ps[param])
+
+        self.Fisher = np.zeros((Nparams,Nparams))
+        param_combs = itertools.combinations_with_replacement(self.params,2)
+        for param1,param2 in param_combs:
+            i = self.params.index(param1)
+            j = self.params.index(param2)
+            self.Fisher[i,j] = 0.5 * np.trace(np.dot(self.ps[param1],self.ps[param2]))
+            if j!=i: self.Fisher[j,i] = self.Fisher[i,j]
+
+        self.Finv = np.linalg.inv(self.Fisher)
+        self.marg_errors = np.diagonal(self.Finv)**(1./2.)
+
+        self.s = Solver(fid_cov,u=templates)
+        self.solver = lambda x: self.s.solve(x)
+
+    def sigma(self):
+        return dict(zip(self.params,self.marg_errors.tolist()))
+
+    def estimate(self,data):
+        vec = []
+        for param in self.params:
+            cinvdat = self.solver(data)
+            fcore = np.dot(np.dot(data.T,self.ps[param]),cinvdat)
+            bsubbed = fcore - self.biases[param]
+            assert bsubbed.size == 1
+            vec.append(bsubbed)
+        vec = np.asarray(vec)
+        ans = 0.5 * np.dot(self.Finv,vec)
+        ans = dict(zip(self.params,ans.tolist()))
+        res = {}
+        for param in self.params:
+            res[param] = self.fids[param] + ans[param]
+        return res
+
+        
 class CinvUpdater(object):
 
     def __init__(self,cinvs,logdets,profile):
