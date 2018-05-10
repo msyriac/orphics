@@ -526,7 +526,7 @@ class QuadNorm(object):
         return np.nan_to_num(unreplaced**2./replaced)
     
     def getNlkk2d(self,XY,halo=True,l1Scale=1.,l2Scale=1.,setNl=True):
-        #if not(halo): raise NotImplementedError
+        if not(halo): raise NotImplementedError
         
         lx,ly = self.lxMap,self.lyMap
         lmap = self.modLMap
@@ -583,7 +583,7 @@ class QuadNorm(object):
 
 
                     
-                    calc = 2.*ell1*ell2*fft(ifft(preF,axes=[-2,-1])*ifft(preG,axes=[-2,-1])+ifft(preFX,axes=[-2,-1])*ifft(preGX,axes=[-2,-1])/2.,axes=[-2,-1])
+                    calc = 2.*ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True)+ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True)/2.,axes=[-2,-1])
                     allTerms += [calc]
           
 
