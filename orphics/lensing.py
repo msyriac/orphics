@@ -527,6 +527,7 @@ class QuadNorm(object):
     
     def getNlkk2d(self,XY,halo=True,l1Scale=1.,l2Scale=1.,setNl=True):
         #if not(halo): raise NotImplementedError
+        
         lx,ly = self.lxMap,self.lyMap
         lmap = self.modLMap
 
@@ -1613,11 +1614,6 @@ class Estimator(object):
 
         if self.verbose: startTime = time.time()
 
-        # HighMapStar = ifft(self.fmask_func(self.kHigh[Y]*WY*phaseY*phaseB),axes=[-2,-1],normalize=True).conjugate()
-        # kPx = fft(ifft(self.kGradx[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])
-        # kPy = fft(ifft(self.kGrady[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])        
-        # rawKappa = ifft(self.fmask_func(1.j*lx*kPx) + self.fmask_func(1.j*ly*kPy),axes=[-2,-1],normalize=True).real
-
         HighMapStar = ifft((self.kHigh[Y]*WY*phaseY*phaseB),axes=[-2,-1],normalize=True).conjugate()
         kPx = fft(ifft(self.kGradx[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])
         kPy = fft(ifft(self.kGrady[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])        
@@ -1627,30 +1623,15 @@ class Estimator(object):
 
 
         assert not(np.any(np.isnan(rawKappa)))
-        # debug_edges = np.arange(400,6000,50)
-        # import orphics.tools.stats as stats
-        # import orphics.tools.io as io
-        # io.quickPlot2d(rawKappa,"kappa.png")
-        # binner = stats.bin2D(self.N.modLMap,debug_edges)
-        # cents,ws = binner.bin(rawKappa.real)
-        # pl = io.Plotter()#scaleY='log')
-        # pl.add(cents,ws)
-        # pl._ax.set_xlim(2,6000)
-        # pl.done("rawkappa1d.png")
-        #sys.exit()
-
-
         lmap = self.N.modLMap
         
         kappaft = -self.fmask_func(AL*fft(rawKappa,axes=[-2,-1]))
-        #kappaft = np.nan_to_num(-AL*fft(rawKappa,axes=[-2,-1])) # added after beam convolved change
-
+        
         if returnFt:
             return kappaft
         
         self.kappa = ifft(kappaft,axes=[-2,-1],normalize=True).real
         try:
-            #raise
             assert not(np.any(np.isnan(self.kappa)))
         except:
             import orphics.tools.io as io

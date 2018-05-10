@@ -69,11 +69,13 @@ def dict_from_section(config,section_name):
 
     
 def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
+    exists = os.path.exists(dirpath)
     comm.Barrier()
     if comm.Get_rank()==0: 
-        if not os.path.exists(dirpath):
+        if not (exists):
             os.makedirs(dirpath)
-    
+    return exists
+
 def save_cols(filename,tuple_of_vectors,**kwargs):
     tuple_of_vectors = np.asarray(tuple_of_vectors)
     save_mat = np.vstack(tuple_of_vectors).T
@@ -122,6 +124,9 @@ def list_from_string(string):
 
 def list_from_config(Config,section,name):
     return list_from_string(Config.get(section,name))
+
+def list_strings_from_config(Config,section,name):
+    return Config.get(section,name).split(',')
 
 
 ### PLOTTING
