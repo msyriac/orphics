@@ -57,7 +57,7 @@ class Cosmology(object):
     Intended to be inherited by other classes like LimberCosmology and 
     ClusterCosmology
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True,skipPower=True,pkgrid_override=None,kmax=10.,skip_growth=True,nonlinear=True,zmax=10.,low_acc=False):
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True,skipPower=True,pkgrid_override=None,kmax=10.,skip_growth=True,nonlinear=True,zmax=10.,low_acc=False,z_growth=None):
 
         self.dimensionless = dimensionless
         cosmo = paramDict
@@ -203,9 +203,9 @@ class Cosmology(object):
 
     def growth_scale_dependent(self,ks,z,comp):
         growthfn = self.results.get_redshift_evolution(ks, z, [comp])  #Extract the linear growth function from CAMB.
-        growthfn0 = self.results.get_redshift_evolution(ks, 0, [comp])  
+        #growthfn0 = self.results.get_redshift_evolution(ks, 0, [comp])  
  
-        gcomp = growthfn/growthfn0
+        gcomp = growthfn #/growthfn0
         return gcomp
 
 
