@@ -130,10 +130,7 @@ def lensing_noise(ells,ntt,nee,nbb,
     
     shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
     modlmap = enmap.modlmap(shape,wcs)
-    if theory is not None:
-        assert camb_theory_file is None
-    else:
-        theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
+    if theory is None: theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
                                                      useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
 
             
