@@ -74,8 +74,8 @@ def factorize_2d_convolution_integral(expr,validate=True):
             # Check that the factors don't include symbols they shouldn't
             assert not(tdict['l1'].has(l2x)) and not(tdict['l2'].has(l1x)) and \
                 not(tdict['other'].has(l1x)) and not(tdict['other'].has(l2x)) and \
-                not(tdict['l1'].has(l2y)) not(tdict['l2'].has(l1y)) and \
-                not(tdict['other'].has(l1y))and not(tdict['other'].has(l2y)) and \
+                not(tdict['l1'].has(l2y)) and not(tdict['l2'].has(l1y)) and \
+                not(tdict['other'].has(l1y)) and not(tdict['other'].has(l2y)) and \
                 not(tdict['l1'].has(l2)) and not(tdict['l2'].has(l1)) and \
                 not(tdict['other'].has(l1)) and not(tdict['other'].has(l2)), val_fail_message
 
@@ -131,10 +131,26 @@ class ModeCoupling(object):
     def add_factorized(self,tag,expr,validate=True):
         self.integrands[tag] = factorize_2d_convolution_integral(expr,validate=validate)
 
+    def _evaluate(self,symbolic_term,feed_dict):
+        symbols = list(symbolic_term.free_symbols)
+        func_term = sympy.lambdify(symbols,symbolic_term,dummify=False)
+        #func_term accepts as keyword arguments strings that are in symbols
+        # We need to extract a dict from feed_dict that only has the keywords
+        # in symbols
+        varstrs = [str(x) for x in symbols]
+        edict = {k: feed_dict[k] for k in varstrs}
+        evaled = func_term(**edict)
+        return evaled
+
     def eval(self,tag,feed_dict):
+        shape = feed_dict['l1x'].shape
+        ones = np.ones(shape,dtype=feed_dict['l1x'].dtype)
         val = 0.
         for term in self.integrands[tag]:
-            int_l1 = tdict['l1']            
+            l12d = self._evaluate(term['l1'],feed_dict)*ones
+            l22d = self._evaluate(term['l2'],feed_dict)*ones
+            ot2d = self._evaluate(term['other'],feed_dict)*ones
+            val += ot2d*fft(ifft(l12d)*ifft(l22d))
         return val
         
 
@@ -163,5 +179,7 @@ class Lensing(ModeCoupling):
         self.add_factorized(tag,expr,validate=validate)    
                            
 mc = ModeCoupling()
-#mc.add_factorized("test",mc.l1x*mc.l2y*2.,validate=True)
 mc.add_factorized("test",mc.l1x,validate=True)
+shape = (100,100)
+l1x = np.ones(shape,dtype=np.complex128)
+mc.eval("test",{'l1x':l1x,'l2x':3})
