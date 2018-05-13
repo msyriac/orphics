@@ -155,6 +155,8 @@ class ModeCoupling(object):
         self.shape,self.wcs = shape,wcs
         self.modlmap = enmap.modlmap(shape,wcs)
         self.lymap,self.lxmap = enmap.lmap(shape,wcs)
+        self.pixarea = np.prod(enmap.pixshape(shape,wcs))
+        
 
     def f_of_ell(self,name,ell):
         fname = name+"_"+str(ell)
@@ -178,7 +180,7 @@ class ModeCoupling(object):
         evaled = np.nan_to_num(func_term(**edict))
         return evaled
 
-    def integrate(self,tag,feed_dict,xmask=None,ymask=None,cache=True):
+    def integrate(self,tag,feed_dict,xmask=None,ymask=None,cache=True,pixel_units=False):
         feed_dict['L'] = self.modlmap
         feed_dict['Ly'] = self.lymap
         feed_dict['Lx'] = self.lxmap
@@ -219,7 +221,8 @@ class ModeCoupling(object):
             ffft = self._fft(ifft1*ifft2)
             
             val += ot2d*ffft.real
-        return val
+        mul = 1 if pixel_units else 1./self.pixarea
+        return val * mul
 
     def _fft(self,x):
         self.nfft += 1
@@ -348,8 +351,8 @@ xmask = maps.mask_kspace(shape,wcs,lmin=ellmin,lmax=ellmax)
 ymask = xmask
 
 ival = mc.integrate("test",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt},xmask=xmask,ymask=ymask,cache=cache)
-pixScaleY,pixScaleX = enmap.pixshape(shape,wcs)
-val = np.nan_to_num(mc.modlmap**4./ival/4.* pixScaleX*pixScaleY  )
+
+val = np.nan_to_num(mc.modlmap**4./ival/4.)
 #io.plot_img(np.fft.fftshift(val))
 
 bin_edges = np.arange(10,2000,40)
