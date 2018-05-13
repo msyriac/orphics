@@ -113,10 +113,10 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
             assert sympy.simplify(products-arg)==0, val_fail_message
             prodterms.append(products)
             # Check that the factors don't include symbols they shouldn't
-            assert all([not(vdict['l1'].has(x)) for x in l2funcs])
-            assert all([not(vdict['l2'].has(x)) for x in l1funcs])
-            assert all([not(vdict['other'].has(x)) for x in l1funcs])
-            assert all([not(vdict['other'].has(x)) for x in l2funcs])
+            assert all([not(vdict['l1'].has(x)) for x in l2funcs]), val_fail_message
+            assert all([not(vdict['l2'].has(x)) for x in l1funcs]), val_fail_message
+            assert all([not(vdict['other'].has(x)) for x in l1funcs]), val_fail_message
+            assert all([not(vdict['other'].has(x)) for x in l2funcs]), val_fail_message
     # Check that the sum of products of final form matches original expression
     if validate:
         fexpr = sympy.Add(*prodterms)
@@ -232,7 +232,7 @@ class ModeCoupling(object):
         return ifft(x+0j)
         
 
-class Lensing(ModeCoupling):
+class LensingModeCoupling(ModeCoupling):
     def __init__(self,shape,wcs):
         ModeCoupling.__init__(self,shape,wcs)
         self.Lx,self.Ly,self.L = get_Ls()
@@ -262,26 +262,41 @@ class Lensing(ModeCoupling):
             r[p] = self.f_of_ell(fname,ell)
         return r
         
-    def f(self,polcomb,uCl1,uCl2):
+    def f(self,polcomb,uCl1,uCl2,rev=False):
+        Ldl1 = self.Ldl1 if not(rev) else self.Ldl2
+        Ldl2 = self.Ldl2 if not(rev) else self.Ldl1
+        u1 = uCl1 if not(rev) else uCl2
+        u2 = uCl2 if not(rev) else uCl1
+        
         if polcomb=='TT':
-            return self.Ldl1*uCl1['TT']+self.Ldl2*uCl2['TT']
+            return Ldl1*u1['TT']+Ldl2*u2['TT']
         elif polcomb=='TE':
-            return self.Ldl1*self.cos2t12*uCl1['TE']+self.Ldl2*uCl2['TE']
+            return Ldl1*self.cos2t12*u1['TE']+Ldl2*u2['TE']
         elif polcomb=='ET':
-            return self.Ldl2*uCl2['TE']*self.cos2t12+self.Ldl1*uCl1['TE']
+            return Ldl2*u2['TE']*self.cos2t12+Ldl1*u1['TE']
         elif polcomb=='TB':
-            return uCl1['TE']*self.sin2t12*self.Ldl1
+            return u1['TE']*self.sin2t12*Ldl1
         elif polcomb=='EE':
-            return (self.Ldl1*uCl1['EE']+self.Ldl2*uCl2['EE'])*self.cos2t12
+            return (Ldl1*u1['EE']+Ldl2*u2['EE'])*self.cos2t12
         elif polcomb=='EB':
-            return self.Ldl1*uCl1['EE']*self.sin2t12
+            return Ldl1*u1['EE']*self.sin2t12
 
-    def F_HuOk(self,polcomb,tCl1,tCl2,uCl1,uCl2):
-        if polcomb=='TE' or polcomb=='ET': raise NotImplementedError
+    def F_HuOk(self,polcomb,tCl1,tCl2,uCl1,uCl2,rev=False):
+        t1 = tCl1 if not(rev) else tCl2
+        t2 = tCl2 if not(rev) else tCl1
+        
+        if polcomb=='TE':
+            f = self.f(polcomb,uCl1,uCl2,rev=rev)
+            frev = self.f(polcomb,uCl1,uCl2,rev=not(rev))
+            # this filter is not separable
+            #(tCl1['EE']*tCl2['TT']*f - tCl1['TE']*tCl2['TE']*frev)/(tCl1['TT']*tCl2['EE']*tCl1['EE']*tCl2['TT']-(tCl1['TE']*tCl2['TE'])**2.)
+            # this approximation is
+            return (t1['EE']*t2['TT']*f - t1['TE']*t2['TE']*frev)/(t1['TT']*t2['EE']*t1['EE']*t2['TT'])
+            
         X,Y = polcomb
         pfact = 0.5 if Y!='B' else 1.0
-        f = self.f(polcomb,uCl1,uCl2)
-        return f*pfact/tCl1[X+X]/tCl2[Y+Y]
+        f = self.f(polcomb,uCl1,uCl2,rev=rev)
+        return f*pfact/t1[X+X]/t2[Y+Y]
         
 
         
@@ -298,12 +313,23 @@ class Lensing(ModeCoupling):
             
         
     def add_ALinv(self,tag,fa,Fa,validate=True):
-        expr = fa*Fa
-        self.add_factorized(tag,expr,validate=validate)    
+        expr = fa*Fa/self.L**2
+        self.add_factorized(tag,expr,validate=validate)
+
+    def get_AL(self,tag,feed_dict,xmask=None,ymask=None,cache=True):
+        ival = mc.integrate(tag,feed_dict,xmask=xmask,ymask=ymask,cache=cache)
+        return np.nan_to_num(1./ival)
+
+    def NL_from_AL(self,AL):
+        return AL*self.modlmap**2./4.
         
-    def add_cross(self,tag,Fa,Fb,Fbr,Cxaxb,Cyayb,Cxayb,Cyaxb,validate=True):
+    def get_NL(self,tag,feed_dict,xmask=None,ymask=None,cache=True):
+        AL = self.get_AL(tag,feed_dict,xmask=xmask,ymask=xmask,cache=cache)
+        return self.NL_from_AL(AL)
+        
+    def add_cross(self,tag,Fa,Fb,Fbr,Cxaxb1,Cyayb2,Cxayb1,Cyaxb2,validate=True):
         # integrand in Eq 17 in HuOk01
-        expr = Fa*(Fb*Cxaxb*Cyayb+Fbr*Cxayb*Cyaxb)
+        expr = Fa*(Fb*Cxaxb1*Cyayb2+Fbr*Cxayb1*Cyaxb2)
         self.add_factorized(tag,expr,validate=validate)    
 
 
@@ -312,14 +338,17 @@ cache = True
 deg = 10
 px = 1.0
 shape,wcs = maps.rect_geometry(width_deg = deg,px_res_arcmin=px)
-mc = Lensing(shape,wcs)
+mc = LensingModeCoupling(shape,wcs)
 uCl1 = mc.Cls("uCl",mc.l1)
 uCl2 = mc.Cls("uCl",mc.l2)
 tCl1 = mc.Cls("tCl",mc.l1)
 tCl2 = mc.Cls("tCl",mc.l2)
 pol = "TT"
-#mc.add_ALinv("test",mc.f(pol,uCl1,uCl2),mc.F_HDV(pol,tCl1,tCl2,uCl1),validate=True)
-mc.add_ALinv("test",mc.f(pol,uCl1,uCl2),mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2),validate=True)
+f = mc.f(pol,uCl1,uCl2)
+F = mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2)
+Frev = mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2,rev=True)
+#F = mc.F_HDV(pol,tCl1,tCl2,uCl1)
+mc.add_ALinv("test",f,F,validate=True)
 
 # for t in mc.integrands['test']:
 #     print(t['l1'])
@@ -329,52 +358,64 @@ mc.add_ALinv("test",mc.f(pol,uCl1,uCl2),mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2),valid
 # print(len(mc.integrands['test']))
 
 theory = cosmology.default_theory(lpad=20000)
-noise = 27.0
+noise_t = 27.0
+noise_p = 40.0*np.sqrt(2.)
 fwhm = 7.0
 kbeam = maps.gauss_beam(fwhm,mc.modlmap)
 ells = np.arange(0,3000,1)
 lbeam = maps.gauss_beam(fwhm,ells)
-ntt = np.nan_to_num((noise*np.pi/180./60.)**2./kbeam**2.)
-lntt = np.nan_to_num((noise*np.pi/180./60.)**2./lbeam**2.)
-
+ntt = np.nan_to_num((noise_t*np.pi/180./60.)**2./kbeam**2.)
+nee = np.nan_to_num((noise_p*np.pi/180./60.)**2./kbeam**2.)
+nbb = np.nan_to_num((noise_p*np.pi/180./60.)**2./kbeam**2.)
+lntt = np.nan_to_num((noise_t*np.pi/180./60.)**2./lbeam**2.)
+lnee = np.nan_to_num((noise_p*np.pi/180./60.)**2./lbeam**2.)
+lnbb = np.nan_to_num((noise_p*np.pi/180./60.)**2./lbeam**2.)
 
 
 uclee = theory.uCl('EE',mc.modlmap)
-tclee = theory.lCl('EE',mc.modlmap)
-tclbb = theory.lCl('BB',mc.modlmap)
+uclte = theory.uCl('TE',mc.modlmap)
+tclee = theory.lCl('EE',mc.modlmap) + nee
+tclbb = theory.lCl('BB',mc.modlmap) + nbb
 tcltt = theory.lCl('TT',mc.modlmap) + ntt
+tclte = theory.lCl('TE',mc.modlmap) 
 ucltt = theory.uCl('TT',mc.modlmap)
 
-ellmin = 2
+ellmin = 20
 ellmax = 3000
 xmask = maps.mask_kspace(shape,wcs,lmin=ellmin,lmax=ellmax)
 ymask = xmask
 
-ival = mc.integrate("test",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt},xmask=xmask,ymask=ymask,cache=cache)
-
-val = np.nan_to_num(mc.modlmap**4./ival/4.)
-#io.plot_img(np.fft.fftshift(val))
+AL = mc.get_AL("test",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
+val = mc.NL_from_AL(AL)
 
 bin_edges = np.arange(10,2000,40)
 cents,nkk = stats.bin_in_annuli(val,mc.modlmap,bin_edges)
 
-ls,hunls = np.loadtxt("alhazen/data/hu_tt.csv",delimiter=',',unpack=True)
+ls,hunls = np.loadtxt("alhazen/data/hu_"+pol.lower()+".csv",delimiter=',',unpack=True)
 pl = io.Plotter(yscale='log')
 pl.add(ells,theory.gCl('kk',ells),lw=3,color='k')
 pl.add(cents,nkk,ls="--")
 pl.add(ls,hunls*2.*np.pi/4.,ls="-.")
 
-
-ls,nlkks,theory,qest = lensing.lensing_noise(ells,lntt,lntt*0,lntt*0,
+oest = ['TE','ET'] if pol=='TE' else [pol]
+ls,nlkks,theory,qest = lensing.lensing_noise(ells,lntt,lnee,lnbb,
                   ellmin,ellmin,ellmin,
                   ellmax,ellmax,ellmax,
                   bin_edges,
                   theory=theory,
-                  estimators = ['TT'],
+                  estimators = oest,
                   unlensed_equals_lensed=False,
                   width_deg=10.,px_res_arcmin=1.0)
     
-pl.add(ls,nlkks['TT'],ls="-")
+pl.add(ls,nlkks['mv'],ls="-")
+
+
+mc.add_cross("cross",F,F,Frev,tCl1['TT'],tCl2['TT'],tCl1['TT'],tCl2['TT'],validate=True)
+cval = mc.integrate("cross",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
+
+Nlalt = 0.25*(AL**2.)*cval
+cents,nkkalt = stats.bin_in_annuli(Nlalt,mc.modlmap,bin_edges)
+pl.add(cents,nkkalt,marker="o",alpha=0.2)
 
 pl.done()
 

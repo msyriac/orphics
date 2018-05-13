@@ -198,7 +198,7 @@ def lensing_noise(ells,ntt,nee,nbb,
         nsum += np.nan_to_num(kmask_K/nlkk2d)
 
     nmv = np.nan_to_num(kmask_K/nsum)
-    nlkks['mv'] = stats.bin_in_annuli(nmv, modlmap, bin_edges)
+    nlkks['mv'] = stats.bin_in_annuli(nmv, modlmap, bin_edges)[1]
     
     return ls,nlkks,theory,qest
     
