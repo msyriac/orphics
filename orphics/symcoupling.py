@@ -139,26 +139,6 @@ def get_Ls():
     L = Symbol('L')
     return Lx,Ly,L
     
-def qe_tt():
-
-    Lx,Ly = get_Ls()
-    l1x,l1y,l2x,l2y = get_ells()
-
-    uC1 = Function('uC1')(l1x,l1y)
-    uC2 = Function('uC1')(l2x,l2y)
-    tC1 = Function('tC1')(l1x,l1y)
-    tC2 = Function('tC2')(l2x,l2y)
-
-    ldl1 = (Lx*l1x+Ly*l1y)
-    ldl2 = (Lx*l2x+Ly*l2y)
-    falpha = uC1*ldl1 + uC2*ldl2
-    F = ldl1 * uC1 / tC1 / tC2
-
-    expr = falpha*F
-    terms = factorize_2d_convolution_integral(expr)
-    for term in terms:
-        print(term)
-
 
 class ModeCoupling(object):
 
