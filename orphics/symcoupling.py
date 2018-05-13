@@ -2,7 +2,8 @@ from __future__ import print_function
 import numpy as np
 from sympy import Symbol,Function
 import sympy
-from enlib import fft as efft
+from enlib import fft as efft, enmap
+from orphics import maps,io,stats,cosmology,lensing
 
 """
 Routines to reduce and evaluate symbolic mode coupling integrals
@@ -28,9 +29,15 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
     if l1x not in l1funcs: l1funcs.append(l1x)
     if l1y not in l1funcs: l1funcs.append(l1y) 
     if l1 not in l1funcs: l1funcs.append(l1)
-    if l2x not in l2funcs: l1funcs.append(l2x)
-    if l2y not in l2funcs: l1funcs.append(l2y) 
-    if l2 not in l2funcs: l1funcs.append(l2)
+    if l2x not in l2funcs: l2funcs.append(l2x)
+    if l2y not in l2funcs: l2funcs.append(l2y) 
+    if l2 not in l2funcs: l2funcs.append(l2)
+    Lx = sympy.Symbol('Lx')
+    Ly = sympy.Symbol('Ly')
+    L = sympy.Symbol('L')
+    ofuncs1 = set(l1funcs) - set([l1x,l1y,l1])
+    ofuncs2 = set(l2funcs) - set([l2x,l2y,l2])
+
    
     # List to collect terms in
     terms = []
@@ -49,6 +56,16 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
     unique_l2s = []
     unique_l1l2s = []
     
+    def homogenize(inexp):
+        outexp = inexp.subs([[l1x,Lx],[l2x,Lx],[l1y,Ly],[l2y,Ly],[l1,L],[l2,L]])
+        ofuncs = ofuncs1.union(ofuncs2)
+        for ofunc in ofuncs:
+            nfunc = sympy.Symbol(str(ofunc)[:-3])
+            outexp = outexp.subs(ofunc,nfunc)
+        return outexp
+        
+        
+    
     for arg in arguments:
         # Lists to hold terms that depend on l1, l2 and neither
         ll1terms = []
@@ -65,9 +82,12 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
             else:
                 loterms.append(argi)
         # Create a dictionary that holds the factorized terms
+        vdict = {}
+        vdict['l1'] = sympy.Mul(*ll1terms)
+        vdict['l2'] = sympy.Mul(*ll2terms)
         tdict = {}
-        tdict['l1'] = sympy.Mul(*ll1terms)
-        tdict['l2'] = sympy.Mul(*ll2terms)
+        tdict['l1'] = homogenize(vdict['l1'])
+        tdict['l2'] = homogenize(vdict['l2'])
         tdict['l1l2'] = tdict['l1']*tdict['l2']
 
         if not(tdict['l1'] in unique_l1s):
@@ -83,21 +103,20 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
         tdict['l1l2index'] = unique_l1l2s.index(tdict['l1l2'])
         
         
+        vdict['other'] = sympy.Mul(*loterms)
         tdict['other'] = sympy.Mul(*loterms)
         terms.append(tdict)
         # Validate!
         if validate:
             # Check that all the factors of this term do give back the original term
-            products = sympy.Mul(tdict['l1'])*sympy.Mul(tdict['l2'])*sympy.Mul(tdict['other'])
+            products = sympy.Mul(vdict['l1'])*sympy.Mul(vdict['l2'])*sympy.Mul(vdict['other'])
             assert sympy.simplify(products-arg)==0, val_fail_message
             prodterms.append(products)
             # Check that the factors don't include symbols they shouldn't
-            # assert not(tdict['l1'].has(l2x)) and not(tdict['l2'].has(l1x)) and \
-            #     not(tdict['other'].has(l1x)) and not(tdict['other'].has(l2x)) and \
-            #     not(tdict['l1'].has(l2y)) and not(tdict['l2'].has(l1y)) and \
-            #     not(tdict['other'].has(l1y)) and not(tdict['other'].has(l2y)) and \
-            #     not(tdict['l1'].has(l2)) and not(tdict['l2'].has(l1)) and \
-            #     not(tdict['other'].has(l1)) and not(tdict['other'].has(l2)), val_fail_message
+            assert all([not(vdict['l1'].has(x)) for x in l2funcs])
+            assert all([not(vdict['l2'].has(x)) for x in l1funcs])
+            assert all([not(vdict['other'].has(x)) for x in l1funcs])
+            assert all([not(vdict['other'].has(x)) for x in l2funcs])
     # Check that the sum of products of final form matches original expression
     if validate:
         fexpr = sympy.Add(*prodterms)
@@ -117,7 +136,8 @@ def get_ells():
 def get_Ls():
     Lx = Symbol('Lx')
     Ly = Symbol('Ly')
-    return Lx,Ly
+    L = Symbol('L')
+    return Lx,Ly,L
     
 def qe_tt():
 
@@ -142,13 +162,19 @@ def qe_tt():
 
 class ModeCoupling(object):
 
-    def __init__(self):
+    def __init__(self,shape,wcs):
+        # Symbolic
         self.l1x,self.l1y,self.l2x,self.l2y,self.l1,self.l2 = get_ells()
         self.integrands = {}
         self.l1funcs = []
         self.l2funcs = []
+        # Diagnostic
         self.nfft = 0
         self.nifft = 0
+        # Numeric
+        self.shape,self.wcs = shape,wcs
+        self.modlmap = enmap.modlmap(shape,wcs)
+        self.lymap,self.lxmap = enmap.lmap(shape,wcs)
 
     def f_of_ell(self,name,ell):
         fname = name+"_"+str(ell)
@@ -169,13 +195,18 @@ class ModeCoupling(object):
         # in symbols
         varstrs = [str(x) for x in symbols]
         edict = {k: feed_dict[k] for k in varstrs}
-        evaled = func_term(**edict)
+        evaled = np.nan_to_num(func_term(**edict))
         return evaled
 
-    def integrate(self,tag,feed_dict,cache=True):
-        shape = feed_dict['l1x'].shape
-        ones = np.ones(shape,dtype=feed_dict['l1x'].dtype)
+    def integrate(self,tag,feed_dict,xmask=None,ymask=None,cache=True):
+        feed_dict['L'] = self.modlmap
+        feed_dict['Ly'] = self.lymap
+        feed_dict['Lx'] = self.lxmap
+        shape = self.shape[-2:]
+        ones = np.ones(shape,dtype=feed_dict['L'].dtype)
         val = 0.
+        if xmask is None: xmask = ones
+        if ymask is None: ymask = ones
         
 
         if cache:
@@ -183,13 +214,13 @@ class ModeCoupling(object):
             cached_u2s = []
             for u1 in self.ul1s:
                 l12d = self._evaluate(u1,feed_dict)*ones
-                cached_u1s.append(self._ifft(l12d))
+                cached_u1s.append(self._ifft(l12d*xmask))
             for u2 in self.ul2s:
                 l22d = self._evaluate(u2,feed_dict)*ones
-                cached_u2s.append(self._ifft(l22d))
+                cached_u2s.append(self._ifft(l22d*ymask))
                 
-            print(len(cached_u1s))
-            print(len(cached_u2s))
+            print("u1 ",len(cached_u1s))
+            print("u2 ",len(cached_u2s))
             
         for i,term in enumerate(self.integrands[tag]):
 
@@ -198,30 +229,30 @@ class ModeCoupling(object):
                 ifft2 = cached_u2s[term['l2index']]
             else:
                 l12d = self._evaluate(term['l1'],feed_dict)*ones
-                ifft1 = self._ifft(l12d)
+                ifft1 = self._ifft(l12d*xmask)
                 l22d = self._evaluate(term['l2'],feed_dict)*ones
-                ifft2 = self._ifft(l22d)
+                ifft2 = self._ifft(l22d*ymask)
             
             ot2d = self._evaluate(term['other'],feed_dict)*ones
 
             
             ffft = self._fft(ifft1*ifft2)
             
-            val += ot2d*ffft
+            val += ot2d*ffft.real
         return val
 
     def _fft(self,x):
         self.nfft += 1
-        return fft(x)
+        return fft(x+0j)
     def _ifft(self,x):
         self.nifft += 1
-        return ifft(x)
+        return ifft(x+0j)
         
 
 class Lensing(ModeCoupling):
-    def __init__(self):
-        ModeCoupling.__init__(self)
-        self.Lx,self.Ly = get_Ls()
+    def __init__(self,shape,wcs):
+        ModeCoupling.__init__(self,shape,wcs)
+        self.Lx,self.Ly,self.L = get_Ls()
         self.Ldl1 = (self.Lx*self.l1x+self.Ly*self.l1y)
         self.Ldl2 = (self.Lx*self.l2x+self.Ly*self.l2y)
         self.l1dl2 = (self.l1x*self.l2x+self.l2x*self.l2y)
@@ -262,6 +293,15 @@ class Lensing(ModeCoupling):
         elif polcomb=='EB':
             return self.Ldl1*uCl1['EE']*self.sin2t12
 
+    def F_HuOk(self,polcomb,tCl1,tCl2,uCl1,uCl2):
+        if polcomb=='TE' or polcomb=='ET': raise NotImplementedError
+        X,Y = polcomb
+        pfact = 0.5 if Y!='B' else 1.0
+        f = self.f(polcomb,uCl1,uCl2)
+        return f*pfact/tCl1[X+X]/tCl2[Y+Y]
+        
+
+        
     def F_HDV(self,polcomb,tCl1,tCl2,uCl1):
         X,Y = polcomb
         Ldl1 = self.Ldl1
@@ -274,9 +314,7 @@ class Lensing(ModeCoupling):
             return pref * uCl1[X+'E'] * self.sin2t12
             
         
-        pass
-        
-    def add_AL(self,tag,fa,Fa,validate=True):
+    def add_ALinv(self,tag,fa,Fa,validate=True):
         expr = fa*Fa
         self.add_factorized(tag,expr,validate=validate)    
         
@@ -286,25 +324,77 @@ class Lensing(ModeCoupling):
         self.add_factorized(tag,expr,validate=validate)    
 
 
+from orphics import maps
 cache = True
-mc = Lensing()
+deg = 10
+px = 1.0
+shape,wcs = maps.rect_geometry(width_deg = deg,px_res_arcmin=px)
+mc = Lensing(shape,wcs)
 uCl1 = mc.Cls("uCl",mc.l1)
 uCl2 = mc.Cls("uCl",mc.l2)
 tCl1 = mc.Cls("tCl",mc.l1)
 tCl2 = mc.Cls("tCl",mc.l2)
-#expr = mc.f('TT',uCl1,uCl2) * mc.F_HDV('TT',tCl1,tCl2,uCl1)
-expr = mc.f('EB',uCl1,uCl2) * mc.F_HDV('EB',tCl1,tCl2,uCl1)
-#expr = mc.f('EE',uCl1,uCl2) * mc.F_HDV('EE',tCl1,tCl2,uCl1)
-mc.add_factorized("test",expr,validate=True)
+pol = "TT"
+#mc.add_ALinv("test",mc.f(pol,uCl1,uCl2),mc.F_HDV(pol,tCl1,tCl2,uCl1),validate=True)
+mc.add_ALinv("test",mc.f(pol,uCl1,uCl2),mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2),validate=True)
 
-for t in mc.integrands['test']:
-    print(t['l1'])
-    print(t['l2'])
-    print(t['other'])
-    print("----")
-print(len(mc.integrands['test']))
-shape = (10,10)
-tfeed = np.ones(shape,dtype=np.complex128)
-val = mc.integrate("test",{'l1x':tfeed,'l2x':tfeed,'l1y':tfeed,'l2y':tfeed,'Lx':tfeed,'Ly':tfeed,'uCl_EE_l1':tfeed,'uCl_EE_l2':tfeed,'l1':tfeed,'l2':tfeed,'tCl_EE_l1':tfeed,'tCl_EE_l2':tfeed,'tCl_BB_l2':tfeed,'tCl_TT_l1':tfeed,'tCl_TT_l2':tfeed,'uCl_TT_l1':tfeed,'uCl_TT_l2':tfeed},cache=cache)
+# for t in mc.integrands['test']:
+#     print(t['l1'])
+#     print(t['l2'])
+#     print(t['other'])
+#     print("----")
+# print(len(mc.integrands['test']))
+
+theory = cosmology.default_theory(lpad=20000)
+noise = 27.0
+fwhm = 7.0
+kbeam = maps.gauss_beam(fwhm,mc.modlmap)
+ells = np.arange(0,3000,1)
+lbeam = maps.gauss_beam(fwhm,ells)
+ntt = np.nan_to_num((noise*np.pi/180./60.)**2./kbeam**2.)
+lntt = np.nan_to_num((noise*np.pi/180./60.)**2./lbeam**2.)
+
+
+
+uclee = theory.uCl('EE',mc.modlmap)
+tclee = theory.lCl('EE',mc.modlmap)
+tclbb = theory.lCl('BB',mc.modlmap)
+tcltt = theory.lCl('TT',mc.modlmap) + ntt
+ucltt = theory.uCl('TT',mc.modlmap)
+
+ellmin = 2
+ellmax = 3000
+xmask = maps.mask_kspace(shape,wcs,lmin=ellmin,lmax=ellmax)
+ymask = xmask
+
+ival = mc.integrate("test",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt},xmask=xmask,ymask=ymask,cache=cache)
+pixScaleY,pixScaleX = enmap.pixshape(shape,wcs)
+val = np.nan_to_num(mc.modlmap**4./ival/4.* pixScaleX*pixScaleY  )
+#io.plot_img(np.fft.fftshift(val))
+
+bin_edges = np.arange(10,2000,40)
+cents,nkk = stats.bin_in_annuli(val,mc.modlmap,bin_edges)
+
+ls,hunls = np.loadtxt("alhazen/data/hu_tt.csv",delimiter=',',unpack=True)
+pl = io.Plotter(yscale='log')
+pl.add(ells,theory.gCl('kk',ells),lw=3,color='k')
+pl.add(cents,nkk,ls="--")
+pl.add(ls,hunls*2.*np.pi/4.,ls="-.")
+
+
+ls,nlkks,theory,qest = lensing.lensing_noise(ells,lntt,lntt*0,lntt*0,
+                  ellmin,ellmin,ellmin,
+                  ellmax,ellmax,ellmax,
+                  bin_edges,
+                  theory=theory,
+                  estimators = ['TT'],
+                  unlensed_equals_lensed=False,
+                  width_deg=10.,px_res_arcmin=1.0)
+    
+pl.add(ls,nlkks['TT'],ls="-")
+
+pl.done()
+
+
 print("nffts : ",mc.nfft,mc.nifft)
 print("res : ", val)
