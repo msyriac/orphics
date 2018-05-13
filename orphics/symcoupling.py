@@ -12,6 +12,7 @@ Routines to reduce and evaluate symbolic mode coupling integrals
 ifft = lambda x: efft.ifft(x,axes=[-2,-1],normalize=True)
 fft = lambda x: efft.fft(x,axes=[-2,-1])
 
+
 def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=True):
     """Reduce a sympy expression of variables l1x,l1y,l2x,l2y,l1,l2 into a sum of 
     products of factors that depend only on vec(l1) and vec(l2) and neither, each. If the expression
@@ -67,24 +68,12 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
         
     
     for arg in arguments:
-        # Lists to hold terms that depend on l1, l2 and neither
-        ll1terms = []
-        ll2terms = []
-        loterms = []
-        # Anticipate case where there's just a single factor
-        argis = arg.args if len(arg.args)>=1 else [arg]
-        # Loop through each factor in term, and group into l1, l2 and other
-        for argi in argis:
-            if any([argi.has(x) for x in l1funcs]):
-                ll1terms.append(argi)
-            elif any([argi.has(x) for x in l2funcs]):
-                ll2terms.append(argi)
-            else:
-                loterms.append(argi)
-        # Create a dictionary that holds the factorized terms
+        temp, ll1terms = arg.as_independent(*l1funcs, as_Mul=True)
+        loterms, ll2terms = temp.as_independent(*l2funcs, as_Mul=True)
+        
         vdict = {}
-        vdict['l1'] = sympy.Mul(*ll1terms)
-        vdict['l2'] = sympy.Mul(*ll2terms)
+        vdict['l1'] = ll1terms
+        vdict['l2'] = ll2terms
         tdict = {}
         tdict['l1'] = homogenize(vdict['l1'])
         tdict['l2'] = homogenize(vdict['l2'])
@@ -103,8 +92,8 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
         tdict['l1l2index'] = unique_l1l2s.index(tdict['l1l2'])
         
         
-        vdict['other'] = sympy.Mul(*loterms)
-        tdict['other'] = sympy.Mul(*loterms)
+        vdict['other'] = loterms
+        tdict['other'] = loterms
         terms.append(tdict)
         # Validate!
         if validate:
@@ -122,6 +111,8 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
         fexpr = sympy.Add(*prodterms)
         assert sympy.simplify(expr-fexpr)==0, val_fail_message
     return terms,unique_l1s,unique_l2s,unique_l1l2s
+
+
 
 
 def get_ells():
@@ -201,8 +192,6 @@ class ModeCoupling(object):
                 l22d = self._evaluate(u2,feed_dict)*ones
                 cached_u2s.append(self._ifft(l22d*ymask))
                 
-            print("u1 ",len(cached_u1s))
-            print("u2 ",len(cached_u2s))
             
         for i,term in enumerate(self.integrands[tag]):
 
@@ -335,7 +324,7 @@ class LensingModeCoupling(ModeCoupling):
 
 from orphics import maps
 cache = True
-deg = 10
+deg = 5
 px = 1.0
 shape,wcs = maps.rect_geometry(width_deg = deg,px_res_arcmin=px)
 mc = LensingModeCoupling(shape,wcs)
@@ -343,18 +332,18 @@ uCl1 = mc.Cls("uCl",mc.l1)
 uCl2 = mc.Cls("uCl",mc.l2)
 tCl1 = mc.Cls("tCl",mc.l1)
 tCl2 = mc.Cls("tCl",mc.l2)
-pol = "TT"
+pol = "TB"
 f = mc.f(pol,uCl1,uCl2)
 F = mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2)
 Frev = mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2,rev=True)
 #F = mc.F_HDV(pol,tCl1,tCl2,uCl1)
 mc.add_ALinv("test",f,F,validate=True)
 
-# for t in mc.integrands['test']:
-#     print(t['l1'])
-#     print(t['l2'])
-#     print(t['other'])
-#     print("----")
+for t in mc.integrands['test']:
+    print(t['l1'])
+    print(t['l2'])
+    print(t['other'])
+    print("----")
 # print(len(mc.integrands['test']))
 
 theory = cosmology.default_theory(lpad=20000)
@@ -410,15 +399,14 @@ ls,nlkks,theory,qest = lensing.lensing_noise(ells,lntt,lnee,lnbb,
 pl.add(ls,nlkks['mv'],ls="-")
 
 
-mc.add_cross("cross",F,F,Frev,tCl1['TT'],tCl2['TT'],tCl1['TT'],tCl2['TT'],validate=True)
-cval = mc.integrate("cross",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
+# mc.add_cross("cross",F,F,Frev,tCl1['TT'],tCl2['TT'],tCl1['TT'],tCl2['TT'],validate=True)
+# cval = mc.integrate("cross",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
 
-Nlalt = 0.25*(AL**2.)*cval
-cents,nkkalt = stats.bin_in_annuli(Nlalt,mc.modlmap,bin_edges)
-pl.add(cents,nkkalt,marker="o",alpha=0.2)
+# Nlalt = 0.25*(AL**2.)*cval
+# cents,nkkalt = stats.bin_in_annuli(Nlalt,mc.modlmap,bin_edges)
+# pl.add(cents,nkkalt,marker="o",alpha=0.2)
 
 pl.done()
 
 
 print("nffts : ",mc.nfft,mc.nifft)
-print("res : ", val)
