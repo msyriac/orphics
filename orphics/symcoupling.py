@@ -233,31 +233,28 @@ class ModeCoupling(object):
         ogroup_weights = self.ogroup_weights[tag] 
         ogroup_symbols = self.ogroup_symbols[tag]
 
+        def get_l1l2(term):
+            if cache:
+                ifft1 = cached_u1s[term['l1index']]
+                ifft2 = cached_u2s[term['l2index']]
+            else:
+                l12d = self._evaluate(term['l1'],feed_dict)*ones
+                ifft1 = self._ifft(l12d*xmask)
+                l22d = self._evaluate(term['l2'],feed_dict)*ones
+                ifft2 = self._ifft(l22d*ymask)
+            return ifft1,ifft2
+        
         
         if ogroups is None:    
             for i,term in enumerate(self.integrands[tag]):
-                if cache:
-                    ifft1 = cached_u1s[term['l1index']]
-                    ifft2 = cached_u2s[term['l2index']]
-                else:
-                    l12d = self._evaluate(term['l1'],feed_dict)*ones
-                    ifft1 = self._ifft(l12d*xmask)
-                    l22d = self._evaluate(term['l2'],feed_dict)*ones
-                    ifft2 = self._ifft(l22d*ymask)
+                ifft1,ifft2 = get_l1l2(term)
                 ot2d = self._evaluate(term['other'],feed_dict)*ones
                 ffft = self._fft(ifft1*ifft2)
                 val += ot2d*ffft.real
         else:
             vals = np.zeros((len(ogroup_symbols),)+shape,dtype=feed_dict['L'].dtype)+0j
             for i,term in enumerate(self.integrands[tag]):
-                if cache:
-                    ifft1 = cached_u1s[term['l1index']]
-                    ifft2 = cached_u2s[term['l2index']]
-                else:
-                    l12d = self._evaluate(term['l1'],feed_dict)*ones
-                    ifft1 = self._ifft(l12d*xmask)
-                    l22d = self._evaluate(term['l2'],feed_dict)*ones
-                    ifft2 = self._ifft(l22d*ymask)
+                ifft1,ifft2 = get_l1l2(term)
                 gindex = ogroups[i]
                 vals[gindex,...] += ifft1*ifft2 *ogroup_weights[i]
             for i,group in enumerate(ogroup_symbols):
@@ -278,7 +275,7 @@ class ModeCoupling(object):
         
 
 class LensingModeCoupling(ModeCoupling):
-    def __init__(self,shape,wcs):
+    def __init__(self,shape,wcs,theory=None,theory_norm=None,lensed_cls=None):
         ModeCoupling.__init__(self,shape,wcs)
         self.Lx,self.Ly,self.L = get_Ls()
         self.Ldl1 = (self.Lx*self.l1x+self.Ly*self.l1y)
@@ -299,6 +296,21 @@ class LensingModeCoupling(ModeCoupling):
                                 (sympy.sin(phi1),self.l1y/self.l1),(sympy.sin(phi2),self.l2y/self.l2)])))
 
 
+        self.theory2d = None
+        if theory is not None:
+            self.theory2d = self._load_theory(theory,lensed_cls=lensed_cls)
+        if theory_norm is None:
+            self.theory2d_norm = self.theory2d
+        else:
+            self.theory2d_norm = self._load_theory(theory_norm,lensed_cls=lensed_cls)
+        
+    def _load_theory(self,theory,lensed_cls=None):
+        pol_list = ['TT','EE','TE','BB']
+        cls = {}
+        for pol in pol_list:
+            cls["u"+pol] = theory.uCl(pol,self.modlmap) if ((lensed_cls is None) or not(lensed_cls)) else theory.lCl(pol,self.modlmap)
+            cls["l"+pol] = theory.lCl(pol,self.modlmap) if ((lensed_cls is None) or lensed_cls) else theory.uCl(pol,self.modlmap)
+        return cls
 
     def Cls(self,name,ell,pols=['TT','EE','TE','BB']):
         r = {}
@@ -345,16 +357,20 @@ class LensingModeCoupling(ModeCoupling):
         
 
         
-    def F_HDV(self,polcomb,tCl1,tCl2,uCl1):
+    def F_HDV(self,polcomb,tCl1,tCl2,uCl1,uCl2=None,rev=False):
+        t1 = tCl1 if not(rev) else tCl2
+        t2 = tCl2 if not(rev) else tCl1
+        u1 = uCl1 if not(rev) else uCl2
+
         X,Y = polcomb
-        Ldl1 = self.Ldl1
-        pref = Ldl1/tCl1[X+X]/tCl2[Y+Y]
+        Ldl1 = self.Ldl1 if not(rev) else self.Ldl2
+        pref = Ldl1/t1[X+X]/t2[Y+Y]
         if Y=='T':
-            return pref * uCl1[X+Y]
+            return pref * u1[X+Y]
         if Y=='E':
-            return pref * uCl1[X+Y] * self.cos2t12
+            return pref * u1[X+Y] * self.cos2t12
         if Y=='B':
-            return pref * uCl1[X+'E'] * self.sin2t12
+            return pref * u1[X+'E'] * self.sin2t12
             
         
     def add_ALinv(self,tag,fa,Fa,validate=True):
@@ -366,7 +382,7 @@ class LensingModeCoupling(ModeCoupling):
         return np.nan_to_num(1./ival)
 
     def NL_from_AL(self,AL):
-        return AL*self.modlmap**2./4.
+        return np.nan_to_num(AL*self.modlmap**2./4.)
         
     def get_NL(self,tag,feed_dict,xmask=None,ymask=None,cache=True):
         AL = self.get_AL(tag,feed_dict,xmask=xmask,ymask=xmask,cache=cache)
@@ -377,24 +393,130 @@ class LensingModeCoupling(ModeCoupling):
         expr = Fa*(Fb*Cxaxb1*Cyayb2+Fbr*Cxayb1*Cyaxb2)
         self.add_factorized(tag,expr,validate=validate)    
 
+    def add_cross_HuOk(self,pol1,pol2):
+        pass
+    def add_cross_HDV(self,pol1,pol2):
+        pass
 
+    def AL(self,pol,xmask,ymask,noise_t=0,noise_e=0,noise_b=0,
+           ynoise_t=None,ynoise_e=None,ynoise_b=None,
+           save_expression="current",
+           theory=None,theory_norm=None,
+           hdv=True,validate=True,lensed_cls=None,cache=True):
+
+        if ynoise_t is None: ynoise_t = noise_t
+        if ynoise_e is None: ynoise_e = noise_e
+        if ynoise_b is None: ynoise_b = noise_b
+        uCl1 = self.Cls("uCl",self.l1)
+        uCl2 = self.Cls("uCl",self.l2)
+        tCl1 = self.Cls("tClX",self.l1)
+        tCl2 = self.Cls("tClY",self.l2)
+        uCl1N = self.Cls("uClN",self.l1) if not(theory_norm is None) else uCl1
+        uCl2N = self.Cls("uClN",self.l2) if not(theory_norm is None) else uCl2
+        f_norm = self.f(pol,uCl1N,uCl2N)
+        F = self.F_HDV(pol,tCl1,tCl2,uCl1) if hdv else self.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2)
+        self.add_ALinv(save_expression,f_norm,F,validate=validate)
+
+        theory2d,theory2d_norm = self._get_theory2d(theory,theory_norm,lensed_cls)
+        feed_dict = self._dict_from_theory_noise(theory2d,theory2d_norm,noise_t,ynoise_t,noise_e,ynoise_e,noise_b,ynoise_b)
+        return self.get_AL(save_expression,feed_dict,xmask=xmask,ymask=ymask,cache=cache)
+
+    def _get_theory2d(self,theory,theory_norm,lensed_cls):
+        if theory is None:
+            theory2d = self.theory2d
+        else:
+            theory2d = self._load_theory(theory,lensed_cls=lensed_cls)
+        if theory_norm is None:
+            theory2d_norm = theory2d
+        else:
+            theory2d_norm = self._load_theory(theory_norm,lensed_cls=lensed_cls)
+        return theory2d,theory2d_norm
+
+    def _dict_from_theory_noise(self,theory2d,theory2d_norm,
+                                xnoise_t,ynoise_t,
+                                xnoise_e,ynoise_e,
+                                xnoise_b,ynoise_b,
+                                cxnoise_t=0,cynoise_t=0,
+                                cxnoise_e=0,cynoise_e=0,
+                                cxnoise_b=0,cynoise_b=0):
+        pol_list = ['TT','EE','TE','BB']
+        xnoise = {'TT':xnoise_t,'EE':xnoise_e,'BB':xnoise_b,'TE':0}
+        ynoise = {'TT':ynoise_t,'EE':ynoise_e,'BB':ynoise_b,'TE':0}
+        cxnoise = {'TT':cxnoise_t,'EE':cxnoise_e,'BB':cxnoise_b,'TE':0}
+        cynoise = {'TT':cynoise_t,'EE':cynoise_e,'BB':cynoise_b,'TE':0}
+        fdict = {}
+        for pol in pol_list:
+            fdict['uClN_'+pol] = theory2d_norm['u'+pol]
+            fdict['uCl_'+pol] = theory2d['u'+pol]
+            fdict['tClX_'+pol] = theory2d['l'+pol] + xnoise[pol]
+            fdict['tClY_'+pol] = theory2d['l'+pol] + ynoise[pol]
+            fdict['tClcX_'+pol] = theory2d['l'+pol] + cxnoise[pol]
+            fdict['tClcY_'+pol] = theory2d['l'+pol] + cynoise[pol]
+                
+        return fdict
+
+    def cross(self,pol1,pol2,theory,xmask,ymask,noise_t=0,noise_e=0,noise_b=0,
+              ynoise_t=None,ynoise_e=None,ynoise_b=None,
+              cross_xnoise_t=None,cross_ynoise_t=None,
+              cross_xnoise_e=None,cross_ynoise_e=None,
+              cross_xnoise_b=None,cross_ynoise_b=None,
+              theory_norm=None,hdv=True,save_expression="current",validate=True,cache=True,lensed_cls=None):
+        if ynoise_t is None: ynoise_t = noise_t
+        if ynoise_e is None: ynoise_e = noise_e
+        if ynoise_b is None: ynoise_b = noise_b
+        if cross_xnoise_t is None: cross_xnoise_t = noise_t
+        if cross_xnoise_e is None: cross_xnoise_e = noise_e
+        if cross_xnoise_b is None: cross_xnoise_b = noise_b
+        if cross_ynoise_t is None: cross_ynoise_t = cross_xnoise_t
+        if cross_ynoise_e is None: cross_ynoise_e = cross_xnoise_e
+        if cross_ynoise_b is None: cross_ynoise_b = cross_xnoise_b
+        uCl1 = self.Cls("uCl",self.l1)
+        uCl2 = self.Cls("uCl",self.l2)
+        tCl1 = self.Cls("tClX",self.l1)
+        tCl2 = self.Cls("tClY",self.l2)
+        Falpha = self.F_HDV(pol1,tCl1,tCl2,uCl1) if hdv else self.F_HuOk(pol1,tCl1,tCl2,uCl1,uCl2)
+        Fbeta = self.F_HDV(pol2,tCl1,tCl2,uCl1) if hdv else self.F_HuOk(pol2,tCl1,tCl2,uCl1,uCl2)
+        rFbeta = self.F_HDV(pol2,tCl1,tCl2,uCl1,uCl2,rev=True) if hdv else self.F_HuOk(pol2,tCl1,tCl2,uCl1,uCl2,rev=True)
+
+        def sanitize(plist):
+            return ['TE' if x=='ET' else x for x in plist]
+        
+        zero_list = ['TB','BT','EB','BE']
+        Xa,Ya = pol1
+        Xb,Yb = pol2
+        XaXb,YaYb,XaYb,YaXb = sanitize([Xa+Xb,Ya+Yb,Xa+Yb,Ya+Xb])
+        Cxaxb1 = self.f_of_ell('tClcX_'+XaXb,self.l1) if XaXb not in zero_list else 0
+        Cyayb2 = self.f_of_ell('tClcY_'+YaYb,self.l2) if YaYb not in zero_list else 0
+        Cxayb1 = self.f_of_ell('tClcX_'+XaYb,self.l1) if XaYb not in zero_list else 0
+        Cyaxb2 = self.f_of_ell('tClcY_'+YaXb,self.l2) if YaXb not in zero_list else 0
+        
+        self.add_cross(save_expression,Falpha,Fbeta,rFbeta,Cxaxb1,Cyayb2,Cxayb1,Cyaxb2,validate=True)
+        theory2d,theory2d_norm = self._get_theory2d(theory,theory_norm,lensed_cls)
+        feed_dict = self._dict_from_theory_noise(theory2d,theory2d_norm,
+                                                 noise_t,ynoise_t,
+                                                 noise_e,ynoise_e,
+                                                 noise_b,ynoise_b,
+                                                 cross_xnoise_t,cross_ynoise_t,
+                                                 cross_xnoise_e,cross_ynoise_e,
+                                                 cross_xnoise_b,cross_ynoise_b)
+        cval = self.integrate(save_expression,feed_dict,xmask=xmask,ymask=ymask,cache=cache)
+        return cval
+
+    def NL(self,AL=None,AL2=None,cross=None):
+        if cross is None:
+            assert AL2 is None
+            return self.NL_from_AL(AL)
+        else:
+            return 0.25*(AL*AL2)*cross
+    
 from orphics import maps
 cache = True
+hdv = False
 deg = 5
 px = 1.0
 shape,wcs = maps.rect_geometry(width_deg = deg,px_res_arcmin=px)
 mc = LensingModeCoupling(shape,wcs)
-uCl1 = mc.Cls("uCl",mc.l1)
-uCl2 = mc.Cls("uCl",mc.l2)
-tCl1 = mc.Cls("tCl",mc.l1)
-tCl2 = mc.Cls("tCl",mc.l2)
-pol = "EE"
-f = mc.f(pol,uCl1,uCl2)
-F = mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2)
-Frev = mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2,rev=True)
-#F = mc.F_HDV(pol,tCl1,tCl2,uCl1)
-with bench.show("eval"):
-    mc.add_ALinv("test",f,F,validate=True)
+pol = "TE"
 
 # for t in mc.integrands['test']:
 #     print(t['l1'])
@@ -418,21 +540,13 @@ lnee = np.nan_to_num((noise_p*np.pi/180./60.)**2./lbeam**2.)
 lnbb = np.nan_to_num((noise_p*np.pi/180./60.)**2./lbeam**2.)
 
 
-uclee = theory.uCl('EE',mc.modlmap)
-uclte = theory.uCl('TE',mc.modlmap)
-tclee = theory.lCl('EE',mc.modlmap) + nee
-tclbb = theory.lCl('BB',mc.modlmap) + nbb
-tcltt = theory.lCl('TT',mc.modlmap) + ntt
-tclte = theory.lCl('TE',mc.modlmap) 
-ucltt = theory.uCl('TT',mc.modlmap)
-
 ellmin = 20
 ellmax = 3000
 xmask = maps.mask_kspace(shape,wcs,lmin=ellmin,lmax=ellmax)
 ymask = xmask
 
 with bench.show("ALcalc"):
-    AL = mc.get_AL("test",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
+    AL = mc.AL(pol,xmask,ymask,ntt,nee,nbb,theory=theory,hdv=hdv,cache=cache)
 val = mc.NL_from_AL(AL)
 
 bin_edges = np.arange(10,2000,40)
@@ -456,13 +570,20 @@ ls,nlkks,theory,qest = lensing.lensing_noise(ells,lntt,lnee,lnbb,
     
 pl.add(ls,nlkks['mv'],ls="-")
 
-
+cross = mc.cross(pol,pol,theory,xmask,ymask,noise_t=ntt,noise_e=nee,noise_b=nbb,
+              ynoise_t=None,ynoise_e=None,ynoise_b=None,
+              cross_xnoise_t=None,cross_ynoise_t=None,
+              cross_xnoise_e=None,cross_ynoise_e=None,
+              cross_xnoise_b=None,cross_ynoise_b=None,
+              theory_norm=None,hdv=hdv,save_expression="current",validate=True,cache=True)
+        
+Nlalt = mc.NL(AL,AL,cross)
 # mc.add_cross("cross",F,F,Frev,tCl1['TT'],tCl2['TT'],tCl1['TT'],tCl2['TT'],validate=True)
 # cval = mc.integrate("cross",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
 
 # Nlalt = 0.25*(AL**2.)*cval
-# cents,nkkalt = stats.bin_in_annuli(Nlalt,mc.modlmap,bin_edges)
-# pl.add(cents,nkkalt,marker="o",alpha=0.2)
+cents,nkkalt = stats.bin_in_annuli(Nlalt,mc.modlmap,bin_edges)
+pl.add(cents,nkkalt,marker="o",alpha=0.2)
 
 pl.done()
 
