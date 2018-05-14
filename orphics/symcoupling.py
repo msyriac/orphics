@@ -513,7 +513,7 @@ from orphics import maps
 cache = True
 hdv = False
 deg = 5
-px = 1.0
+px = 1.5
 shape,wcs = maps.rect_geometry(width_deg = deg,px_res_arcmin=px)
 mc = LensingModeCoupling(shape,wcs)
 pol = "TE"
@@ -526,9 +526,12 @@ pol = "TE"
 # print(len(mc.integrands['test']))
 
 theory = cosmology.default_theory(lpad=20000)
-noise_t = 27.0
-noise_p = 40.0*np.sqrt(2.)
-fwhm = 7.0
+#noise_t = 27.0
+#noise_p = 40.0*np.sqrt(2.)
+#fwhm = 7.0
+noise_t = 10.0
+noise_p = 14.0*np.sqrt(2.)
+fwhm = 2.0
 kbeam = maps.gauss_beam(fwhm,mc.modlmap)
 ells = np.arange(0,3000,1)
 lbeam = maps.gauss_beam(fwhm,ells)
@@ -570,18 +573,21 @@ ls,nlkks,theory,qest = lensing.lensing_noise(ells,lntt,lnee,lnbb,
     
 pl.add(ls,nlkks['mv'],ls="-")
 
-cross = mc.cross(pol,pol,theory,xmask,ymask,noise_t=ntt,noise_e=nee,noise_b=nbb,
-              ynoise_t=None,ynoise_e=None,ynoise_b=None,
-              cross_xnoise_t=None,cross_ynoise_t=None,
-              cross_xnoise_e=None,cross_ynoise_e=None,
-              cross_xnoise_b=None,cross_ynoise_b=None,
-              theory_norm=None,hdv=hdv,save_expression="current",validate=True,cache=True)
-        
-Nlalt = mc.NL(AL,AL,cross)
-# mc.add_cross("cross",F,F,Frev,tCl1['TT'],tCl2['TT'],tCl1['TT'],tCl2['TT'],validate=True)
-# cval = mc.integrate("cross",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
+with bench.show("ALcalc"):
+    cross = mc.cross(pol,pol,theory,xmask,ymask,noise_t=ntt,noise_e=nee,noise_b=nbb,
+                  ynoise_t=None,ynoise_e=None,ynoise_b=None,
+                  cross_xnoise_t=None,cross_ynoise_t=None,
+                  cross_xnoise_e=None,cross_ynoise_e=None,
+                  cross_xnoise_b=None,cross_ynoise_b=None,
+                  theory_norm=None,hdv=hdv,save_expression="current",validate=True,cache=True)
+    # cross = mc.cross(pol,pol,theory,xmask,ymask,noise_t=ntt,noise_e=nee,noise_b=nbb,
+    #               ynoise_t=None,ynoise_e=None,ynoise_b=None,
+    #               cross_xnoise_t=0,cross_ynoise_t=0,
+    #               cross_xnoise_e=0,cross_ynoise_e=0,
+    #               cross_xnoise_b=0,cross_ynoise_b=0,
+    #               theory_norm=None,hdv=hdv,save_expression="current",validate=True,cache=True)
 
-# Nlalt = 0.25*(AL**2.)*cval
+Nlalt = mc.NL(AL,AL,cross)
 cents,nkkalt = stats.bin_in_annuli(Nlalt,mc.modlmap,bin_edges)
 pl.add(cents,nkkalt,marker="o",alpha=0.2)
 
