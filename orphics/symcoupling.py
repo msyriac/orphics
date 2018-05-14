@@ -73,7 +73,9 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,groups=None
         for i,group in enumerate(groups):
             s = inexp.subs(group,d)
             if not((s/d).has(d)):
-                if found: raise ValueError, "Groups don't seem to be mutually exclusive."
+                if found:
+                    print(s,group)
+                    raise ValueError, "Groups don't seem to be mutually exclusive."
                 index = i
                 found = True
         if not(found): raise ValueError, "Couldn't associate a group"
@@ -87,6 +89,7 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,groups=None
         temp, ll1terms = arg.as_independent(*l1funcs, as_Mul=True)
         loterms, ll2terms = temp.as_independent(*l2funcs, as_Mul=True)
 
+        if any([x==0 for x in [ll1terms,ll2terms,loterms]]): continue
         # Group ffts
         if groups is not None:
             gindex = get_group(loterms)
@@ -378,7 +381,7 @@ class LensingModeCoupling(ModeCoupling):
         self.add_factorized(tag,expr,validate=validate)
 
     def get_AL(self,tag,feed_dict,xmask=None,ymask=None,cache=True):
-        ival = mc.integrate(tag,feed_dict,xmask=xmask,ymask=ymask,cache=cache)
+        ival = self.integrate(tag,feed_dict,xmask=xmask,ymask=ymask,cache=cache)
         return np.nan_to_num(1./ival)
 
     def NL_from_AL(self,AL):
@@ -392,11 +395,6 @@ class LensingModeCoupling(ModeCoupling):
         # integrand in Eq 17 in HuOk01
         expr = Fa*(Fb*Cxaxb1*Cyayb2+Fbr*Cxayb1*Cyaxb2)
         self.add_factorized(tag,expr,validate=validate)    
-
-    def add_cross_HuOk(self,pol1,pol2):
-        pass
-    def add_cross_HDV(self,pol1,pol2):
-        pass
 
     def AL(self,pol,xmask,ymask,noise_t=0,noise_e=0,noise_b=0,
            ynoise_t=None,ynoise_e=None,ynoise_b=None,
@@ -490,7 +488,16 @@ class LensingModeCoupling(ModeCoupling):
         Cxayb1 = self.f_of_ell('tClcX_'+XaYb,self.l1) if XaYb not in zero_list else 0
         Cyaxb2 = self.f_of_ell('tClcY_'+YaXb,self.l2) if YaXb not in zero_list else 0
         
-        self.add_cross(save_expression,Falpha,Fbeta,rFbeta,Cxaxb1,Cyayb2,Cxayb1,Cyaxb2,validate=True)
+        self.add_cross(save_expression,Falpha,Fbeta,rFbeta,Cxaxb1,Cyayb2,Cxayb1,Cyaxb2,validate=validate)
+
+        # for t in self.integrands[save_expression]:
+        #     print(t['l1'])
+        #     print(t['l2'])
+        #     print(t['other'])
+        #     print("----")
+        # print(len(self.integrands['test']))
+
+        
         theory2d,theory2d_norm = self._get_theory2d(theory,theory_norm,lensed_cls)
         feed_dict = self._dict_from_theory_noise(theory2d,theory2d_norm,
                                                  noise_t,ynoise_t,
@@ -509,89 +516,3 @@ class LensingModeCoupling(ModeCoupling):
         else:
             return 0.25*(AL*AL2)*cross
     
-from orphics import maps
-cache = True
-hdv = False
-deg = 5
-px = 1.5
-shape,wcs = maps.rect_geometry(width_deg = deg,px_res_arcmin=px)
-mc = LensingModeCoupling(shape,wcs)
-pol = "TE"
-
-# for t in mc.integrands['test']:
-#     print(t['l1'])
-#     print(t['l2'])
-#     print(t['other'])
-#     print("----")
-# print(len(mc.integrands['test']))
-
-theory = cosmology.default_theory(lpad=20000)
-#noise_t = 27.0
-#noise_p = 40.0*np.sqrt(2.)
-#fwhm = 7.0
-noise_t = 10.0
-noise_p = 14.0*np.sqrt(2.)
-fwhm = 2.0
-kbeam = maps.gauss_beam(fwhm,mc.modlmap)
-ells = np.arange(0,3000,1)
-lbeam = maps.gauss_beam(fwhm,ells)
-ntt = np.nan_to_num((noise_t*np.pi/180./60.)**2./kbeam**2.)
-nee = np.nan_to_num((noise_p*np.pi/180./60.)**2./kbeam**2.)
-nbb = np.nan_to_num((noise_p*np.pi/180./60.)**2./kbeam**2.)
-lntt = np.nan_to_num((noise_t*np.pi/180./60.)**2./lbeam**2.)
-lnee = np.nan_to_num((noise_p*np.pi/180./60.)**2./lbeam**2.)
-lnbb = np.nan_to_num((noise_p*np.pi/180./60.)**2./lbeam**2.)
-
-
-ellmin = 20
-ellmax = 3000
-xmask = maps.mask_kspace(shape,wcs,lmin=ellmin,lmax=ellmax)
-ymask = xmask
-
-with bench.show("ALcalc"):
-    AL = mc.AL(pol,xmask,ymask,ntt,nee,nbb,theory=theory,hdv=hdv,cache=cache)
-val = mc.NL_from_AL(AL)
-
-bin_edges = np.arange(10,2000,40)
-cents,nkk = stats.bin_in_annuli(val,mc.modlmap,bin_edges)
-
-ls,hunls = np.loadtxt("alhazen/data/hu_"+pol.lower()+".csv",delimiter=',',unpack=True)
-pl = io.Plotter(yscale='log')
-pl.add(ells,theory.gCl('kk',ells),lw=3,color='k')
-pl.add(cents,nkk,ls="--")
-pl.add(ls,hunls*2.*np.pi/4.,ls="-.")
-
-oest = ['TE','ET'] if pol=='TE' else [pol]
-ls,nlkks,theory,qest = lensing.lensing_noise(ells,lntt,lnee,lnbb,
-                  ellmin,ellmin,ellmin,
-                  ellmax,ellmax,ellmax,
-                  bin_edges,
-                  theory=theory,
-                  estimators = oest,
-                  unlensed_equals_lensed=False,
-                  width_deg=10.,px_res_arcmin=1.0)
-    
-pl.add(ls,nlkks['mv'],ls="-")
-
-with bench.show("ALcalc"):
-    cross = mc.cross(pol,pol,theory,xmask,ymask,noise_t=ntt,noise_e=nee,noise_b=nbb,
-                  ynoise_t=None,ynoise_e=None,ynoise_b=None,
-                  cross_xnoise_t=None,cross_ynoise_t=None,
-                  cross_xnoise_e=None,cross_ynoise_e=None,
-                  cross_xnoise_b=None,cross_ynoise_b=None,
-                  theory_norm=None,hdv=hdv,save_expression="current",validate=True,cache=True)
-    # cross = mc.cross(pol,pol,theory,xmask,ymask,noise_t=ntt,noise_e=nee,noise_b=nbb,
-    #               ynoise_t=None,ynoise_e=None,ynoise_b=None,
-    #               cross_xnoise_t=0,cross_ynoise_t=0,
-    #               cross_xnoise_e=0,cross_ynoise_e=0,
-    #               cross_xnoise_b=0,cross_ynoise_b=0,
-    #               theory_norm=None,hdv=hdv,save_expression="current",validate=True,cache=True)
-
-Nlalt = mc.NL(AL,AL,cross)
-cents,nkkalt = stats.bin_in_annuli(Nlalt,mc.modlmap,bin_edges)
-pl.add(cents,nkkalt,marker="o",alpha=0.2)
-
-pl.done()
-
-
-print("nffts : ",mc.nfft,mc.nifft)
