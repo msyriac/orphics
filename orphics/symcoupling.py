@@ -2,8 +2,9 @@ from __future__ import print_function
 import numpy as np
 from sympy import Symbol,Function
 import sympy
-from enlib import fft as efft, enmap
+from enlib import fft as efft, enmap, bench
 from orphics import maps,io,stats,cosmology,lensing
+import os,sys
 
 """
 Routines to reduce and evaluate symbolic mode coupling integrals
@@ -13,7 +14,7 @@ ifft = lambda x: efft.ifft(x,axes=[-2,-1],normalize=True)
 fft = lambda x: efft.fft(x,axes=[-2,-1])
 
 
-def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=True):
+def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,groups=None,validate=True):
     """Reduce a sympy expression of variables l1x,l1y,l2x,l2y,l1,l2 into a sum of 
     products of factors that depend only on vec(l1) and vec(l2) and neither, each. If the expression
     appeared as the integrand in an integral over vec(l1), where 
@@ -33,9 +34,9 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
     if l2x not in l2funcs: l2funcs.append(l2x)
     if l2y not in l2funcs: l2funcs.append(l2y) 
     if l2 not in l2funcs: l2funcs.append(l2)
-    Lx = sympy.Symbol('Lx')
-    Ly = sympy.Symbol('Ly')
-    L = sympy.Symbol('L')
+    Lx = Symbol('Lx')
+    Ly = Symbol('Ly')
+    L = Symbol('L')
     ofuncs1 = set(l1funcs) - set([l1x,l1y,l1])
     ofuncs2 = set(l2funcs) - set([l2x,l2y,l2])
 
@@ -55,21 +56,48 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
     # Let's factorize each term
     unique_l1s = []
     unique_l2s = []
-    unique_l1l2s = []
     
     def homogenize(inexp):
         outexp = inexp.subs([[l1x,Lx],[l2x,Lx],[l1y,Ly],[l2y,Ly],[l1,L],[l2,L]])
         ofuncs = ofuncs1.union(ofuncs2)
         for ofunc in ofuncs:
-            nfunc = sympy.Symbol(str(ofunc)[:-3])
+            nfunc = Symbol(str(ofunc)[:-3])
             outexp = outexp.subs(ofunc,nfunc)
         return outexp
-        
-        
+
     
-    for arg in arguments:
+    def get_group(inexp):
+        if groups is None: return 0
+        found = False
+        d = Symbol('dummy')
+        for i,group in enumerate(groups):
+            s = inexp.subs(group,d)
+            if not((s/d).has(d)):
+                if found: raise ValueError, "Groups don't seem to be mutually exclusive."
+                index = i
+                found = True
+        if not(found): raise ValueError, "Couldn't associate a group"
+        return index
+
+
+    ogroups = [] if not(groups is None) else None
+    ogroup_weights = [] if not(groups is None) else None
+    ogroup_symbols = sympy.ones(len(groups),1) if not(groups is None) else None
+    for k,arg in enumerate(arguments):
         temp, ll1terms = arg.as_independent(*l1funcs, as_Mul=True)
         loterms, ll2terms = temp.as_independent(*l2funcs, as_Mul=True)
+
+        # Group ffts
+        if groups is not None:
+            gindex = get_group(loterms)
+            ogroups.append(gindex)
+            fsyms = loterms.free_symbols
+            ocoeff = loterms.evalf(subs=dict(zip(fsyms,[1]*len(fsyms))))
+            ogroup_weights.append( float(ocoeff) )
+            if ogroup_symbols[gindex]==1:
+                ogroup_symbols[gindex] = loterms/ocoeff
+            else:
+                assert ogroup_symbols[gindex]==loterms/ocoeff, "Error validating group membership"
         
         vdict = {}
         vdict['l1'] = ll1terms
@@ -77,7 +105,6 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
         tdict = {}
         tdict['l1'] = homogenize(vdict['l1'])
         tdict['l2'] = homogenize(vdict['l2'])
-        tdict['l1l2'] = tdict['l1']*tdict['l2']
 
         if not(tdict['l1'] in unique_l1s):
             unique_l1s.append(tdict['l1'])
@@ -87,9 +114,6 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
             unique_l2s.append(tdict['l2'])
         tdict['l2index'] = unique_l2s.index(tdict['l2'])
 
-        if not(tdict['l1l2'] in unique_l1l2s):
-            unique_l1l2s.append(tdict['l1l2'])
-        tdict['l1l2index'] = unique_l1l2s.index(tdict['l1l2'])
         
         
         vdict['other'] = loterms
@@ -110,7 +134,7 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,validate=Tr
     if validate:
         fexpr = sympy.Add(*prodterms)
         assert sympy.simplify(expr-fexpr)==0, val_fail_message
-    return terms,unique_l1s,unique_l2s,unique_l1l2s
+    return terms,unique_l1s,unique_l2s,ogroups,ogroup_weights,ogroup_symbols
 
 
 
@@ -133,10 +157,18 @@ def get_Ls():
 
 class ModeCoupling(object):
 
-    def __init__(self,shape,wcs):
+    def __init__(self,shape,wcs,groups=None):
         # Symbolic
         self.l1x,self.l1y,self.l2x,self.l2y,self.l1,self.l2 = get_ells()
+        self.Lx,self.Ly,self.L = get_Ls()
+        if groups is None: groups = [self.Lx*self.Lx,self.Ly*self.Ly,self.Lx*self.Ly]
+        self._default_groups = groups
         self.integrands = {}
+        self.ul1s = {}
+        self.ul2s = {}
+        self.ogroups = {}
+        self.ogroup_weights = {}
+        self.ogroup_symbols = {}
         self.l1funcs = []
         self.l2funcs = []
         # Diagnostic
@@ -156,9 +188,12 @@ class ModeCoupling(object):
         if ell in [self.l2x,self.l2y,self.l2]: self.l2funcs.append(f)
         return f
     
-    def add_factorized(self,tag,expr,validate=True):
-        self.integrands[tag],self.ul1s,self.ul2s,self.ul1l2s = factorize_2d_convolution_integral(expr,
-                                                                                     l1funcs=self.l1funcs,l2funcs=self.l2funcs,validate=validate)
+    def add_factorized(self,tag,expr,validate=True,groups=None):
+        if groups is None: groups = self._default_groups
+        self.integrands[tag],self.ul1s[tag],self.ul2s[tag], \
+            self.ogroups[tag],self.ogroup_weights[tag], \
+            self.ogroup_symbols[tag] = factorize_2d_convolution_integral(expr,l1funcs=self.l1funcs,l2funcs=self.l2funcs,
+                                                                         validate=validate,groups=groups)
 
     def _evaluate(self,symbolic_term,feed_dict):
         symbols = list(symbolic_term.free_symbols)
@@ -185,31 +220,52 @@ class ModeCoupling(object):
         if cache:
             cached_u1s = []
             cached_u2s = []
-            for u1 in self.ul1s:
+            for u1 in self.ul1s[tag]:
                 l12d = self._evaluate(u1,feed_dict)*ones
                 cached_u1s.append(self._ifft(l12d*xmask))
-            for u2 in self.ul2s:
+            for u2 in self.ul2s[tag]:
                 l22d = self._evaluate(u2,feed_dict)*ones
                 cached_u2s.append(self._ifft(l22d*ymask))
+
+
+        # For each term, the index of which group it belongs to  
+        ogroups = self.ogroups[tag] 
+        ogroup_weights = self.ogroup_weights[tag] 
+        ogroup_symbols = self.ogroup_symbols[tag]
+
+        
+        if ogroups is None:    
+            for i,term in enumerate(self.integrands[tag]):
+                if cache:
+                    ifft1 = cached_u1s[term['l1index']]
+                    ifft2 = cached_u2s[term['l2index']]
+                else:
+                    l12d = self._evaluate(term['l1'],feed_dict)*ones
+                    ifft1 = self._ifft(l12d*xmask)
+                    l22d = self._evaluate(term['l2'],feed_dict)*ones
+                    ifft2 = self._ifft(l22d*ymask)
+                ot2d = self._evaluate(term['other'],feed_dict)*ones
+                ffft = self._fft(ifft1*ifft2)
+                val += ot2d*ffft.real
+        else:
+            vals = np.zeros((len(ogroup_symbols),)+shape,dtype=feed_dict['L'].dtype)+0j
+            for i,term in enumerate(self.integrands[tag]):
+                if cache:
+                    ifft1 = cached_u1s[term['l1index']]
+                    ifft2 = cached_u2s[term['l2index']]
+                else:
+                    l12d = self._evaluate(term['l1'],feed_dict)*ones
+                    ifft1 = self._ifft(l12d*xmask)
+                    l22d = self._evaluate(term['l2'],feed_dict)*ones
+                    ifft2 = self._ifft(l22d*ymask)
+                gindex = ogroups[i]
+                vals[gindex,...] += ifft1*ifft2 *ogroup_weights[i]
+            for i,group in enumerate(ogroup_symbols):
+                ot2d = self._evaluate(ogroup_symbols[i],feed_dict)*ones            
+                ffft = self._fft(vals[i,...])
+                val += ot2d*ffft.real
+
                 
-            
-        for i,term in enumerate(self.integrands[tag]):
-
-            if cache:
-                ifft1 = cached_u1s[term['l1index']]
-                ifft2 = cached_u2s[term['l2index']]
-            else:
-                l12d = self._evaluate(term['l1'],feed_dict)*ones
-                ifft1 = self._ifft(l12d*xmask)
-                l22d = self._evaluate(term['l2'],feed_dict)*ones
-                ifft2 = self._ifft(l22d*ymask)
-            
-            ot2d = self._evaluate(term['other'],feed_dict)*ones
-
-            
-            ffft = self._fft(ifft1*ifft2)
-            
-            val += ot2d*ffft.real
         mul = 1 if pixel_units else 1./self.pixarea
         return val * mul
 
@@ -332,18 +388,19 @@ uCl1 = mc.Cls("uCl",mc.l1)
 uCl2 = mc.Cls("uCl",mc.l2)
 tCl1 = mc.Cls("tCl",mc.l1)
 tCl2 = mc.Cls("tCl",mc.l2)
-pol = "TB"
+pol = "EE"
 f = mc.f(pol,uCl1,uCl2)
 F = mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2)
 Frev = mc.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2,rev=True)
 #F = mc.F_HDV(pol,tCl1,tCl2,uCl1)
-mc.add_ALinv("test",f,F,validate=True)
+with bench.show("eval"):
+    mc.add_ALinv("test",f,F,validate=True)
 
-for t in mc.integrands['test']:
-    print(t['l1'])
-    print(t['l2'])
-    print(t['other'])
-    print("----")
+# for t in mc.integrands['test']:
+#     print(t['l1'])
+#     print(t['l2'])
+#     print(t['other'])
+#     print("----")
 # print(len(mc.integrands['test']))
 
 theory = cosmology.default_theory(lpad=20000)
@@ -374,7 +431,8 @@ ellmax = 3000
 xmask = maps.mask_kspace(shape,wcs,lmin=ellmin,lmax=ellmax)
 ymask = xmask
 
-AL = mc.get_AL("test",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
+with bench.show("ALcalc"):
+    AL = mc.get_AL("test",{'uCl_EE':uclee,'tCl_EE':tclee,'tCl_BB':tclbb,'tCl_TT':tcltt,'uCl_TT':ucltt,'uCl_TE':uclte,'tCl_TE':tclte},xmask=xmask,ymask=ymask,cache=cache)
 val = mc.NL_from_AL(AL)
 
 bin_edges = np.arange(10,2000,40)
