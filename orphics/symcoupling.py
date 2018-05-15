@@ -490,14 +490,6 @@ class LensingModeCoupling(ModeCoupling):
         
         self.add_cross(save_expression,Falpha,Fbeta,rFbeta,Cxaxb1,Cyayb2,Cxayb1,Cyaxb2,validate=validate)
 
-        # for t in self.integrands[save_expression]:
-        #     print(t['l1'])
-        #     print(t['l2'])
-        #     print(t['other'])
-        #     print("----")
-        # print(len(self.integrands['test']))
-
-        
         theory2d,theory2d_norm = self._get_theory2d(theory,theory_norm,lensed_cls)
         feed_dict = self._dict_from_theory_noise(theory2d,theory2d_norm,
                                                  noise_t,ynoise_t,
@@ -516,3 +508,11 @@ class LensingModeCoupling(ModeCoupling):
         else:
             return 0.25*(AL*AL2)*cross
     
+
+    def f_K2(self,uCl1,uCl2,rev=False):
+        Ldl1 = self.Ldl1 if not(rev) else self.Ldl2
+        Ldl2 = self.Ldl2 if not(rev) else self.Ldl1
+        u1 = uCl1 if not(rev) else uCl2
+        u2 = uCl2 if not(rev) else uCl1
+        if polcomb=='TT':
+            return Ldl1*(u1['TT']-u2['TT'])
