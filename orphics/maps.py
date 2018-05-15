@@ -45,7 +45,7 @@ def crop_center(img,cropy,cropx):
     starty = y//2-(cropy//2)
     return img[...,starty:starty+cropy,startx:startx+cropx]
 
-def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None):
+def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None):
     """Get the binned power spectrum of a map in one line of code.
     (At the cost of flexibility and reusability of expensive parts)"""
     
@@ -54,7 +54,7 @@ def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None):
     modlmap = enmap.modlmap(shape,wcs) if modlmap is None else modlmap
     fc = FourierCalc(shape,wcs) if fc is None else fc
     binner = stats.bin2D(modlmap,bin_edges) if binner is None else binner
-    p2d,_,_ = fc.power2d(imap)
+    p2d,_,_ = fc.power2d(imap,imap2)
     return binner.bin(p2d)
 
 def interp(x,y,bounds_error=False,fill_value=0.,**kwargs):

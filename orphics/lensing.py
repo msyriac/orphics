@@ -81,9 +81,9 @@ def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,
 def lensing_noise(ells,ntt,nee,nbb,
                   ellmin_t,ellmin_e,ellmin_b,
                   ellmax_t,ellmax_e,ellmax_b,
+                  bin_edges,
                   camb_theory_file_root=None,
                   estimators = ['TT'],
-                  do_mv = True,
                   delens = False,
                   theory=None,
                   dimensionless=False,
@@ -92,19 +92,18 @@ def lensing_noise(ells,ntt,nee,nbb,
                   ellmin_k = None,
                   ellmax_k = None,
                   y_ells=None,y_ntt=None,y_nee=None,y_nbb=None,
-                  y_ellmin_t=None,y_ellmin=None,y_ellmin_b=None,
+                  y_ellmin_t=None,y_ellmin_e=None,y_ellmin_b=None,
                   y_ellmax_t=None,y_ellmax_e=None,y_ellmax_b=None,
                   lxcut_t=None,lycut_t=None,y_lxcut_t=None,y_lycut_t=None,
                   lxcut_e=None,lycut_e=None,y_lxcut_e=None,y_lycut_e=None,
                   lxcut_b=None,lycut_b=None,y_lxcut_b=None,y_lycut_b=None,
                   width_deg=5.,px_res_arcmin=1.0):
+
+    from orphics import cosmology, stats
     
     shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
     modlmap = enmap.modlmap(shape,wcs)
-    if theory is not None:
-        assert camb_theory_file is None
-    else:
-        theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
+    if theory is None: theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
                                                      useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
 
             
@@ -124,6 +123,20 @@ def lensing_noise(ells,ntt,nee,nbb,
 
     pol = False if estimators==['TT'] else True
 
+    nTX = maps.interp(ells,ntt)(modlmap)
+    nTY = maps.interp(ells,y_ntt)(modlmap)
+    nEX = maps.interp(ells,nee)(modlmap)
+    nEY = maps.interp(ells,y_nee)(modlmap)
+    nBX = maps.interp(ells,nbb)(modlmap)
+    nBY = maps.interp(ells,y_nbb)(modlmap)
+
+    kmask_TX = maps.mask_kspace(shape,wcs,lmin=ellmin_t,lmax=ellmax_t,lxcut=lxcut_t,lycut=lycut_t)
+    kmask_TY = maps.mask_kspace(shape,wcs,lmin=y_ellmin_t,lmax=y_ellmax_t,lxcut=y_lxcut_t,lycut=y_lycut_t)
+    kmask_EX = maps.mask_kspace(shape,wcs,lmin=ellmin_e,lmax=ellmax_e,lxcut=lxcut_e,lycut=lycut_e)
+    kmask_EY = maps.mask_kspace(shape,wcs,lmin=y_ellmin_e,lmax=y_ellmax_e,lxcut=y_lxcut_e,lycut=y_lycut_e)
+    kmask_BX = maps.mask_kspace(shape,wcs,lmin=ellmin_b,lmax=ellmax_b,lxcut=lxcut_b,lycut=lycut_b)
+    kmask_BY = maps.mask_kspace(shape,wcs,lmin=y_ellmin_b,lmax=y_ellmax_b,lxcut=y_lxcut_b,lycut=y_lycut_b)
+    kmask_K = maps.mask_kspace(shape,wcs,lmin=ellmin_k,lmax=ellmax_k)
 
     qest = Estimator(shape,wcs,
                      theory,
@@ -148,6 +161,19 @@ def lensing_noise(ells,ntt,nee,nbb,
                      bigell=9000,
                      mpi_comm=None,
                      lEqualsU=False)
+
+    nlkks = {}
+    nsum = 0.
+    for est in estimators:
+        nlkk2d = qest.N.Nlkk[est]
+        ls,nlkk = stats.bin_in_annuli(nlkk2d, modlmap, bin_edges)
+        nlkks[est] = nlkk.copy()
+        nsum += np.nan_to_num(kmask_K/nlkk2d)
+
+    nmv = np.nan_to_num(kmask_K/nsum)
+    nlkks['mv'] = stats.bin_in_annuli(nmv, modlmap, bin_edges)[1]
+    
+    return ls,nlkks,theory,qest
     
     
 
@@ -499,7 +525,8 @@ class QuadNorm(object):
         return np.nan_to_num(unreplaced**2./replaced)
     
     def getNlkk2d(self,XY,halo=True,l1Scale=1.,l2Scale=1.,setNl=True):
-        #if not(halo): raise NotImplementedError
+        if not(halo): raise NotImplementedError
+        
         lx,ly = self.lxMap,self.lyMap
         lmap = self.modLMap
 
@@ -555,7 +582,7 @@ class QuadNorm(object):
 
 
                     
-                    calc = 2.*ell1*ell2*fft(ifft(preF,axes=[-2,-1])*ifft(preG,axes=[-2,-1])+ifft(preFX,axes=[-2,-1])*ifft(preGX,axes=[-2,-1])/2.,axes=[-2,-1])
+                    calc = 2.*ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True)+ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True)/2.,axes=[-2,-1])
                     allTerms += [calc]
           
 
@@ -1586,11 +1613,6 @@ class Estimator(object):
 
         if self.verbose: startTime = time.time()
 
-        # HighMapStar = ifft(self.fmask_func(self.kHigh[Y]*WY*phaseY*phaseB),axes=[-2,-1],normalize=True).conjugate()
-        # kPx = fft(ifft(self.kGradx[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])
-        # kPy = fft(ifft(self.kGrady[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])        
-        # rawKappa = ifft(self.fmask_func(1.j*lx*kPx) + self.fmask_func(1.j*ly*kPy),axes=[-2,-1],normalize=True).real
-
         HighMapStar = ifft((self.kHigh[Y]*WY*phaseY*phaseB),axes=[-2,-1],normalize=True).conjugate()
         kPx = fft(ifft(self.kGradx[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])
         kPy = fft(ifft(self.kGrady[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])        
@@ -1600,30 +1622,15 @@ class Estimator(object):
 
 
         assert not(np.any(np.isnan(rawKappa)))
-        # debug_edges = np.arange(400,6000,50)
-        # import orphics.tools.stats as stats
-        # import orphics.tools.io as io
-        # io.quickPlot2d(rawKappa,"kappa.png")
-        # binner = stats.bin2D(self.N.modLMap,debug_edges)
-        # cents,ws = binner.bin(rawKappa.real)
-        # pl = io.Plotter()#scaleY='log')
-        # pl.add(cents,ws)
-        # pl._ax.set_xlim(2,6000)
-        # pl.done("rawkappa1d.png")
-        #sys.exit()
-
-
         lmap = self.N.modLMap
         
         kappaft = -self.fmask_func(AL*fft(rawKappa,axes=[-2,-1]))
-        #kappaft = np.nan_to_num(-AL*fft(rawKappa,axes=[-2,-1])) # added after beam convolved change
-
+        
         if returnFt:
             return kappaft
         
         self.kappa = ifft(kappaft,axes=[-2,-1],normalize=True).real
         try:
-            #raise
             assert not(np.any(np.isnan(self.kappa)))
         except:
             import orphics.tools.io as io
