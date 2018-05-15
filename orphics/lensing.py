@@ -2009,3 +2009,71 @@ def kappa_nfw(M,c,R,theta,cc,z):
     kappa = kappa_nfw_generic(theta,z,comL,np.abs(M),c,R,winAtLens)
 
     return sgn*kappa
+
+
+class SplitLensing(object):
+    def __init__(self,shape,wcs,qest):
+        # PS calculator
+        self.fc = maps.FourierCalc(shape,wcs)
+        self.qest = qest
+
+    def qpower(self,k1,k2):
+        # PS func
+        return self.fc.f2power(k1,k2)
+
+    def qfrag(self,a,b):
+        # kappa func (accepts fts, returns ft)
+        k1 = self.qest.kappa_from_map('TT',T2DData=a.copy(),T2DDataY=b.copy(),alreadyFTed=True,returnFt=True)
+        return k1
+
+    def auto_free(self,ksplits,crosses=True):
+        # PS from splits
+
+        splits = ksplits
+        splits = np.asanyarray(ksplits)
+        nsplits = splits.shape[0]
+        s = np.sum(ksplits,axis=0)
+
+        ss = self.qfrag(s,s)
+
+        term_1 = self.qpower(ss,ss)
+        term_2 = 0.
+        term_3 = 0.
+        term_4 = 0.
+        term_5 = 0.
+        term_6 = 0.
+
+        for i in range(nsplits):
+            print(i)
+            mi = splits[i]
+
+            mimi = self.qfrag(mi,mi)
+            mis = self.qfrag(mi,s)
+            term_2 += self.qpower(mimi,ss)*2
+            term_3 += self.qpower(mis,mis)*4
+
+
+            term_6_inst = self.qpower(mimi,mimi)
+            term_6 += term_6_inst
+            # term 4 double sum
+            term_4 += term_6_inst
+            # no diagonal
+            for j in range(i+1,nsplits):
+                mj = splits[j]
+                mimj = self.qfrag(mi,mj)
+                term_4 += self.qpower(mimj,mimj)*2
+
+            term_5 += self.qpower(mimi,mis)*4
+
+
+        if crosses:
+            final = term_1 - term_2 - term_3 + 3*term_4 + 2*term_5 - 6*term_6
+            norm = nsplits**4-6*nsplits**3+3*nsplits**2+8*nsplits**2-6*nsplits
+        else:
+            final = -( - term_2 - term_3 + 3*term_4 + 2*term_5 - 6*term_6 )
+            norm = -(-6*nsplits**3+3*nsplits**2+8*nsplits**2-6*nsplits)
+
+        print(norm/nsplits**4.)
+        final /= norm
+        return final
+
