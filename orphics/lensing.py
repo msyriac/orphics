@@ -2041,6 +2041,17 @@ class SplitLensing(object):
         nsplits = splits.shape[0]
         s = np.sum(ksplits,axis=0)
 
+        import itertools
+        qp = 0.
+        plist = list(itertools.permutations([0,1,2,3]))
+        for m,perms in enumerate(plist):
+            i,j,k,l = perms
+            s01 = self.qfrag(splits[i],splits[j])
+            s23 = self.qfrag(splits[k],splits[l])
+            
+            qp += self.qpower(s01,s23)
+        return qp / len(plist)
+
         ss = self.qfrag(s,s)
 
         term_1 = self.qpower(ss,ss)
@@ -2051,7 +2062,6 @@ class SplitLensing(object):
         term_6 = 0.
 
         for i in range(nsplits):
-            print(i)
             mi = splits[i]
 
             mimi = self.qfrag(mi,mi)
@@ -2084,3 +2094,39 @@ class SplitLensing(object):
         final /= norm
         return final
 
+
+    def cross_estimator(self,ksplits):
+        # PS from splits
+
+        splits = ksplits
+        splits = np.asanyarray(ksplits)
+        nsplits = splits.shape[0]
+        s = np.mean(ksplits,axis=0)
+
+        k = self.qfrag(s,s)
+        kiisum = 0.
+        psum = 0.
+        psum2 = 0.
+        
+        
+        for i in range(nsplits):
+            mi = splits[i]
+
+            ki = (self.qfrag(mi,s)+self.qfrag(s,mi))/2.
+            kii = self.qfrag(mi,mi)
+            kiisum += kii
+
+            kic = ki - (1/nsplits)*kii
+
+            psum += self.qpower(kic,kic)
+
+            for j in range(i,nsplits):
+                mj = splits[j]
+
+                kij = (self.qfrag(mi,mj)+self.qfrag(mj,mi))/2.
+                psum2 += self.qpower(kij,kij)
+
+
+        kc = k - (1./nsplits**2.)*kiisum
+        return (nsplits**4.*self.qpower(kc,kc)-4.*nsplits**2.*psum+4.*psum2)/nsplits/(nsplits-1.)/(nsplits-2.)/(nsplits-3.)
+            

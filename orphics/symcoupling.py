@@ -306,6 +306,8 @@ class LensingModeCoupling(ModeCoupling):
             self.theory2d_norm = self.theory2d
         else:
             self.theory2d_norm = self._load_theory(theory_norm,lensed_cls=lensed_cls)
+
+        self.Als = {}
         
     def _load_theory(self,theory,lensed_cls=None):
         pol_list = ['TT','EE','TE','BB']
@@ -516,3 +518,15 @@ class LensingModeCoupling(ModeCoupling):
         u2 = uCl2 if not(rev) else uCl1
         if polcomb=='TT':
             return Ldl1*(u1['TT']-u2['TT'])
+
+    def add_estimator(self,tag,f,F,feed_dict,xmask,ymask,validate=True,cache=True):
+        self.add_ALinv(tag,f,F,validate=validate)
+        X1 = self.f_of_ell('X1',self.l1)
+        Y2 = self.f_of_ell('Y2',self.l2)
+        expr = 0.5*F*X1*Y2
+        self.add_factorized("_est_"+tag,expr,validate=validate)
+        self.Als[tag] = self.get_AL(tag,feed_dict,xmask,ymask,cache)
+
+    def qest(self,tag,feed_dict,xmask,ymask,cache=True):
+        return -self.Als[tag] * self.integrate(tag,feed_dict,xmask=xmask,ymask=ymask,cache=cache)/2.
+        
