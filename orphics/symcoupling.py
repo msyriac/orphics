@@ -78,7 +78,8 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,groups=None
                     raise ValueError, "Groups don't seem to be mutually exclusive."
                 index = i
                 found = True
-        if not(found): raise ValueError, "Couldn't associate a group"
+        if not(found):
+            raise ValueError, "Couldn't associate a group"
         return index
 
 
@@ -89,6 +90,7 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,groups=None
         temp, ll1terms = arg.as_independent(*l1funcs, as_Mul=True)
         loterms, ll2terms = temp.as_independent(*l2funcs, as_Mul=True)
 
+        
         if any([x==0 for x in [ll1terms,ll2terms,loterms]]): continue
         # Group ffts
         if groups is not None:
@@ -192,7 +194,6 @@ class ModeCoupling(object):
         return f
     
     def add_factorized(self,tag,expr,validate=True,groups=None):
-        if groups is None: groups = self._default_groups
         self.integrands[tag],self.ul1s[tag],self.ul2s[tag], \
             self.ogroups[tag],self.ogroup_weights[tag], \
             self.ogroup_symbols[tag] = factorize_2d_convolution_integral(expr,l1funcs=self.l1funcs,l2funcs=self.l2funcs,
@@ -253,7 +254,7 @@ class ModeCoupling(object):
                 ifft1,ifft2 = get_l1l2(term)
                 ot2d = self._evaluate(term['other'],feed_dict)*ones
                 ffft = self._fft(ifft1*ifft2)
-                val += ot2d*ffft.real
+                val += ot2d*ffft
         else:
             vals = np.zeros((len(ogroup_symbols),)+shape,dtype=feed_dict['L'].dtype)+0j
             for i,term in enumerate(self.integrands[tag]):
@@ -263,7 +264,7 @@ class ModeCoupling(object):
             for i,group in enumerate(ogroup_symbols):
                 ot2d = self._evaluate(ogroup_symbols[i],feed_dict)*ones            
                 ffft = self._fft(vals[i,...])
-                val += ot2d*ffft.real
+                val += ot2d*ffft
 
                 
         mul = 1 if pixel_units else 1./self.pixarea
@@ -343,12 +344,12 @@ class LensingModeCoupling(ModeCoupling):
         elif polcomb=='EB':
             return Ldl1*u1['EE']*self.sin2t12
 
-    def F_HuOk(self,polcomb,tCl1,tCl2,uCl1,uCl2,rev=False):
+    def F_HuOk(self,polcomb,tCl1,tCl2,uCl1,uCl2,rev=False,f=None):
         t1 = tCl1 if not(rev) else tCl2
         t2 = tCl2 if not(rev) else tCl1
         
+        if f is None: f = self.f(polcomb,uCl1,uCl2,rev=rev)
         if polcomb=='TE':
-            f = self.f(polcomb,uCl1,uCl2,rev=rev)
             frev = self.f(polcomb,uCl1,uCl2,rev=not(rev))
             # this filter is not separable
             #(tCl1['EE']*tCl2['TT']*f - tCl1['TE']*tCl2['TE']*frev)/(tCl1['TT']*tCl2['EE']*tCl1['EE']*tCl2['TT']-(tCl1['TE']*tCl2['TE'])**2.)
@@ -357,7 +358,6 @@ class LensingModeCoupling(ModeCoupling):
             
         X,Y = polcomb
         pfact = 0.5 if Y!='B' else 1.0
-        f = self.f(polcomb,uCl1,uCl2,rev=rev)
         return f*pfact/t1[X+X]/t2[Y+Y]
         
 
@@ -378,12 +378,12 @@ class LensingModeCoupling(ModeCoupling):
             return pref * u1[X+'E'] * self.sin2t12
             
         
-    def add_ALinv(self,tag,fa,Fa,validate=True):
+    def add_ALinv(self,tag,fa,Fa,validate=True,groups=None):
         expr = fa*Fa/self.L**2
-        self.add_factorized(tag,expr,validate=validate)
+        self.add_factorized(tag,expr,validate=validate,groups=groups)
 
     def get_AL(self,tag,feed_dict,xmask=None,ymask=None,cache=True):
-        ival = self.integrate(tag,feed_dict,xmask=xmask,ymask=ymask,cache=cache)
+        ival = self.integrate(tag,feed_dict,xmask=xmask,ymask=ymask,cache=cache).real
         return np.nan_to_num(1./ival)
 
     def NL_from_AL(self,AL):
@@ -393,16 +393,17 @@ class LensingModeCoupling(ModeCoupling):
         AL = self.get_AL(tag,feed_dict,xmask=xmask,ymask=xmask,cache=cache)
         return self.NL_from_AL(AL)
         
-    def add_cross(self,tag,Fa,Fb,Fbr,Cxaxb1,Cyayb2,Cxayb1,Cyaxb2,validate=True):
+    def add_cross(self,tag,Fa,Fb,Fbr,Cxaxb1,Cyayb2,Cxayb1,Cyaxb2,validate=True,groups=None):
         # integrand in Eq 17 in HuOk01
+        if groups is None: groups = self._default_groups
         expr = Fa*(Fb*Cxaxb1*Cyayb2+Fbr*Cxayb1*Cyaxb2)
-        self.add_factorized(tag,expr,validate=validate)    
+        self.add_factorized(tag,expr,validate=validate,groups=groups)    
 
     def AL(self,pol,xmask,ymask,noise_t=0,noise_e=0,noise_b=0,
            ynoise_t=None,ynoise_e=None,ynoise_b=None,
            save_expression="current",
            theory=None,theory_norm=None,
-           hdv=True,validate=True,lensed_cls=None,cache=True):
+           hdv=True,validate=True,lensed_cls=None,cache=True,groups=None):
 
         if ynoise_t is None: ynoise_t = noise_t
         if ynoise_e is None: ynoise_e = noise_e
@@ -415,7 +416,8 @@ class LensingModeCoupling(ModeCoupling):
         uCl2N = self.Cls("uClN",self.l2) if not(theory_norm is None) else uCl2
         f_norm = self.f(pol,uCl1N,uCl2N)
         F = self.F_HDV(pol,tCl1,tCl2,uCl1) if hdv else self.F_HuOk(pol,tCl1,tCl2,uCl1,uCl2)
-        self.add_ALinv(save_expression,f_norm,F,validate=validate)
+        if groups is None: groups = self._default_groups
+        self.add_ALinv(save_expression,f_norm,F,validate=validate,groups=groups)
 
         theory2d,theory2d_norm = self._get_theory2d(theory,theory_norm,lensed_cls)
         feed_dict = self._dict_from_theory_noise(theory2d,theory2d_norm,noise_t,ynoise_t,noise_e,ynoise_e,noise_b,ynoise_b)
@@ -432,13 +434,39 @@ class LensingModeCoupling(ModeCoupling):
             theory2d_norm = self._load_theory(theory_norm,lensed_cls=lensed_cls)
         return theory2d,theory2d_norm
 
+    def dict_from_noise(self,xnoise_t,ynoise_t=None,
+                                xnoise_e=None,ynoise_e=None,
+                                xnoise_b=None,ynoise_b=None,
+                                cxnoise_t=None,cynoise_t=None,
+                                cxnoise_e=None,cynoise_e=None,
+                                cxnoise_b=None,cynoise_b=None):
+
+        if ynoise_t is None: ynoise_t = xnoise_t
+        if xnoise_e is None: xnoise_e = 2*xnoise_t
+        if xnoise_b is None: xnoise_b=xnoise_e
+        if ynoise_e is None: ynoise_e=2*ynoise_t
+        if ynoise_b is None: ynoise_b=ynoise_e
+        if cxnoise_t is None: cxnoise_t=xnoise_t
+        if cxnoise_e is None: cxnoise_e=xnoise_e
+        if cxnoise_b is None: cxnoise_b=xnoise_b
+        if cynoise_t is None: cynoise_t=ynoise_t
+        if cynoise_e is None: cynoise_e=ynoise_e
+        if cynoise_b is None: cynoise_b=ynoise_b
+        
+        return self._dict_from_theory_noise(self.theory2d,self.theory2d_norm,
+                                xnoise_t,ynoise_t,
+                                xnoise_e,ynoise_e,
+                                xnoise_b,ynoise_b,
+                                cxnoise_t,cynoise_t,
+                                cxnoise_e,cynoise_e,
+                                cxnoise_b,cynoise_b)                                
     def _dict_from_theory_noise(self,theory2d,theory2d_norm,
                                 xnoise_t,ynoise_t,
                                 xnoise_e,ynoise_e,
                                 xnoise_b,ynoise_b,
-                                cxnoise_t=0,cynoise_t=0,
-                                cxnoise_e=0,cynoise_e=0,
-                                cxnoise_b=0,cynoise_b=0):
+                                cxnoise_t=None,cynoise_t=None,
+                                cxnoise_e=None,cynoise_e=None,
+                                cxnoise_b=None,cynoise_b=None):
         pol_list = ['TT','EE','TE','BB']
         xnoise = {'TT':xnoise_t,'EE':xnoise_e,'BB':xnoise_b,'TE':0}
         ynoise = {'TT':ynoise_t,'EE':ynoise_e,'BB':ynoise_b,'TE':0}
@@ -500,7 +528,7 @@ class LensingModeCoupling(ModeCoupling):
                                                  cross_xnoise_t,cross_ynoise_t,
                                                  cross_xnoise_e,cross_ynoise_e,
                                                  cross_xnoise_b,cross_ynoise_b)
-        cval = self.integrate(save_expression,feed_dict,xmask=xmask,ymask=ymask,cache=cache)
+        cval = self.integrate(save_expression,feed_dict,xmask=xmask,ymask=ymask,cache=cache).real
         return cval
 
     def NL(self,AL=None,AL2=None,cross=None):
@@ -511,22 +539,66 @@ class LensingModeCoupling(ModeCoupling):
             return 0.25*(AL*AL2)*cross
     
 
-    def f_K2(self,uCl1,uCl2,rev=False):
+    def f_K2(self,polcomb,uCl1,uCl2,rev=False):
         Ldl1 = self.Ldl1 if not(rev) else self.Ldl2
         Ldl2 = self.Ldl2 if not(rev) else self.Ldl1
         u1 = uCl1 if not(rev) else uCl2
         u2 = uCl2 if not(rev) else uCl1
         if polcomb=='TT':
             return Ldl1*(u1['TT']-u2['TT'])
+        else:
+            raise NotImplementedError
 
-    def add_estimator(self,tag,f,F,feed_dict,xmask,ymask,validate=True,cache=True):
-        self.add_ALinv(tag,f,F,validate=validate)
+    def add_estimator(self,tag,f,F,feed_dict,xmask,ymask,validate=True,cache=True,norm_groups=None,est_groups=None):
+        self.add_ALinv(tag,f,F,validate=validate,groups=norm_groups)
         X1 = self.f_of_ell('X1',self.l1)
         Y2 = self.f_of_ell('Y2',self.l2)
-        expr = 0.5*F*X1*Y2
-        self.add_factorized("_est_"+tag,expr,validate=validate)
         self.Als[tag] = self.get_AL(tag,feed_dict,xmask,ymask,cache)
+        expr = 0.5*F*X1*Y2
+        self.add_factorized("_est_"+tag,expr,validate=validate,groups=est_groups)
 
-    def qest(self,tag,feed_dict,xmask,ymask,cache=True):
-        return -self.Als[tag] * self.integrate(tag,feed_dict,xmask=xmask,ymask=ymask,cache=cache)/2.
+    def qest(self,tag,feed_dict,xmask,ymask,kmask,cache=True):
+        unnormalized = self.integrate("_est_"+tag,feed_dict,xmask=xmask,ymask=ymask,cache=cache,pixel_units=True)
+        assert not(np.any(np.isnan(unnormalized)))
+        res = np.nan_to_num(self.Als[tag] * unnormalized)
+        res = mask_func(res,kmask)
+        return res
+
+    def add_maps(self,feed_dict,xmap,ymap=None):
+        x1 = self._fft(xmap)
+        y2 = self._fft(ymap) if not(ymap is None) else x1
+        feed_dict['X1'] = x1
+        feed_dict['Y2'] = y2
+
+    def f_shear(self,uCl1,uCl2,rev=False):
+        Ldl2 = self.Ldl1 if rev else self.Ldl2
+        uC2 = uCl1['TT'] if rev else uCl2['TT']
+        return Ldl2*uC2
+
+    def F_shear(self,tCl1,tCl2,uCl1,duCl1,uCl2=None,duCl2=None,rev=False):
+        Ldl1 = self.Ldl1 if not(rev) else self.Ldl2
+        l1 = self.l1 if not(rev) else self.l2
+        u1 = uCl1['TT'] if not(rev) else uCl2['TT']
+        d1 = duCl1 if not(rev) else duCl2
+        t1 = tCl1['TT'] if not(rev) else tCl2['TT']
+        t2 = tCl2['TT'] if not(rev) else tCl1['TT']
+        cos2theta = 2*(Ldl1)**2/self.L**2/l1**2
+        return cos2theta * u1 * d1/2/t1/t1 # !!! tCl2??
+
+    def Nl_cross_XXXX(self,tCl1,tCl2,F,Frev,X='T'):
+        return tCl1[X+X]*tCl2[X+X]*F*(F+Frev)
+    
+    def Nl_shear_cross(self,uCl1,uCl2,tCl1,tCl2,duCl1,duCl2):
+        F = self.F_shear(tCl1,tCl2,uCl1,uCl2=uCl2,duCl1=duCl1,duCl2=duCl2)
+        Frev = self.F_shear(tCl1,tCl2,uCl1,uCl2=uCl2,duCl1=duCl1,duCl2=duCl2,rev=True)
+        return self.Nl_cross_XXXX(tCl1,tCl2,F,Frev)
+    
+    def Nl_generic(self,Al,cross,feed_dict,xmask,ymask,cache=True,save_expression="current",validate=True,groups=None):
+        self.add_factorized(save_expression,cross,validate=validate,groups=groups)
+        ival = self.integrate(save_expression,feed_dict,xmask=xmask,ymask=ymask,cache=cache).real
+        return np.nan_to_num(ival*Al**2.)/4.
         
+        
+def mask_func(arr,mask):
+    arr[mask<1.e-3] = 0.
+    return arr

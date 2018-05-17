@@ -2,7 +2,7 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from enlib import enmap, utils, bench
+from enlib import enmap, utils, bench,lensing as enlensing
 
 from scipy.integrate import simps
 from scipy.interpolate import splrep,splev
@@ -18,6 +18,70 @@ import cPickle as pickle
 
 from orphics import stats,mpi
 
+def alpha_from_kappa(kappa,posmap=None):
+    phi,_ = kappa_to_phi(kappa,kappa.modlmap(),return_fphi=True)
+    grad_phi = enmap.grad(phi)
+    if posmap is None: posmap = enmap.posmap(kappa.shape,kappa.wcs)
+    pos = posmap + grad_phi
+    alpha_pix = enmap.sky2pix(kappa.shape,kappa.wcs,pos, safe=False)
+    return alpha_pix
+    
+
+
+class FlatLensingSims(object):
+    def __init__(self,shape,wcs,theory,beam_arcmin,noise_uk_arcmin,noise_e_uk_arcmin=None,noise_b_uk_arcmin=None,pol=False,fixed_lens_kappa=None):
+        from orphics import cosmology
+
+        if noise_e_uk_arcmin is None: noise_e_uk_arcmin = np.sqrt(2.)*noise_uk_arcmin
+        if noise_b_uk_arcmin is None: noise_b_uk_arcmin = noise_b_uk_arcmin
+        self.modlmap = enmap.modlmap(shape,wcs)
+        Ny,Nx = shape[-2:]
+        lmax = self.modlmap.max()
+        ells = np.arange(0,lmax,1)
+        ps_cmb = cosmology.power_from_theory(ells,theory,lensed=False,pol=pol)
+        self.mgen = maps.MapGen(shape,wcs,ps_cmb)
+        if fixed_lens_kappa is not None:
+            self._fixed = True
+            self.kappa = fixed_lens_kappa
+            self.alpha = alpha_from_kappa(self.kappa)
+        else:
+            self._fixed = False
+            ps_kk = theory.gCl('kk',self.modlmap).reshape((1,1,Ny,Nx))
+            self.kgen = maps.MapGen(shape,wcs,ps_kk)
+            self.posmap = enmap.posmap(shape,wcs)
+        self.kbeam = maps.gauss_beam(beam_arcmin,self.modlmap)
+        ncomp = 3 if pol else 1
+        ps_noise = np.zeros((ncomp,ncomp,Ny,Nx))
+        ps_noise[0,0] = (noise_uk_arcmin*np.pi/180./60.)**2.
+        if pol:
+            ps_noise[1,1] = (noise_e_uk_arcmin*np.pi/180./60.)**2.
+            ps_noise[2,2] = (noise_b_uk_arcmin*np.pi/180./60.)**2.
+        self.ngen = maps.MapGen(shape,wcs,ps_noise)
+        self.ps_noise = ps_noise
+
+    def get_unlensed(self,seed=None):
+        return self.mgen.get_map(seed=seed)
+    def get_kappa(self,seed=None):
+        return self.kgen.get_map(seed=seed)
+    def get_sim(self,seed_cmb=None,seed_kappa=None,seed_noise=None,lens_order=5,return_intermediate=False):
+        unlensed = self.get_unlensed(seed_cmb)
+        if not(self._fixed):
+            kappa = self.get_kappa(seed_kappa)
+            self.alpha = alpha_from_kappa(kappa,posmap=self.posmap)
+        else:
+            kappa = None
+            assert seed_kappa is None
+        
+        lensed = enlensing.displace_map(unlensed, self.alpha, order=lens_order)
+        beamed = maps.filter_map(lensed,self.kbeam)
+        noise_map = self.ngen.get_map(seed=seed_noise)
+        observed = beamed + noise_map
+        if return_intermediate:
+            return unlensed,kappa,lensed,beamed,noise_map,observed
+        else:
+            return observed
+        
+        
 
 def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,comm=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,

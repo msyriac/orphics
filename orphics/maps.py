@@ -2481,5 +2481,14 @@ class MultiArray(object):
 
 
 
+def get_grf_cmb(shape,wcs,theory,spec,seed=None):
+    modlmap = enmap.modlmap(shape,wcs)
+    lmax = modlmap.max()
+    ells = np.arange(0,lmax,1)
+    Ny,Nx = shape[-2:]
+    return get_grf_realization(shape,wcs,interp(ells,theory.gCl(spec,ells))(modlmap).reshape((1,1,Ny,Nx)),seed=None)
     
         
+def get_grf_realization(shape,wcs,power2d,seed=None):
+    mg = MapGen(shape,wcs,power2d)
+    return mg.get_map(seed=seed)
