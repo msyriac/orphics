@@ -2097,100 +2097,28 @@ class SplitLensing(object):
         k1 = self.qest.kappa_from_map('TT',T2DData=a.copy(),T2DDataY=b.copy(),alreadyFTed=True,returnFt=True)
         return k1
 
-    def auto_free(self,ksplits,crosses=True):
-        # PS from splits
-
-        splits = ksplits
-        splits = np.asanyarray(ksplits)
-        nsplits = splits.shape[0]
-        s = np.sum(ksplits,axis=0)
-
-        import itertools
-        qp = 0.
-        plist = list(itertools.permutations([0,1,2,3]))
-        for m,perms in enumerate(plist):
-            i,j,k,l = perms
-            s01 = self.qfrag(splits[i],splits[j])
-            s23 = self.qfrag(splits[k],splits[l])
-            
-            qp += self.qpower(s01,s23)
-        return qp / len(plist)
-
-        ss = self.qfrag(s,s)
-
-        term_1 = self.qpower(ss,ss)
-        term_2 = 0.
-        term_3 = 0.
-        term_4 = 0.
-        term_5 = 0.
-        term_6 = 0.
-
-        for i in range(nsplits):
-            mi = splits[i]
-
-            mimi = self.qfrag(mi,mi)
-            mis = self.qfrag(mi,s)
-            term_2 += self.qpower(mimi,ss)*2
-            term_3 += self.qpower(mis,mis)*4
-
-
-            term_6_inst = self.qpower(mimi,mimi)
-            term_6 += term_6_inst
-            # term 4 double sum
-            term_4 += term_6_inst
-            # no diagonal
-            for j in range(i+1,nsplits):
-                mj = splits[j]
-                mimj = self.qfrag(mi,mj)
-                term_4 += self.qpower(mimj,mimj)*2
-
-            term_5 += self.qpower(mimi,mis)*4
-
-
-        if crosses:
-            final = term_1 - term_2 - term_3 + 3*term_4 + 2*term_5 - 6*term_6
-            norm = nsplits**4-6*nsplits**3+3*nsplits**2+8*nsplits**2-6*nsplits
-        else:
-            final = -( - term_2 - term_3 + 3*term_4 + 2*term_5 - 6*term_6 )
-            norm = -(-6*nsplits**3+3*nsplits**2+8*nsplits**2-6*nsplits)
-
-        print(norm/nsplits**4.)
-        final /= norm
-        return final
-
-
     def cross_estimator(self,ksplits):
-        # PS from splits
-
+        # 4pt from splits
         splits = ksplits
         splits = np.asanyarray(ksplits)
-        nsplits = splits.shape[0]
-        s = np.mean(ksplits,axis=0)
-
+        insplits = splits.shape[0]
+        nsplits = float(insplits)
+        s = np.mean(splits,axis=0)
         k = self.qfrag(s,s)
         kiisum = 0.
         psum = 0.
         psum2 = 0.
-        
-        
-        for i in range(nsplits):
+        for i in range(insplits):
             mi = splits[i]
-
             ki = (self.qfrag(mi,s)+self.qfrag(s,mi))/2.
             kii = self.qfrag(mi,mi)
             kiisum += kii
-
-            kic = ki - (1/nsplits)*kii
-
+            kic = ki - (1./nsplits)*kii
             psum += self.qpower(kic,kic)
-
-            for j in range(i,nsplits):
+            for j in range(i+1,int(insplits)):
                 mj = splits[j]
-
                 kij = (self.qfrag(mi,mj)+self.qfrag(mj,mi))/2.
                 psum2 += self.qpower(kij,kij)
-
-
         kc = k - (1./nsplits**2.)*kiisum
         return (nsplits**4.*self.qpower(kc,kc)-4.*nsplits**2.*psum+4.*psum2)/nsplits/(nsplits-1.)/(nsplits-2.)/(nsplits-3.)
             
