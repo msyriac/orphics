@@ -544,3 +544,33 @@ class FisherPlots(object):
         plt.savefig(saveFile, bbox_inches='tight',format='png')
         print(bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
     
+
+
+def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),levels=[2.],xlims=None,ylims=None,loc='center',alphas=None,save_file=None,**kwargs):
+    if alphas is None: alphas = [1]*len(chi2ds)
+    fig = plt.figure(**kwargs)
+    ax = fig.add_subplot(1,1,1)
+    xx = np.array(np.arange(360) / 180. * np.pi)
+    circl = np.array([np.cos(xx),np.sin(xx)])
+
+    for chi2d,col,ls,lab,alpha in zip(chi2ds,cols,lss,labels,alphas):
+        Lmat = np.linalg.cholesky(chi2d)
+        ansout = np.dot(1.52*Lmat,circl)
+        ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab,alpha=alpha)
+
+
+    ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
+    ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
+
+    if xlims is not None: ax.set_xlim(*xlims)
+    if ylims is not None: ax.set_ylim(*ylims)
+
+
+    labsize = 12
+    handles, labels = ax.get_legend_handles_labels()
+    legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
+    if save_file is not None:
+        plt.savefig(save_file, bbox_inches='tight',format='png')
+        print(io.bcolors.OKGREEN+"Saved plot to", save_file+io.bcolors.ENDC)
+    else:
+        plt.show()
