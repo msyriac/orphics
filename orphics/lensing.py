@@ -31,7 +31,7 @@ def alpha_from_kappa(kappa,posmap=None):
 class FlatLensingSims(object):
     def __init__(self,shape,wcs,theory,beam_arcmin,noise_uk_arcmin,noise_e_uk_arcmin=None,noise_b_uk_arcmin=None,pol=False,fixed_lens_kappa=None):
         from orphics import cosmology
-
+        if len(shape)<3 and pol: shape = (3,)+shape
         if noise_e_uk_arcmin is None: noise_e_uk_arcmin = np.sqrt(2.)*noise_uk_arcmin
         if noise_b_uk_arcmin is None: noise_b_uk_arcmin = noise_b_uk_arcmin
         self.modlmap = enmap.modlmap(shape,wcs)
@@ -47,7 +47,7 @@ class FlatLensingSims(object):
         else:
             self._fixed = False
             ps_kk = theory.gCl('kk',self.modlmap).reshape((1,1,Ny,Nx))
-            self.kgen = maps.MapGen(shape,wcs,ps_kk)
+            self.kgen = maps.MapGen(shape[-2:],wcs,ps_kk)
             self.posmap = enmap.posmap(shape,wcs)
         self.kbeam = maps.gauss_beam(beam_arcmin,self.modlmap)
         ncomp = 3 if pol else 1
@@ -75,6 +75,7 @@ class FlatLensingSims(object):
         lensed = enlensing.displace_map(unlensed, self.alpha, order=lens_order)
         beamed = maps.filter_map(lensed,self.kbeam)
         noise_map = self.ngen.get_map(seed=seed_noise)
+        
         observed = beamed + noise_map
         if return_intermediate:
             return unlensed,kappa,lensed,beamed,noise_map,observed
