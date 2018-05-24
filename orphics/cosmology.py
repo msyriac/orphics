@@ -229,7 +229,7 @@ class Cosmology(object):
     def _init_growth_rate(self):
         self.Ds = []
         for a in self.atab:
-            self.Ds.append( self.growth(a) )
+            self.Ds.append( self.D_growth(a) )
         self.Ds = np.array(self.Ds)
         self.fs = np.gradient(self.Ds,np.diff(self.atab)[0]) * self.atab/self.Ds
         self.Dfunc = interp1d(self.atab,self.Ds)
