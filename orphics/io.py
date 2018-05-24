@@ -571,6 +571,6 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
     legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
     if save_file is not None:
         plt.savefig(save_file, bbox_inches='tight',format='png')
-        print(io.bcolors.OKGREEN+"Saved plot to", save_file+io.bcolors.ENDC)
+        print(bcolors.OKGREEN+"Saved plot to", save_file+bcolors.ENDC)
     else:
         plt.show()

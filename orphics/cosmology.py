@@ -202,6 +202,7 @@ class Cosmology(object):
         if not(skip_growth): self._init_growth_rate()
 
     def growth_scale_dependent(self,ks,z,comp):
+        # f(k)
         growthfn = self.results.get_redshift_evolution(ks, z, [comp])  #Extract the linear growth function from CAMB.
         #growthfn0 = self.results.get_redshift_evolution(ks, 0, [comp])  
  
@@ -347,7 +348,8 @@ class Cosmology(object):
             res = fb * Tb + fc * Tc
         return res
 
-    def growth(self, a):
+    def D_growth(self, a):
+        # D(a)
 
         if self._da_interp is None:
             def D_derivs(y, x):
@@ -777,13 +779,6 @@ class TheorySpectra:
             fillval = 0.            
             f = interp1d(ell[ell<lpad],Cl[ell<lpad],bounds_error=False,fill_value=fillval)
                     
-        # if not(fill_zero):
-        #     fillval = Cl[ell<lpad][-1]
-        # else:
-        #     fillval = 0.
-            
-        # f=interp1d(ell[ell<lpad],Cl[ell<lpad],kind=interporder,bounds_error=False,fill_value=fillval)
-        
         if lensed:
             self._lCl[XYType]=f
         else:
@@ -818,14 +813,6 @@ class TheorySpectra:
     def lCl(self,XYType,ell):
         return self._Cl(XYType,ell,lensed=True)
     
-    def __getstate__(self):
-        # Clkk2d is not pickled yet!!!
-        return self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY
-
-
-
-    def __setstate__(self, state):
-        self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY = state
 
 
 def validateMapType(mapXYType):
