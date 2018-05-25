@@ -57,8 +57,9 @@ class Cosmology(object):
     Intended to be inherited by other classes like LimberCosmology and 
     ClusterCosmology
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True,skipPower=True,pkgrid_override=None,kmax=10.,skip_growth=True,nonlinear=True,zmax=10.,low_acc=False,z_growth=None):
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True,skipPower=True,pkgrid_override=None,kmax=10.,skip_growth=True,nonlinear=True,zmax=10.,low_acc=False,z_growth=None,camb_var=None):
 
+        self.camb_var = camb_var
         self.dimensionless = dimensionless
         cosmo = paramDict
         self.paramDict = paramDict
@@ -203,10 +204,8 @@ class Cosmology(object):
 
     def growth_scale_dependent(self,ks,z,comp):
         # f(k)
-        growthfn = self.results.get_redshift_evolution(ks, z, [comp])  #Extract the linear growth function from CAMB.
-        #growthfn0 = self.results.get_redshift_evolution(ks, 0, [comp])  
- 
-        gcomp = growthfn #/growthfn0
+        growthfn = self.results.get_redshift_evolution(ks, z, [comp])
+        gcomp = growthfn
         return gcomp
 
 
@@ -214,7 +213,7 @@ class Cosmology(object):
     def _initPower(self,pkgrid_override=None):
         print("initializing power...")
         if pkgrid_override is None:
-            self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zmax)
+            self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zmax,var1=self.camb_var,var2=self.camb_var)
         else:
             class Ptemp:
                 def __init__(self,pkgrid):
