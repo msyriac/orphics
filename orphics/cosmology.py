@@ -56,6 +56,9 @@ class Cosmology(object):
     A wrapper around CAMB that tries to pre-calculate as much as possible
     Intended to be inherited by other classes like LimberCosmology and 
     ClusterCosmology
+
+    Many member functions were copied/adapted from Cosmicpy:
+    http://cosmicpy.github.io/
     '''
     def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True,skipPower=True,pkgrid_override=None,kmax=10.,skip_growth=True,nonlinear=True,zmax=10.,low_acc=False,z_growth=None,camb_var=None):
 
@@ -203,11 +206,28 @@ class Cosmology(object):
         if not(skip_growth): self._init_growth_rate()
 
     def growth_scale_dependent(self,ks,z,comp):
-        # f(k)
+        # f(k) exact
         growthfn = self.results.get_redshift_evolution(ks, z, [comp])
         gcomp = growthfn
         return gcomp
 
+    def growth_scale_independent(self,z,zmax=None,numzs=100000):
+        # f = dlnD/dlna
+        if zmax is None: zmax = z + 0.1
+        a = np.linspace(self.z2a(zmax),1,numzs)
+        Ds = self.D_growth(a) 
+        fapprox = np.gradient(np.log(Ds),np.log(a))
+        az = self.z2a(z)
+        return interp1d(a,fapprox)(az)
+
+    def growth_approximate(self,z):
+        # Approximate growth rate f calculation from Dodelson Eq 9.67
+        hfactor = self.H0**2./self.results.hubble_parameter(z)**2.
+        omegam = (self.pars.omegab+self.pars.omegac+self.pars.omegan) * ((1.+z)**3.) *hfactor
+        omegav = self.pars.omegav * hfactor
+        fapprox = omegam**0.6 + omegav*(1.+omegam/2.)/70.
+        return fapprox
+    
 
         
     def _initPower(self,pkgrid_override=None):
@@ -385,13 +405,6 @@ class Cosmology(object):
     def z2a(self,z):
         return 1.0/(1.0 + z)
 
-    def getGrowthApprox(self,z):
-        # Approximate growth rate calculation from Dodelson Eq 9.67
-        hfactor = self.H0**2./self.results.hubble_parameter(z)**2.
-        omegam = (self.pars.omegab+self.pars.omegac+self.pars.omegan) * ((1.+z)**3.) *hfactor
-        omegav = self.pars.omegav * hfactor
-        fapprox = omegam**0.6 + omegav*(1.+omegam/2.)/70.
-        return fapprox
 
     
 
@@ -1215,3 +1228,37 @@ def power_from_theory(ells,theory,lensed=True,pol=False):
         ps[0,1] = cfunc('TE',ells)
         ps[1,0] = cfunc('TE',ells)
     return ps
+
+
+
+def fk_comparison(param,z,val1,val2):
+
+    params = defaultCosmology
+    params[param] = val1
+    params['mnu'] = 0
+
+    cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True)
+    ks = np.logspace(np.log10(1e-4),np.log10(0.3),500)
+    comp = 'growth'
+
+    gfunc = lambda cci: cci.results.get_redshift_evolution(ks, z, [comp])
+    g1 = gfunc(cc)
+    
+    g1approx2 = cc.growth_scale_independent(z)
+    params = defaultCosmology
+    params[param] = val2
+    params['mnu'] = 0
+
+    
+    cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True)
+    g2 = gfunc(cc)
+    
+    g2approx2 = cc.growth_scale_independent(z)
+
+    pl = io.Plotter(xlabel='k',ylabel='$f(k)$',xscale='log')
+    pl.add(ks,g1.ravel(),label='w=-1',color="C0")
+    pl.add(ks,g2.ravel(),label='w=-0.95',color="C1")
+    pl.hline(y=g1approx2,color="C0")
+    pl.hline(y=g2approx2,color="C1")
+    pl.legend(loc = 'upper right')
+    pl.done()
