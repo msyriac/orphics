@@ -208,7 +208,7 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,xlabel=None,ylabel=None,xscale="linear",yscale="linear",ftsize=24,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,**kwargs):
+    def __init__(self,xlabel=None,ylabel=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,**kwargs):
 
         matplotlib.rc('axes', linewidth=thk)
         matplotlib.rc('axes', labelcolor='k')
@@ -238,12 +238,12 @@ class Plotter(object):
         self._ax.set_yscale(yscale, nonposy='clip')
 
 
-        if labsize is None: labsize=ftsize
+        if labsize is None: labsize=ftsize-2
         plt.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)#,size=labsize)
         plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
 
 
-    def legend(self,loc='upper left',labsize=10,numpoints=1,**kwargs):
+    def legend(self,loc='upper left',labsize=12,numpoints=1,**kwargs):
 
         handles, labels = self._ax.get_legend_handles_labels()
         legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=numpoints,frameon = 1,**kwargs)
@@ -266,7 +266,7 @@ class Plotter(object):
         else:
             self._ax.errorbar(x,y,yerr=yerr,ls=ls,**kwargs)
 
-    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=18,extent=None,ticksize=12,**kwargs):
+    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,**kwargs):
         '''
         For an array passed in as [j,i]
         Displays j along y and i along x , so (y,x)
@@ -546,10 +546,10 @@ class FisherPlots(object):
     
 
 
-def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),levels=[2.],xlims=None,ylims=None,loc='center',alphas=None,save_file=None,**kwargs):
+def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),levels=[2.],xlims=None,ylims=None,loc='center',alphas=None,save_file=None,fig=None,ax=None,**kwargs):
     if alphas is None: alphas = [1]*len(chi2ds)
-    fig = plt.figure(**kwargs)
-    ax = fig.add_subplot(1,1,1)
+    if fig is None: fig = plt.figure(**kwargs)
+    if ax is None: ax = fig.add_subplot(1,1,1)
     xx = np.array(np.arange(360) / 180. * np.pi)
     circl = np.array([np.cos(xx),np.sin(xx)])
 
@@ -572,5 +572,4 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
     if save_file is not None:
         plt.savefig(save_file, bbox_inches='tight',format='png')
         print(bcolors.OKGREEN+"Saved plot to", save_file+bcolors.ENDC)
-    else:
-        plt.show()
+    return fig,ax

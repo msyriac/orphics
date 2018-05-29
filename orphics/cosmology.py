@@ -39,11 +39,11 @@ defaultConstants = {'TCMB': 2.7255
                     ,'ell0sec': 3000.
 }
 
-
-defaultCosmology = {'omch2': 0.12470
-                    ,'ombh2': 0.02230
-                    ,'H0': 67.0
-                    ,'ns': 0.96
+# Planck TT,TE,EE+lowP 2015 cosmology but with updated tau and minimal neutrino mass
+defaultCosmology = {'omch2': 0.1198
+                    ,'ombh2': 0.02225
+                    ,'H0': 67.3
+                    ,'ns': 0.9645
                     ,'As': 2.2e-9
                     ,'mnu': 0.06
                     ,'w0': -1.0
@@ -428,8 +428,8 @@ class LimberCosmology(Cosmology):
 
     pkgrid_override can be a RectBivariateSpline object such that camb.PK.P(z,k,grid=True) returns the same as pkgrid_override(k,z)
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=1000,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False,skip_growth=True,dimensionless=True):
-        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=skipPower,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc,skip_growth=skip_growth,dimensionless=dimensionless)
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=1000,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False,skip_growth=True,dimensionless=True,camb_var=None):
+        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=skipPower,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc,skip_growth=skip_growth,dimensionless=dimensionless,camb_var=camb_var)
 
 
         self.kmax = kmax
@@ -1231,11 +1231,14 @@ def power_from_theory(ells,theory,lensed=True,pol=False):
 
 
 
-def fk_comparison(param,z,val1,val2):
+def fk_comparison(param,z,val1,val2,oparams=None):
 
     params = defaultCosmology
     params[param] = val1
-    params['mnu'] = 0
+
+    if oparams is not None:
+        for key in oparams.keys():
+            params[key] = oparams[key]
 
     cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True)
     ks = np.logspace(np.log10(1e-4),np.log10(0.3),500)
@@ -1247,17 +1250,19 @@ def fk_comparison(param,z,val1,val2):
     g1approx2 = cc.growth_scale_independent(z)
     params = defaultCosmology
     params[param] = val2
-    params['mnu'] = 0
+    if oparams is not None:
+        for key in oparams.keys():
+            params[key] = oparams[key]
 
     
     cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True)
     g2 = gfunc(cc)
     
     g2approx2 = cc.growth_scale_independent(z)
-
+    from orphics import io
     pl = io.Plotter(xlabel='k',ylabel='$f(k)$',xscale='log')
-    pl.add(ks,g1.ravel(),label='w=-1',color="C0")
-    pl.add(ks,g2.ravel(),label='w=-0.95',color="C1")
+    pl.add(ks,g1.ravel(),label=param+'='+str(val1),color="C0")
+    pl.add(ks,g2.ravel(),label=param+'='+str(val2),color="C1")
     pl.hline(y=g1approx2,color="C0")
     pl.hline(y=g2approx2,color="C1")
     pl.legend(loc = 'upper right')
