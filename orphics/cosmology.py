@@ -305,94 +305,117 @@ class Cosmology(object):
         return ne0_SI
 
     
-        
-    def transfer(self, k, type='eisenhu_osc'):
-        w_m = self.omch2 + self.ombh2 #self.Omega_m * self.h**2
-        w_b = self.ombh2 #self.Omega_b * self.h**2
-        fb = self.ombh2 / (self.omch2+self.ombh2) # self.Omega_b / self.Omega_m
-        fc = self.omch2 / (self.omch2+self.ombh2) # self.ombh2 #(self.Omega_m - self.Omega_b) / self.Omega_m
-        alpha_gamma = 1.-0.328*np.log(431.*w_m)*w_b/w_m + \
-            0.38*np.log(22.3*w_m)*(fb)**2
-        gamma_eff = self.Omega_m*self.h * \
-            (alpha_gamma + (1.-alpha_gamma)/(1.+(0.43*k*self.sh_d)**4))
+    #cdm transfer functions. normalized to be 1 at large scales.
+    def transfer(self, k, type='camb'):
+        if (type == 'camb'):
+            transferdata = self.results.get_matter_transfer_data()
+            Tk_camb_matter = transferdata.transfer_z('delta_cdm', z_index=0)
+            Tk_camb_matter = Tk_camb_matter/Tk_camb_matter[0] 
+            Tk_camb_matter_k = transferdata.q/self.h
+            #interpolate to required sampling
+            interpolation = interp1d(Tk_camb_matter_k,Tk_camb_matter,bounds_error=False,fill_value=0.)
+            return interpolation(k)
 
-        res = np.zeros_like(k)
+        if (type == 'eisenhu')or(type == 'eisenhu_osc'):
+            w_m = self.omch2 + self.ombh2 #self.Omega_m * self.h**2
+            w_b = self.ombh2 #self.Omega_b * self.h**2
+            fb = self.ombh2 / (self.omch2+self.ombh2) # self.Omega_b / self.Omega_m
+            fc = self.omch2 / (self.omch2+self.ombh2) # self.ombh2 #(self.Omega_m - self.Omega_b) / self.Omega_m
+            alpha_gamma = 1.-0.328*np.log(431.*w_m)*w_b/w_m + \
+                0.38*np.log(22.3*w_m)*(fb)**2
+            gamma_eff = self.Omega_m*self.h * \
+                (alpha_gamma + (1.-alpha_gamma)/(1.+(0.43*k*self.sh_d)**4))
 
-        if(type == 'eisenhu'):
+            res = np.zeros_like(k)
 
-            q = k * pow(self.tcmb/2.7, 2)/gamma_eff
+            if(type == 'eisenhu'):
 
-            # EH98 (29) #
-            L = np.log(2.*np.exp(1.0) + 1.8*q)
-            C = 14.2 + 731.0/(1.0 + 62.5*q)
-            res = L/(L + C*q*q)
+                q = k * pow(self.tcmb/2.7, 2)/gamma_eff
 
-        elif(type == 'eisenhu_osc'):
-            # Cold dark matter transfer function
+                # EH98 (29) #
+                L = np.log(2.*np.exp(1.0) + 1.8*q)
+                C = 14.2 + 731.0/(1.0 + 62.5*q)
+                res = L/(L + C*q*q)
 
-            # EH98 (11, 12)
-            a1 = pow(46.9*w_m, 0.670) * (1.0 + pow(32.1*w_m, -0.532))
-            a2 = pow(12.0*w_m, 0.424) * (1.0 + pow(45.0*w_m, -0.582))
-            alpha_c = pow(a1, -fb) * pow(a2, -fb**3)
-            b1 = 0.944 / (1.0 + pow(458.0*w_m, -0.708))
-            b2 = pow(0.395*w_m, -0.0266)
-            beta_c = 1.0 + b1*(pow(fc, b2) - 1.0)
-            beta_c = 1.0 / beta_c
+            elif(type == 'eisenhu_osc'):
+                # Cold dark matter transfer function
 
-            # EH98 (19). [k] = h/Mpc
-            def T_tilde(k1, alpha, beta):
-                # EH98 (10); [q] = 1 BUT [k] = h/Mpc
-                q = k1 / (13.41 * self._k_eq)
-                L = np.log(np.exp(1.0) + 1.8 * beta * q)
-                C = 14.2 / alpha + 386.0 / (1.0 + 69.9 * pow(q, 1.08))
-                T0 = L/(L + C*q*q)
-                return T0
+                # EH98 (11, 12)
+                a1 = pow(46.9*w_m, 0.670) * (1.0 + pow(32.1*w_m, -0.532))
+                a2 = pow(12.0*w_m, 0.424) * (1.0 + pow(45.0*w_m, -0.582))
+                alpha_c = pow(a1, -fb) * pow(a2, -fb**3)
+                b1 = 0.944 / (1.0 + pow(458.0*w_m, -0.708))
+                b2 = pow(0.395*w_m, -0.0266)
+                beta_c = 1.0 + b1*(pow(fc, b2) - 1.0)
+                beta_c = 1.0 / beta_c
 
-            # EH98 (17, 18)
-            f = 1.0 / (1.0 + (k * self.sh_d / 5.4)**4)
-            Tc = f * T_tilde(k, 1.0, beta_c) + \
-                (1.0 - f) * T_tilde(k, alpha_c, beta_c)
+                # EH98 (19). [k] = h/Mpc
+                def T_tilde(k1, alpha, beta):
+                    # EH98 (10); [q] = 1 BUT [k] = h/Mpc
+                    q = k1 / (13.41 * self._k_eq)
+                    L = np.log(np.exp(1.0) + 1.8 * beta * q)
+                    C = 14.2 / alpha + 386.0 / (1.0 + 69.9 * pow(q, 1.08))
+                    T0 = L/(L + C*q*q)
+                    return T0
 
-            # Baryon transfer function
-            # EH98 (19, 14, 21)
-            y = (1.0 + self._z_eq) / (1.0 + self._z_d)
-            x = np.sqrt(1.0 + y)
-            G_EH98 = y * (-6.0 * x +
-                          (2.0 + 3.0*y) * np.log((x + 1.0) / (x - 1.0)))
-            alpha_b = 2.07 * self._k_eq * self.sh_d * \
-                pow(1.0 + self._R_d, -0.75) * G_EH98
+                # EH98 (17, 18)
+                f = 1.0 / (1.0 + (k * self.sh_d / 5.4)**4)
+                Tc = f * T_tilde(k, 1.0, beta_c) + \
+                    (1.0 - f) * T_tilde(k, alpha_c, beta_c)
 
-            beta_node = 8.41 * pow(w_m, 0.435)
-            tilde_s = self.sh_d / pow(1.0 + (beta_node /
-                                             (k * self.sh_d))**3, 1.0/3.0)
+                # Baryon transfer function
+                # EH98 (19, 14, 21)
+                y = (1.0 + self._z_eq) / (1.0 + self._z_d)
+                x = np.sqrt(1.0 + y)
+                G_EH98 = y * (-6.0 * x +
+                              (2.0 + 3.0*y) * np.log((x + 1.0) / (x - 1.0)))
+                alpha_b = 2.07 * self._k_eq * self.sh_d * \
+                    pow(1.0 + self._R_d, -0.75) * G_EH98
 
-            beta_b = 0.5 + fb + (3.0 - 2.0 * fb) * np.sqrt((17.2 * w_m)**2 + 1.0)
+                beta_node = 8.41 * pow(w_m, 0.435)
+                tilde_s = self.sh_d / pow(1.0 + (beta_node /
+                                                 (k * self.sh_d))**3, 1.0/3.0)
 
-            # [tilde_s] = Mpc/h
-            Tb = (T_tilde(k, 1.0, 1.0) / (1.0 + (k * self.sh_d / 5.2)**2) +
-                  alpha_b / (1.0 + (beta_b/(k * self.sh_d))**3) *
-                  np.exp(-pow(k / self._k_silk, 1.4))) * np.sinc(k*tilde_s/np.pi)
+                beta_b = 0.5 + fb + (3.0 - 2.0 * fb) * np.sqrt((17.2 * w_m)**2 + 1.0)
 
-            # Total transfer function
-            res = fb * Tb + fc * Tc
-        return res
+                # [tilde_s] = Mpc/h
+                Tb = (T_tilde(k, 1.0, 1.0) / (1.0 + (k * self.sh_d / 5.2)**2) +
+                      alpha_b / (1.0 + (beta_b/(k * self.sh_d))**3) *
+                      np.exp(-pow(k / self._k_silk, 1.4))) * np.sinc(k*tilde_s/np.pi)
 
-    def D_growth(self, a):
+                # Total transfer function
+                res = fb * Tb + fc * Tc
+            return res
+
+    def D_growth(self, a, type="camb_z0norm"):
         # D(a)
+        if (type=="camb_z0norm")or(type=="camb_anorm"):
+            if (self._da_interp is None) or (self._da_interp_type == "cosmicpy"):
+                ks = np.logspace(np.log10(1e-5),np.log10(1.),num=100) 
+                zs = self.a2z(self.atab)
+                deltakz = self.results.get_redshift_evolution(ks, zs, ['delta_cdm']) #index: k,z,0
+                D_camb = deltakz[0,:,0]/deltakz[0,0,0]
+                self._da_interp = interp1d(self.atab, D_camb, kind='linear')
+                self._da_interp_type = "camb"
+            if (type=="camb_z0norm"):  #normed so that D(a=1)=1
+                return self._da_interp(a)/self._da_interp(1.0)
+            if (type=="camb_anorm"):  #normed so that D(a)=a in matter domination
+                return self._da_interp(a)/self._da_interp(1.0)*0.76
 
-        if self._da_interp is None:
-            def D_derivs(y, x):
-                q = (2.0 - 0.5 * (self.Omega_m_a(x) +
-                                  (1.0 + 3.0 * self.w(x))
-                                  * self.Omega_de_a(x)))/x
-                r = 1.5*self.Omega_m_a(x)/x/x
-                return [y[1], -q * y[1] + r * y[0]]
-            y0 = [self._amin, 1]
+        elif (type=="cosmicpy"): #also z0 norm
+            if (self._da_interp is None) or (self._da_interp_type == "camb"):
+                def D_derivs(y, x):
+                    q = (2.0 - 0.5 * (self.Omega_m_a(x) +
+                                      (1.0 + 3.0 * self.w(x))
+                                      * self.Omega_de_a(x)))/x
+                    r = 1.5*self.Omega_m_a(x)/x/x
+                    return [y[1], -q * y[1] + r * y[0]]
+                y0 = [self._amin, 1]
 
-            y = odeint(D_derivs, y0, self.atab)
-            self._da_interp = interp1d(self.atab, y[:, 0], kind='linear')
-
-        return self._da_interp(a)/self._da_interp(1.0)
+                y = odeint(D_derivs, y0, self.atab)
+                self._da_interp = interp1d(self.atab, y[:, 0], kind='linear')
+                self._da_interp_type = "cosmicpy"
+            return self._da_interp(a)/self._da_interp(1.0)
         
     def Omega_m_a(self, a):
         return self.Omega_m * pow(a, -3) / self.Esqr(a)
@@ -415,7 +438,8 @@ class Cosmology(object):
     def z2a(self,z):
         return 1.0/(1.0 + z)
 
-
+    def a2z(self,a):
+        return (1.0/a)-1.0
     
 
 
