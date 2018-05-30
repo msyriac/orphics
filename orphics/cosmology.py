@@ -155,7 +155,9 @@ class Cosmology(object):
 
             
         self.kmax = kmax
-        if not(skipPower): self._initPower(pkgrid_override)
+        if not(skipPower):
+            self.results.calc_transfers(self.pars)
+            self._initPower(pkgrid_override)
 
         self.deltac = 1.42
         self.Omega_m = (self.ombh2+self.omch2)/self.h**2.  # DOESN'T INCLUDE NEUTRINOS
