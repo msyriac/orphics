@@ -103,7 +103,7 @@ class Cosmology(object):
         self.w0 = cosmo['w0']
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
-        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau)
+        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,num_massive_neutrinos=3)
         self.pars.Reion.Reionization = 0
         self.pars.set_dark_energy(w=self.w0)
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
@@ -131,11 +131,20 @@ class Cosmology(object):
             from scipy.interpolate import interp1d
             self.clttfunc = interp1d(ells,cltts,bounds_error=False,fill_value=0.)
 
-        elif not(skipCls):
+        if not(low_acc):
+            self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
+            if nonlinear:
+                self.pars.NonLinear = model.NonLinear_both
+            else:
+                self.pars.NonLinear = model.NonLinear_none
+        if not(skipCls):
             if verbose: print("Generating theory Cls...")
             if not(low_acc):
-                self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
                 self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
+            if nonlinear:
+                self.pars.NonLinear = model.NonLinear_both
+            else:
+                self.pars.NonLinear = model.NonLinear_none
             theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless,verbose=verbose,prefix="_low_acc_"+str(low_acc))
             self.clttfunc = lambda ell: theory.lCl('TT',ell)
             self.theory = theory
@@ -233,6 +242,7 @@ class Cosmology(object):
     def _initPower(self,pkgrid_override=None):
         print("initializing power...")
         if pkgrid_override is None:
+            self.pars.Transfer.accurate_massive_neutrinos = True
             self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zmax,var1=self.camb_var,var2=self.camb_var)
         else:
             class Ptemp:
