@@ -582,7 +582,7 @@ class LensingModeCoupling(ModeCoupling):
         d1 = duCl1 if not(rev) else duCl2
         t1 = tCl1['TT'] if not(rev) else tCl2['TT']
         t2 = tCl2['TT'] if not(rev) else tCl1['TT']
-        cos2theta = ((2*(Ldl1)**2-self.L**2*l1**2)/self.L**2/l1**2)
+        cos2theta = ((2*(Ldl1)**2)/self.L**2/l1**2) - 1
         return cos2theta * u1 * d1/2/t1/t1 # !!! tCl2??
 
     def Nl_cross_XXXX(self,tCl1,tCl2,F,Frev,X='T'):
