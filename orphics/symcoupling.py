@@ -467,6 +467,12 @@ class LensingModeCoupling(ModeCoupling):
                                 cxnoise_t=None,cynoise_t=None,
                                 cxnoise_e=None,cynoise_e=None,
                                 cxnoise_b=None,cynoise_b=None):
+        if cxnoise_t is None: cxnoise_t=xnoise_t
+        if cxnoise_e is None: cxnoise_e=xnoise_e
+        if cxnoise_b is None: cxnoise_b=xnoise_b
+        if cynoise_t is None: cynoise_t=ynoise_t
+        if cynoise_e is None: cynoise_e=ynoise_e
+        if cynoise_b is None: cynoise_b=ynoise_b
         pol_list = ['TT','EE','TE','BB']
         xnoise = {'TT':xnoise_t,'EE':xnoise_e,'BB':xnoise_b,'TE':0}
         ynoise = {'TT':ynoise_t,'EE':ynoise_e,'BB':ynoise_b,'TE':0}

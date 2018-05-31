@@ -97,6 +97,24 @@ def check_fisher_sanity(fmat,param_list):
     assert len(param_list)==len(set(param_list))
 
 
+def read_fisher(csv_file,delimiter=','):
+    fmat = np.loadtxt(csv_file,delimiter=delimiter)
+    with open(csv_file) as f:
+        fline = f.readline()
+    fline = fline.replace("#","")
+    columns = fline.strip().split(delimiter)
+    assert len(set(columns)) == len(columns)
+    return FisherMatrix(fmat = fmat,param_list = columns)
+
+def rename_fisher(fmat,pmapping):
+    old_params = fmat.params
+    new_params = list(old_params)
+    for key in pmapping.keys():
+        if key not in old_params: continue
+        i = old_params.index(key)
+        new_params[i] = pmapping[key]
+    return FisherMatrix(fmat=fmat.as_matrix(),param_list=new_params)
+    
 class FisherMatrix(DataFrame):
     """
     A Fisher Matrix object that subclasses pandas.DataFrame.
