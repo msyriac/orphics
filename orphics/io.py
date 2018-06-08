@@ -168,18 +168,18 @@ def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,ret
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,down=None,crange=None,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,down=None,crange=None,cmap="planck",**kwargs):
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
-        high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,**kwargs)
+        high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,cmap=cmap,**kwargs)
     else:
         pl = Plotter(ftsize=ftsize,xlabel="",ylabel="")
         pl.plot2d(array,**kwargs)
         pl.done(filename,verbose=verbose)
 
 
-def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None):
+def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None,cmap="planck"):
     if not(overwrite):
         if os.path.isfile(filename): return
     try:
@@ -194,7 +194,7 @@ def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,
         downmap = enmap.downgrade(enmap.enmap(array)[None], down)
     else:
         downmap = enmap.enmap(array)[None]
-    img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
+    img = enplot.draw_map_field(downmap,enplot.parse_args("-c "+cmap+" -vvvg moo"),crange=crange)
     #img = enplot.draw_map_field(downmap,enplot.parse_args("--grid 1"),crange=crange)
     if filename is None:
         img.show()
