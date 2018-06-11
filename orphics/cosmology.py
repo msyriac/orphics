@@ -137,7 +137,7 @@ class Cosmology(object):
                 self.pars.NonLinear = model.NonLinear_both
             else:
                 self.pars.NonLinear = model.NonLinear_none
-        if not(skipCls):
+        if not(skipCls) and (clTTFixFile is None):
             if verbose: print("Generating theory Cls...")
             if not(low_acc):
                 self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
