@@ -7,6 +7,7 @@ from orphics import mpi
 import contextlib
 import itertools
 
+
 try:
     dout_dir = os.environ['WWW']+"plots/"
 except:
