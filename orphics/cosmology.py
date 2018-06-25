@@ -878,7 +878,7 @@ def validateMapType(mapXYType):
 
 
 def default_theory(lpad=9000):
-    cambRoot = os.path.dirname(__file__)+"/../data/Aug6_highAcc_CDM"
+    cambRoot = os.path.dirname(__file__)+"/data/Aug6_highAcc_CDM"
     return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lpad,get_dimensionless=False)
     
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
