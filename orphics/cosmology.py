@@ -48,6 +48,7 @@ defaultCosmology = {'omch2': 0.1198
                     ,'mnu': 0.06
                     ,'w0': -1.0
                     ,'tau':0.06
+                    ,'nnu':3.046
 }
 
 
@@ -74,6 +75,11 @@ class Cosmology(object):
         self.zmax = zmax
 
         self.c['TCMBmuK'] = self.c['TCMB'] * 1.0e6
+
+        try:
+            self.nnu = cosmo['nnu']
+        except:
+            self.nnu = defaultCosmology['nnu']
             
         self.H0 = cosmo['H0']
         self.h = self.H0/100.
@@ -103,7 +109,9 @@ class Cosmology(object):
         self.w0 = cosmo['w0']
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
-        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,num_massive_neutrinos=3)
+        #print("WARNING: theta fixed!!!")
+        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
+        #self.pars.set_cosmology(ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,num_massive_neutrinos=3,nnu=self.nnu,H0=None,cosmomc_theta=1.04e-2)
         self.pars.Reion.Reionization = 0
         self.pars.set_dark_energy(w=self.w0)
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
@@ -137,7 +145,7 @@ class Cosmology(object):
                 self.pars.NonLinear = model.NonLinear_both
             else:
                 self.pars.NonLinear = model.NonLinear_none
-        if not(skipCls):
+        if not(skipCls) and (clTTFixFile is None):
             if verbose: print("Generating theory Cls...")
             if not(low_acc):
                 self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
@@ -1301,5 +1309,42 @@ def fk_comparison(param,z,val1,val2,oparams=None):
     pl.add(ks,g2.ravel(),label=param+'='+str(val2),color="C1")
     pl.hline(y=g1approx2,color="C0")
     pl.hline(y=g2approx2,color="C1")
+    pl.legend(loc = 'upper right')
+    pl.done()
+
+def pk_comparison(param,z,val1,val2,oparams=None):
+
+    params = defaultCosmology
+    params[param] = val1
+
+    if oparams is not None:
+        for key in oparams.keys():
+            params[key] = oparams[key]
+
+    cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True,skipPower=False)
+    ks = np.logspace(np.log10(1e-4),np.log10(0.3),500)
+
+    pk1 = cc.PK.P(z, ks, grid=False)
+    
+    params = defaultCosmology
+    params[param] = val2
+    if oparams is not None:
+        for key in oparams.keys():
+            params[key] = oparams[key]
+
+    
+    cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True,skipPower=False)
+    pk2 = cc.PK.P(z, ks, grid=False)
+
+    
+    from orphics import io
+    pl = io.Plotter(xlabel='k',ylabel='$P(k)$',xscale='log',yscale='log')
+    pl.add(ks,pk1.ravel(),label=param+'='+str(val1),color="C0")
+    pl.add(ks,pk2.ravel(),label=param+'='+str(val2),color="C1")
+    pl.legend(loc = 'upper right')
+    pl.done()
+    
+    pl = io.Plotter(xlabel='k',ylabel='$\Delta P(k) / P$',xscale='log')
+    pl.add(ks,(pk2.ravel()-pk1.ravel())/pk2.ravel(),label=param+'='+str(val1),color="C0")
     pl.legend(loc = 'upper right')
     pl.done()

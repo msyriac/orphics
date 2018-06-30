@@ -2,7 +2,11 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from enlib import enmap, utils, bench,lensing as enlensing
+from enlib import enmap, utils, bench
+try:
+    from enlib import lensing as enlensing
+except:
+    print("WARNING: Couldn't load enlib lensing. You might need to compile enlib/interpol. Some features will be unavailable.")
 
 from scipy.integrate import simps
 from scipy.interpolate import splrep,splev
@@ -305,6 +309,8 @@ def beam_cov(ucov,kbeam):
 
 
 def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000):
+    # if beam2d is None, assumes input maps are beam deconvolved and noise2d is beam deconvolved
+    # otherwise, it beam deconvolves itself
     if noise2d is None: noise2d = np.zeros(shape[-2:])
     if noise2d_P is None: noise2d_P = 2.*noise2d
     if beam2d is None: beam2d = np.ones(shape[-2:])

@@ -256,6 +256,7 @@ class MapGen(object):
         def __init__(self,shape,wcs,cov=None,covsqrt=None,pixel_units=False,smooth="auto",ndown=None,order=1):
                 self.shape = shape
                 self.wcs = wcs
+                assert cov.ndim>=3 , "Power spectra have to be of shape (ncomp,ncomp,lmax) or (ncomp,ncomp,Ny,Nx)."
                 if covsqrt is not None:
                     self.covsqrt = covsqrt
                 else:
