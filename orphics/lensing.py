@@ -162,11 +162,12 @@ def lensing_noise(ells,ntt,nee,nbb,
                   lxcut_t=None,lycut_t=None,y_lxcut_t=None,y_lycut_t=None,
                   lxcut_e=None,lycut_e=None,y_lxcut_e=None,y_lycut_e=None,
                   lxcut_b=None,lycut_b=None,y_lxcut_b=None,y_lycut_b=None,
-                  width_deg=5.,px_res_arcmin=1.0):
+                  width_deg=5.,px_res_arcmin=1.0,shape=None,wcs=None):
 
     from orphics import cosmology, stats
-    
-    shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
+
+    if (shape is None) or (wcs is None):
+        shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
     modlmap = enmap.modlmap(shape,wcs)
     if theory is None: theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
                                                      useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
@@ -967,7 +968,6 @@ class QuadNorm(object):
         # sys.exit()
 
 
-
             
         return retval * 2. * np.nan_to_num(1. / lmap/(lmap+1.))
         
@@ -1688,7 +1688,7 @@ class Estimator(object):
 
         assert not(np.any(np.isnan(rawKappa)))
         lmap = self.N.modLMap
-        
+
         kappaft = -self.fmask_func(AL*fft(rawKappa,axes=[-2,-1]))
         
         if returnFt:
