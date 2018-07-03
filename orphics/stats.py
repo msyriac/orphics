@@ -1,6 +1,6 @@
 from __future__ import print_function
 import numpy as np
-import time
+import time, warnings
 import itertools
 import scipy
 from scipy.stats import binned_statistic as binnedstat,chi2
@@ -656,17 +656,22 @@ class bin1D:
         
         self.bin_edges = bin_edges
         self.numbins = len(bin_edges)-1
+        self.cents = (self.bin_edges[:-1]+self.bin_edges[1:])/2.
 
+        self.bin_edges_min = self.bin_edges.min()
+        self.bin_edges_max = self.bin_edges.max()
 
     def binned(self,x,y):
 
+        # this just prevents an annoying warning (which is otherwise informative) everytime
+        # all the values outside the bin_edges are nans
+        y[x<self.bin_edges_min] = 0
+        y[x>self.bin_edges_max] = 0
 
         # pretty sure this treats nans in y correctly, but should double-check!
         bin_means = binnedstat(x,y,bins=self.bin_edges,statistic=np.nanmean)[0]
-
-
         
-        return (self.bin_edges[:-1]+self.bin_edges[1:])/2.,bin_means
+        return self.cents,bin_means
 
         
     
