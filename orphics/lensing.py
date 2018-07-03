@@ -34,6 +34,7 @@ def alpha_from_kappa(kappa,posmap=None):
 
 class FlatLensingSims(object):
     def __init__(self,shape,wcs,theory,beam_arcmin,noise_uk_arcmin,noise_e_uk_arcmin=None,noise_b_uk_arcmin=None,pol=False,fixed_lens_kappa=None):
+        # assumes theory in uK^2
         from orphics import cosmology
         if len(shape)<3 and pol: shape = (3,)+shape
         if noise_e_uk_arcmin is None: noise_e_uk_arcmin = np.sqrt(2.)*noise_uk_arcmin
@@ -166,7 +167,7 @@ def lensing_noise(ells,ntt,nee,nbb,
                   lxcut_t=None,lycut_t=None,y_lxcut_t=None,y_lycut_t=None,
                   lxcut_e=None,lycut_e=None,y_lxcut_e=None,y_lycut_e=None,
                   lxcut_b=None,lycut_b=None,y_lxcut_b=None,y_lycut_b=None,
-                  width_deg=5.,px_res_arcmin=1.0):
+                  width_deg=5.,px_res_arcmin=1.0,bigell=9000):
 
     from orphics import cosmology, stats
     
@@ -227,7 +228,7 @@ def lensing_noise(ells,ntt,nee,nbb,
                      loadPickledNormAndFilters=None,
                      savePickledNormAndFilters=None,
                      uEqualsL=unlensed_equals_lensed,
-                     bigell=9000,
+                     bigell=bigell,
                      mpi_comm=None,
                      lEqualsU=False)
 
