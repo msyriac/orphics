@@ -5,6 +5,7 @@ import itertools
 import scipy
 from scipy.stats import binned_statistic as binnedstat,chi2
 from scipy.optimize import curve_fit
+import itertools
 
 try:
     from pandas import DataFrame
@@ -276,6 +277,92 @@ class FisherMatrix(DataFrame):
         chi212 = self._finv[i,j]
         
         return np.array([[chi211,chi212],[chi212,chi222]])
+
+
+def alpha_from_confidence(c):
+    """Returns the number of sigmas that corresponds to enclosure of c % of the
+    probability density in a 2D gaussian.
+
+    e.g. alpha_from_confidence(0.683) = 1.52
+    """
+    return np.sqrt(2.*np.log((1./(1.-c))))
+    
+def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
+                latex_dict=None,colors=itertools.repeat(None),lss=itertools.repeat(None),
+                thk=2,center_marker=True,save_file=None,loc='upper right',labelsize=14,ticksize=2,lw=3,**kwargs):
+    """Make a triangle/corner plot from Fisher matrices.
+    Does not support multiple confidence levels. (Redundant under Gaussian approximation of Fisher)
+
+    fishers -- list of stats.FisherMatrix objects
+    labels -- labels corresponding to each Fisher matrix in fishers
+    params -- By default (if None) uses all params in every Fisher matrix. If not None, uses only this list of params.
+    fid_dict -- dictionary mapping parameter names to fiducial values to center ellipses on
+    latex_dict -- dictionary mapping parameter names to LaTeX strings for axes labels. Defaults to parameter names.
+    confidence_level -- fraction of probability density enclosed by ellipse
+    colors -- list of colors corresponding to fishers
+    lss -- list of line styles corresponding to fishers
+    """
+
+    from orphics import io
+    import matplotlib
+    import matplotlib.pyplot as plt
+    if params is None:
+        ps = [f.params for f in fishers]
+        jparams = list(set([p for sub_ps in ps for p in sub_ps]))
+    else:
+        jparams = params
+    numpars = len(jparams)
+    alpha = alpha_from_confidence(confidence_level)
+    xx = np.array(np.arange(360) / 180. * np.pi)
+    circl = np.array([np.cos(xx),np.sin(xx)])
+    
+    fig=plt.figure(figsize=(2*numpars,2*numpars),**kwargs)
+
+    for i in range(0,numpars):
+        for j in range(i+1,numpars):
+            count = 1+(j-1)*(numpars-1) + i
+            paramX = jparams[i]
+            paramY = jparams[j]
+            ax = fig.add_subplot(numpars-1,numpars-1,count)
+            try:
+                xval = fid_dict[paramX]
+            except:
+                xval = 0.
+            try:
+                yval = fid_dict[paramY]
+            except:
+                yval = 0.
+            try:
+                paramlabely = latex_dict[paramY]
+            except:
+                paramlabely = '$%s$' % paramY
+            try:
+                paramlabelx = latex_dict[paramX]
+            except:
+                paramlabelx = '$%s$' % paramX
+            if center_marker: ax.plot(xval,yval,'xk',mew=thk)
+            for fish,ls,col,lab in zip(fishers,lss,colors,labels):
+                try:
+                    chisq = fish.marge_var_2param(paramX,paramY)
+                except:
+                    ax.plot([xval],[yval],linewidth=0,color=col,ls=ls,label=lab,alpha=0) # just to iterate the colors and ls
+                    continue
+                Lmat = np.linalg.cholesky(chisq)
+                ansout = np.dot(alpha*Lmat,circl)
+                ax.plot(ansout[0,:]+xval,ansout[1,:]+yval,linewidth=lw,color=col,ls=ls,label=lab)
+            if (i==0):
+                ax.set_ylabel(paramlabely, fontsize=labelsize,weight='bold')
+            if (j == (numpars-1)):
+                ax.set_xlabel(paramlabelx, fontsize=labelsize,weight='bold')
+    
+    handles, labels = ax.get_legend_handles_labels()
+    legend = fig.legend(handles, labels,prop={'size':labelsize},numpoints=1,frameon = 0,loc=loc, bbox_to_anchor = (-0.1,-0.1,1,1),bbox_transform = plt.gcf().transFigure,**kwargs)
+
+    if save_file is None:
+        plt.show()
+    else:
+        plt.savefig(save_file, bbox_inches='tight',format='png')
+        print(io.bcolors.OKGREEN+"Saved plot to", save_file+io.bcolors.ENDC)
         
 
 class OQE(object):
