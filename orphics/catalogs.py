@@ -27,7 +27,13 @@ def select_region(ra_col,dec_col,other_cols,ra_min,ra_max,dec_min,dec_max):
     """Given ra,decs in ra_col,dec_col and a list of other lists with the
     same size as ra_col and dec_col, return newly selected ras,decs + other
     columns bounded by specified minimum and maximum ra and dec.
+
+    Wraps around 180d.
     """
+    from astropy.coordinates import Angle
+    import astropy.units as u
+
+    ra_col = Angle(ra_col * u.deg).wrap_at('180d').degree
     ret_cols = []
     for other_col in other_cols:
         ret_cols.append(other_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)])

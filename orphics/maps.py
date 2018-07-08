@@ -1818,35 +1818,35 @@ class Stacker(object):
         return enmap.ndmap(cutout,self.wcs)
 
 
-    
-def cutout(imap,arcmin_width,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False,res=None):
-    Ny,Nx = imap.shape
-
+def cutout_slice(shape,wcs,arcmin_width=None,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,res=None,Npix=None):
+    Ny,Nx = shape
     # see enmap.sky2pix for "corner" options
     if corner:
         fround = lambda x : int(math.floor(x))
     else:
         fround = lambda x : int(np.round(x))
     #fround = lambda x : int(x)
-
     if (iy is None) or (ix is None):
-        iy,ix = imap.sky2pix(coords=(dec,ra),corner=corner)
-
-    
+        iy,ix = enmap.sky2pix(shape,wcs,coords=(dec,ra),corner=corner)
     if res is None:
-        res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
+        res = np.min(enmap.extent(shape,wcs)/shape[-2:])*180./np.pi*60.
     else:
         res = res*180./np.pi*60.
-    Npix = int(arcmin_width/res)
+    
+    if Npix is None: Npix = int(arcmin_width/res)
     if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
-    cutout = imap[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
-    #cutout = imap[fround(iy-Npix/2):fround(iy+Npix/2),fround(ix-Npix/2):fround(ix+Npix/2)]
-    #print(fround(iy-Npix/2.+0.5),fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5),fround(ix+Npix/2.+0.5))
+    s = np.s_[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
+    return s,res
+    
+def cutout(imap,arcmin_width=None,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False,res=None,Npix=None,proj="car"):
+    s,res = cutout_slice(imap.shape,imap.wcs,arcmin_width=arcmin_width,ra=ra,dec=dec,iy=iy,ix=ix,pad=pad,corner=corner,res=res,Npix=Npix)
+    cutout = imap[s]
     if preserve_wcs:
         return cutout
     else:
-        shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=cutout.shape)
-        return enmap.ndmap(cutout,wcs)
+        shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=(Npix,Npix),proj=proj)
+        assert np.all(cutout.shape==shape)
+        return enmap.enmap(cutout,wcs)
 
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):

@@ -22,6 +22,46 @@ import cPickle as pickle
 
 from orphics import stats,mpi
 
+
+def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
+    """Given a cutout kappa map centered on a cluster and a redshift,
+    returns a mass estimate and variance of the estimate by applying a matched filter.
+
+    Imagine that reliable richness estimates and redshifts exist for each cluster.
+    We split the sample into n richness bins.
+    We go through each bin. This bin has a mean richness and a mean redshift. We convert this to a fiducial mean mass and mean concentration.
+    We choose a template with this mean mass and mean concentration.
+    We do a reconstruction on each cluster for each array. We now have a 2D kappa measurement. We apply MF to this with the template.
+    We get a relative amplitude for each cluster, which we convert to a mass for each cluster.
+
+    We want a mean mass versus mean richness relationship.
+
+
+    Step 1
+    Loop through each cluster. 
+    Cut out patches from each array split-coadd and split.
+    Estimate noise spectrum from splits for each array.
+    Use noise spectra to get optimal coadd of all arrays and splits of coadds.
+    Use coadd for reconstruction, with coadd noise from splits in weights.
+    For gradient, use Planck.
+    Save reconstructions and 2d kappa noise to disk.
+    Repeat above for 100x random locations and save only mean to disk.
+    Postprocess by loading each reconstruction, subtract meanfield, crop out region where taper**2 < 1 with some threshold.
+    Verify above by performing on simulations to check that cluster profile is recovered.
+
+    Step 2
+    For each richness bin, use fiducial mass and concentration and mean redshift to choose template.
+    For each cluster in each richness bin, apply MF and get masses. Find mean mass in bin. Iterate above on mass until converged.
+    This provides a mean mass, concentration for each richness bin.
+
+
+    
+    
+    """
+    shape,wcs = kappa_recon.shape,kappa_recon.wcs
+    mf = maps.MatchedFilter(shape,wcs,template,kappa_noise_2d)
+    mf.apply(kappa_recon,kmask=kmask)
+
 def alpha_from_kappa(kappa,posmap=None):
     phi,_ = kappa_to_phi(kappa,kappa.modlmap(),return_fphi=True)
     grad_phi = enmap.grad(phi)
@@ -309,17 +349,18 @@ def beam_cov(ucov,kbeam):
     return Scov
 
 
-def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000):
+def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000,noise2d_B=None):
     # if beam2d is None, assumes input maps are beam deconvolved and noise2d is beam deconvolved
     # otherwise, it beam deconvolves itself
     if noise2d is None: noise2d = np.zeros(shape[-2:])
     if noise2d_P is None: noise2d_P = 2.*noise2d
+    if noise2d_B is None: noised2d_B = noise2d_P
     if beam2d is None: beam2d = np.ones(shape[-2:])
     return Estimator(shape,wcs,
                      theory,
                      theorySpectraForNorm=theory,
-                     noiseX2dTEB=[noise2d,noise2d_P,noise2d_P],
-                     noiseY2dTEB=[noise2d,noise2d_P,noise2d_P],
+                     noiseX2dTEB=[noise2d,noise2d_P,noise2d_B],
+                     noiseY2dTEB=[noise2d,noise2d_P,noise2d_B],
                      noiseX_is_total = False,
                      noiseY_is_total = False,
                      fmaskX2dTEB=[kmask,kmask_P,kmask_P],

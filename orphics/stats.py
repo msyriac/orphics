@@ -102,7 +102,12 @@ def read_fisher_dataframe(csv_file):
     df = pd.read_csv(csv_file,index_col=0)
     params = list(df.columns)
     return FisherMatrix(fmat = df.values,param_list = params)
-    
+
+def read_fisher_pickle(pkl_file):
+    import cPickle as pickle
+    params,fmat = pickle.load(open(pkl_file,'rb'))
+    return FisherMatrix(fmat = fmat,param_list = params,skip_inv=True)
+
 def read_fisher(csv_file,delimiter=','):
     fmat = np.loadtxt(csv_file,delimiter=delimiter)
     with open(csv_file) as f:
@@ -215,10 +220,11 @@ class FisherMatrix(DataFrame):
         >> Fnew = F.copy()
         will create an independent Fnew that is not a view of the original.
         """
-        self._update()
+        #self._update()
         f = FisherMatrix(pd.DataFrame.copy(self), list(self.params),skip_inv=True)
-        f._finv = self._finv
-        f._changed = False
+        #f._finv = self._finv
+        #f._changed = False
+        f._changed = True
         return f
 
     def _update(self):
@@ -287,7 +293,7 @@ def alpha_from_confidence(c):
     """
     return np.sqrt(2.*np.log((1./(1.-c))))
     
-def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
+def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,show_1d=True,
                 latex_dict=None,colors=itertools.repeat(None),lss=itertools.repeat(None),
                 thk=2,center_marker=True,save_file=None,loc='upper right',labelsize=14,ticksize=2,lw=3,**kwargs):
     """Make a triangle/corner plot from Fisher matrices.
@@ -316,14 +322,29 @@ def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
     xx = np.array(np.arange(360) / 180. * np.pi)
     circl = np.array([np.cos(xx),np.sin(xx)])
     
-    fig=plt.figure(figsize=(2*numpars,2*numpars),**kwargs)
+    fig=plt.figure(figsize=(2*(numpars+1),2*(numpars+1)),**kwargs) if show_1d else plt.figure(figsize=(2*numpars,2*numpars),**kwargs)
+    startp = 0 if show_1d else 1
 
+    if show_1d:
+        sigmas = []
+        for fish in fishers:
+            sigmas.append(fish.sigmas())
+    else:
+        sigmas = itertools.repeat(None)
+        
+    
     for i in range(0,numpars):
-        for j in range(i+1,numpars):
-            count = 1+(j-1)*(numpars-1) + i
+        for j in range(i+startp,numpars):
+            count = 1+(j)*(numpars) + (i+1) -1 if show_1d else 1+(j-1)*(numpars-1) + i
             paramX = jparams[i]
             paramY = jparams[j]
-            ax = fig.add_subplot(numpars-1,numpars-1,count)
+            ax = fig.add_subplot(numpars,numpars,count) if show_1d else fig.add_subplot(numpars-1,numpars-1,count)
+
+            if i>0:
+                ax.yaxis.set_visible(False)
+            if j!=(numpars-1):
+                ax.xaxis.set_visible(False)
+            
             try:
                 xval = fid_dict[paramX]
             except:
@@ -340,8 +361,27 @@ def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
                 paramlabelx = latex_dict[paramX]
             except:
                 paramlabelx = '$%s$' % paramX
-            if center_marker: ax.plot(xval,yval,'xk',mew=thk)
-            for fish,ls,col,lab in zip(fishers,lss,colors,labels):
+            if center_marker:
+                if i==j:
+                    ax.axvline(x=xval,ls="--",color='k',alpha=0.5)
+                else:
+                    ax.plot(xval,yval,'xk',mew=thk)
+
+            for fish,ls,col,lab,sig in zip(fishers,lss,colors,labels,sigmas):
+
+                if i==j:
+                    try:
+                        s = sig[paramX]
+                    except:
+                        continue
+                    nsigma = 5
+                    xs = np.linspace(xval-nsigma*s,xval+nsigma*s,1000)
+                    from scipy.stats import norm
+                    g = norm.pdf(xs,loc=xval,scale=s)
+                    ax.plot(xs,g/g.max())
+                    continue
+                
+                
                 try:
                     chisq = fish.marge_var_2param(paramX,paramY)
                 except:
