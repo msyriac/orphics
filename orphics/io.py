@@ -242,30 +242,32 @@ class Plotter(object):
         if labsize is None: labsize=ftsize-2
         plt.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)#,size=labsize)
         plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
+        self.do_legend = False
 
 
     def legend(self,loc='upper left',labsize=12,numpoints=1,**kwargs):
-
+        self.do_legend = False
         handles, labels = self._ax.get_legend_handles_labels()
         legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=numpoints,frameon = 1,**kwargs)
 
         return legend
            
-    def add(self,x,y,**kwargs):
-
-        return self._ax.plot(x,y,**kwargs)
+    def add(self,x,y,label=None,**kwargs):
+        if label is not None: self.do_legend = True
+        return self._ax.plot(x,y,label=label,**kwargs)
 
 
     def hist(self,data,**kwargs):
         return self._ax.hist(data,**kwargs)
     
         
-    def add_err(self,x,y,yerr,ls='none',band=False,alpha=0.5,**kwargs):
+    def add_err(self,x,y,yerr,ls='none',band=False,alpha=0.5,marker="o",elinewidth=1,markersize=4,label=None,**kwargs):
         if band:
-            self._ax.plot(x,y,ls=ls,**kwargs)
+            self._ax.plot(x,y,ls=ls,marker=marker,label=label,**kwargs)
             self._ax.fill_between(x, y-yerr, y+yerr, alpha=alpha)
         else:
-            self._ax.errorbar(x,y,yerr=yerr,ls=ls,**kwargs)
+            self._ax.errorbar(x,y,yerr=yerr,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,**kwargs)
+        if label is not None: self.do_legend = True
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,**kwargs):
         '''
@@ -311,6 +313,7 @@ class Plotter(object):
         self._ax.axvline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
 
     def done(self,filename=None,verbose=True,**kwargs):
+        if self.do_legend: self.legend()
 
         if filename is not None:
             plt.savefig(filename,bbox_inches='tight',**kwargs)

@@ -1981,6 +1981,7 @@ def interpolate_grid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=
 class MatchedFilter(object):
 
     def __init__(self,shape,wcs,template=None,noise_power=None):
+        shape = shape[-2:]
         area = enmap.area(shape,wcs)
         self.normfact = area / (np.prod(shape))**2
         if noise_power is not None: self.n2d = noise_power
