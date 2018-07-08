@@ -1658,7 +1658,22 @@ class Estimator(object):
         fMask = self.fmaskK
         arr[fMask<1.e-3] = 0.
         return arr
-        
+
+    def coadd_nlkk(self,ests):
+        ninvtot = 0.
+        for est in ests:
+            ninvtot += self.fmask_func(np.nan_to_num(1./self.N.Nlkk[est]))
+        return self.fmask_func(np.nan_to_num(1./ninvtot))
+    
+    def coadd_kappa(self,ests,returnFt=False):
+        ktot = 0.
+        for est in ests:
+            rkappa = self.get_kappa(est,returnFt=True)
+            ktot += self.fmask_func(np.nan_to_num(rkappa/self.N.Nlkk[est]))
+        kft = ktot*self.coadd_nlkk(ests)
+        if returnFt: return kft
+        return ifft(kft,axes=[-2,-1],normalize=True).real
+    
     def get_kappa(self,XY,returnFt=False):
 
         assert self._hasX and self._hasY

@@ -503,6 +503,8 @@ class Stats(object):
         Append the 1d vector to a statistic named "label".
         Create a new one if it doesn't already exist.
         """
+
+        vector = np.asarray(vector)
         
         if not(label in list(self.vectors.keys())):
             self.vectors[label] = []
