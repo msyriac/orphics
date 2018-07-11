@@ -354,7 +354,7 @@ def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kma
     # otherwise, it beam deconvolves itself
     if noise2d is None: noise2d = np.zeros(shape[-2:])
     if noise2d_P is None: noise2d_P = 2.*noise2d
-    if noise2d_B is None: noised2d_B = noise2d_P
+    if noise2d_B is None: noise2d_B = noise2d_P
     if beam2d is None: beam2d = np.ones(shape[-2:])
     return Estimator(shape,wcs,
                      theory,
@@ -577,6 +577,7 @@ class QuadNorm(object):
         if Y=='B': Y='E'
         gradClXY = X+Y
         if XY=='ET': gradClXY = 'TE'
+        if XY=='BE': gradClXY = 'EE'
 
         totnoise = self.noiseXX2d[X+X].copy() if self.noiseX_is_total else (self.lClFid2d[X+X].copy()*self.kBeamX**2.+self.noiseXX2d[X+X].copy())
         W = self.fmask_func(np.nan_to_num(self.uClFid2d[gradClXY].copy()/totnoise)*self.kBeamX,self.fMaskXX[X+X])
@@ -789,6 +790,41 @@ class QuadNorm(object):
             for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
                 preF = ellsq*clunlenEEArrNow*WXY
                 preG = WY
+
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)*ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
+
+        elif XY == 'BE':
+
+
+            clunlenEEArrNow = self.uClNow2d['EE'].copy()
+            clunlenBBArrNow = self.uClNow2d['BB'].copy()
+
+
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+
+            lx = self.lxMap
+            ly = self.lyMap
+
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+
+            WXY = self.WXY('BE')*self.kBeamX
+            WY = self.WY('EE')*self.kBeamY
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = WXY
+                preG = ellsq*clunlenEEArrNow*WY
 
                 for termF,termG in zip(termsF,termsG):
                     allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)*ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
@@ -1554,7 +1590,8 @@ class Estimator(object):
                 self.phaseY = np.cos(2.*self.N.thetaMap)+1.j*np.sin(2.*self.N.thetaMap)
                 nList = ['TT','EE','BB']
                 cmbList = ['TT','TE','EE','BB']
-                estList = ['TT','TE','ET','EB','EE','TB']
+                #estList = ['TT','TE','ET','EB','EE','TB']
+                estList = ['TT','TE','ET','EB','EE','TB','BE']
 
             self.nList = nList
 
@@ -1719,7 +1756,7 @@ class Estimator(object):
     def get_kappa(self,XY,returnFt=False):
 
         assert self._hasX and self._hasY
-        assert XY in ['TT','TE','ET','EB','TB','EE']
+        assert XY in ['TT','TE','ET','EB','TB','EE','BE']
         X,Y = XY
 
         WXY = self.N.WXY(XY)

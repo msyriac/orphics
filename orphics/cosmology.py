@@ -676,16 +676,18 @@ def unpack_cmb_theory(theory,ells,lensed=False):
 
     return cltt, clee, clte, clbb
 
-def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,orphics_dimensionless=True,TCMB=2.7255e6):
+def enmap_power_from_orphics_theory(theory,lmax=None,ells=None,lensed=False,dimensionless=True,orphics_dimensionless=True,TCMB=2.7255e6):
     if orphics_dimensionless and dimensionless: tmul = 1.
     if orphics_dimensionless and not(dimensionless): tmul = TCMB**2.
     if not(orphics_dimensionless) and not(dimensionless): tmul = 1.
     if not(orphics_dimensionless) and dimensionless: tmul = 1./TCMB**2.
     
-    
-    fine_ells = np.arange(0,lmax,1)
-    cltt, clee, clte, clbb = unpack_cmb_theory(theory,fine_ells,lensed=lensed)
-    ps = np.zeros((3,3,fine_ells.size))
+    oned = False
+    if ells is None:
+        ells = np.arange(0,lmax,1)
+    if ells.ndim==1: oned = True
+    cltt, clee, clte, clbb = unpack_cmb_theory(theory,ells,lensed=lensed)
+    ps = np.zeros((3,3,fine_ells.size)) if oned else np.zeros((3,3,ells.shape[0],ells.shape[1]))
     ps[0,0] = cltt
     ps[1,1] = clee
     ps[0,1] = clte
