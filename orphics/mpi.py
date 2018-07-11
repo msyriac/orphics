@@ -40,6 +40,8 @@ try:
     from mpi4py import MPI
 except:
 
+    if not(disable_mpi): print("WARNING: mpi4py could not be loaded. Falling back to fake MPI. This means that if you submitted multiple processes, they will all be assigned the same rank of 0, and they are potentially doing the same thing.")
+    
     class template:
         pass
 

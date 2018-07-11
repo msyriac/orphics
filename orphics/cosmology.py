@@ -1350,3 +1350,57 @@ def pk_comparison(param,z,val1,val2,oparams=None):
     pl.add(ks,(pk2.ravel()-pk1.ravel())/pk2.ravel(),label=param+'='+str(val1),color="C0")
     pl.legend(loc = 'upper right')
     pl.done()
+
+
+
+
+def class_cls(lmax,params=None,cosmo=None,zmin=None,zmax=None,bias=None,dndz_file=None):
+    from classy import Class
+    smean = (zmin+zmax)/2.
+    shalfwidth = (zmax-zmin)/2.
+    print(smean,shalfwidth)
+
+    # Define your cosmology (what is not specified will be set to CLASS default parameters)
+    oparams = {
+        'output': 'tCl lCl dCl',
+        'l_max_scalars': lmax,
+        'lensing': 'yes',
+        'A_s': 2.3e-9,
+        'n_s': 0.9624, 
+        'h': 0.6711,
+        'omega_b': 0.022068,
+        'omega_cdm': 0.12029,
+        'selection':'tophat',
+        'selection_mean':'%f'%smean,
+        'selection_width': '%f'%shalfwidth,
+        'selection_bias':'%f'%bias,
+        'number count contributions' : 'density, rsd, lensing, gr',
+        'dNdz_selection':'%s'%dndz_file,'l_max_lss':lmax,'l_max_scalars':lmax}
+
+    if params is not None:
+        for key in params.keys():
+            oparams[key] = params[key]
+
+    if cosmo is None:
+        cosmo = Class()
+        cosmo.set(oparams)
+        cosmo.compute()
+
+    cls = cosmo.density_cl(lmax)
+    cls2 = cosmo.lensed_cl(lmax)
+
+    clpg = cls['pd'][0]
+    clgg = cls['dd'][0]
+    clpp = cls2['pp']
+    ells = cls['ell']
+    assert np.all(np.isclose(ells,cls2['ell']))
+
+    retcls = {}
+    retcls['kg'] = clpg * ells * (ells+1.)/2.
+    retcls['kk'] = clpp * (ells * (ells+1.)/2.)**2.
+    retcls['gg'] = clgg
+    retcls['ells'] = ells
+
+    return retcls,cosmo,params
+    
+
