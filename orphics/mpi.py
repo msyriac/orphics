@@ -64,14 +64,36 @@ def mpi_distribute(num_tasks,avail_cores):
 
 
 
+class MPIDict(object):
 
-
-class Grid(object):
-
-    def __init__(self,comm,shape):
-
+    def __init__(self,init_dict,comm):
+        self.rank = comm.Get_rank()
+        self.numcores = comm.Get_size()
         self.comm = comm
-        self.mine = np.zeros(shape)
+        if self.rank==0:
+            self.d = init_dict
+        else:
+            self.s = {}
+        
+    def update(self,key,value):
+        if self.rank==0:
+            self.d[key] = value
+        else:
+            self.s[key] = value
+    def collect(self):
+        if self.rank!=0:
+            self.comm.send(self.s,dest=0,tag=self.rank)
+            return None
+        else:
+            for i in range(1,self.numcores):
+                s = self.comm.recv(source=i,tag=i)
+                for key in s.keys():
+                    assert key not in self.d.keys()
+                    self.d[key] = s[key].copy()
+            return self.d
+            
+    
+
 
     
 
