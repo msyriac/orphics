@@ -239,6 +239,7 @@ class FisherMatrix(DataFrame):
         return self._add(other,radd=False)
 
     def _add(self,other,radd=False):
+        if other is None: return self
         if radd:
             new_fpd = pd.DataFrame.radd(self,other.copy(),fill_value=0)
         else:
