@@ -18,7 +18,7 @@ from enlib.fft import fft,ifft
 from orphics.stats import bin2D
 
 import time
-import cPickle as pickle
+from six.moves import cPickle as pickle
 
 from orphics import stats
 
