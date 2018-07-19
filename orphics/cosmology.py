@@ -115,7 +115,13 @@ class Cosmology(object):
         self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
         #self.pars.set_cosmology(ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,num_massive_neutrinos=3,nnu=self.nnu,H0=None,cosmomc_theta=1.04e-2)
         self.pars.Reion.Reionization = 0
-        self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
+        try:
+            self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
+        except:
+            assert np.abs(self.wa)<1e-3, "Non-zero wa requires PPF, which requires devel version of pycamb to be installed."
+            print("WARNING: Could not use PPF dark energy model with pycamb. Falling back to non-PPF. Please install the devel branch of pycamb.")
+            self.pars.set_dark_energy(w=self.w0)
+                  
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
         self.nonlinear = nonlinear
