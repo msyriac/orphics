@@ -5,6 +5,49 @@ from shutil import move,copyfile
 from os import remove, close
 import subprocess
 import numpy as np
+import healpy as hp
+
+class PlanckLensing(object):
+
+    def __init__(self,froot="/gpfs01/astro/workarea/msyriac/data/planck/pr3/",nside=2048):
+
+        self.nside = nside
+        self.froot = froot
+
+    def _get_real(self,ifile):
+        from orphics.maps import filter_alms
+
+        alm = hp.read_alm(ifile)
+        alm = filter_alms(alm,8,2048)
+        omap = hp.alm2map(alm,nside=self.nside)
+        return omap
+        
+    
+        
+    def load_planck_lensing(self,tsz_deproj=False,pr2=False,est="MV"):
+        assert est in ['TT','PP','MV']
+        if tsz_deproj:
+            pdir = self.froot + "COM_Lensing_Szdeproj_4096_R3.00/TT/"
+        else:
+            pdir = self.froot + "COM_Lensing_4096_R3.00/%s/" % est
+
+        if pr2:
+            pdir = self.froot + "../archived/lensing/"
+
+        omap = self._get_real(pdir + "dat_klm.fits")
+        
+        return omap
+
+
+    def load_mask(self):
+        imask = hp.read_map(self.froot+"COM_Lensing_4096_R3.00/mask.fits.gz")
+        inside = hp.npix2nside(imask.size)
+        print("mask nside ; ",inside)
+        if inside!=self.nside:
+            imask = hp.ud_grade(imask,nside_out=self.nside)
+        return imask
+
+
 
 
 

@@ -49,6 +49,7 @@ defaultCosmology = {'omch2': 0.1198
                     ,'w0': -1.0
                     ,'tau':0.06
                     ,'nnu':3.046
+                    ,'wa': 0.
 }
 
 
@@ -107,13 +108,14 @@ class Cosmology(object):
             
         self.mnu = cosmo['mnu']
         self.w0 = cosmo['w0']
+        self.wa = cosmo['wa']
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
         #print("WARNING: theta fixed!!!")
         self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
         #self.pars.set_cosmology(ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,num_massive_neutrinos=3,nnu=self.nnu,H0=None,cosmomc_theta=1.04e-2)
         self.pars.Reion.Reionization = 0
-        self.pars.set_dark_energy(w=self.w0)
+        self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
         self.nonlinear = nonlinear
