@@ -1404,3 +1404,24 @@ def class_cls(lmax,params=None,cosmo=None,zmin=None,zmax=None,bias=None,dndz_fil
     return retcls,cosmo,params
     
 
+
+
+class ClassCosmology(object):
+
+    def __init__(self,params,pol=True,gal=True):
+
+        oparams = {
+            'output': 'tCl lCl',
+            'l_max_scalars': lmax,
+            'lensing': 'yes',
+            'A_s': 2.3e-9,
+            'n_s': 0.9624, 
+            'h': 0.6711,
+            'omega_b': 0.022068,
+            'omega_cdm': 0.12029,
+            'selection':'tophat',
+            'selection_mean':'%f'%smean,
+            'selection_width': '%f'%shalfwidth,
+            'selection_bias':'%f'%bias,
+            'number count contributions' : 'density, rsd, lensing, gr',
+            'dNdz_selection':'%s'%dndz_file,'l_max_lss':lmax,'l_max_scalars':lmax}
