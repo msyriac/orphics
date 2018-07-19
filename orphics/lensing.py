@@ -18,9 +18,9 @@ from enlib.fft import fft,ifft
 from orphics.stats import bin2D
 
 import time
-import cPickle as pickle
+from six.moves import cPickle as pickle
 
-from orphics import stats,mpi
+from orphics import stats
 
 
 def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
@@ -154,7 +154,9 @@ def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,
 
     npix = ncomp*n**2
 
-    if comm is None: comm = mpi.MPI.COMM_WORLD
+    if comm is None:
+        from orphics import mpi
+        comm = mpi.MPI.COMM_WORLD
 
     def efunc(vec):
         unlensed = enmap.enmap(vec.reshape(shape),wcs)

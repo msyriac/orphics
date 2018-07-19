@@ -3,7 +3,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import os,sys,logging,time
-from orphics import mpi
 import contextlib
 import itertools
 
@@ -73,7 +72,10 @@ def dict_from_section(config,section_name):
 
 
     
-def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
+def mkdir(dirpath,comm=None):
+    if comm is None:
+        from orphics import mpi
+        comm = mpi.MPI.COMM_WORLD
     exists = os.path.exists(dirpath)
     comm.Barrier()
     if comm.Get_rank()==0: 

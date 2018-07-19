@@ -239,6 +239,7 @@ class FisherMatrix(DataFrame):
         return self._add(other,radd=False)
 
     def _add(self,other,radd=False):
+        if other is None: return self
         if radd:
             new_fpd = pd.DataFrame.radd(self,other.copy(),fill_value=0)
         else:
@@ -293,7 +294,7 @@ def alpha_from_confidence(c):
     """
     return np.sqrt(2.*np.log((1./(1.-c))))
     
-def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,show_1d=True,
+def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,show_1d=False,
                 latex_dict=None,colors=itertools.repeat(None),lss=itertools.repeat(None),
                 thk=2,center_marker=True,save_file=None,loc='upper right',labelsize=14,ticksize=2,lw=3,**kwargs):
     """Make a triangle/corner plot from Fisher matrices.
