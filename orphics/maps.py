@@ -8,6 +8,14 @@ from orphics import io,cosmology,stats
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
+def filter_alms(alms,lmin,lmax):
+    import healpy as hp
+    ells = np.arange(0,lmax+20,1)
+    fs = np.ones(ells.shape)
+    fs[ells<lmin] = 0.
+    fs[ells>lmax] = 0.
+    return hp.almxfl(alms,fs)
+
 
 def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
     """Rotate a 2D power spectrum from TQU to TEB (inverse=False) or
