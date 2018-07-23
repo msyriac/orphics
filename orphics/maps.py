@@ -1233,7 +1233,7 @@ class HealpixProjector(object):
         self.pmap = enmap.posmap(shape, wcs)
         
         assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
-        pmap = enmap.posmap(shape, wcs)
+        pmap = self.pmap
         
         if rot:
             # Rotate by displacing coordinates and then fixing the polarization
@@ -1245,7 +1245,6 @@ class HealpixProjector(object):
                 pmap[...] = opos[1::-1]
                 if len(opos) == 3: self.psi = -opos[2].copy()
                 del opos
-        self.pmap = pmap
         self.ncomp = ncomp
         self.rot = rot
         
