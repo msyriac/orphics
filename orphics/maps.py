@@ -430,7 +430,7 @@ class MapRotatorEquator(MapRotator):
         else:
             return rotated
     
-def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=False):
+def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=False,pos_target=None):
     """ Given a source geometry (shape_source,wcs_source)
     return the pixel positions in the target geometry (shape_target,wcs_target)
     if the source geometry were rotated such that its center lies on the center
@@ -444,12 +444,12 @@ def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=F
     
     # what are the center coordinates of each geometries
     center_source = enmap.pix2sky(shape_source,wcs_source,(shape_source[0]/2.,shape_source[1]/2.))
-    center_target= enmap.pix2sky(shape_target,wcs_target,(shape_target[0]/2.,shape_target[1]/2.))
+    center_target = enmap.pix2sky(shape_target,wcs_target,(shape_target[0]/2.,shape_target[1]/2.))
     decs,ras = center_source
     dect,rat = center_target
 
     # what are the angle coordinates of each pixel in the target geometry
-    pos_target = enmap.posmap(shape_target,wcs_target)
+    if pos_target is None: pos_target = enmap.posmap(shape_target,wcs_target)
     lra = pos_target[1,:,:].ravel()
     ldec = pos_target[0,:,:].ravel()
     del pos_target
@@ -470,7 +470,6 @@ def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=F
 
     # translate these new coordinates to pixel positions in the target geometry based on the source's wcs
     pix_new = enmap.sky2pix(shape_source,wcs_source,new_pos)
-
     return pix_new
 
 def rotate_map(imap,shape_target=None,wcs_target=None,pix_target=None,**kwargs):

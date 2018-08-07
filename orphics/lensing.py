@@ -23,6 +23,33 @@ from six.moves import cPickle as pickle
 from orphics import stats
 
 
+def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges,lmax,lmin=None,overdensity=200.,critical=False,at_cluster_z=True):
+    # mass in msolar/h
+    # cc Cosmology object
+    modrmap = enmap.modrmap(shape,wcs)
+    binner = bin2D(modrmap,bin_edges)
+    k = nfw_kappa(mass,modrmap,cc,zL=z,concentration=conc,overdensity=overdensity,critical=critical,atClusterZ=at_cluster_z)
+    kmask = maps.mask_kspace(shape,wcs,lmin=lmin,lmax=lmax)
+    kf = maps.filter_map(k,kmask)
+    cents,k1d = binner.bin(kf)
+    return cents,k1d
+
+def fit_nfw_profile(profile_data,profile_cov,masses,conc,cc,shape,wcs,bin_edges,lmax,lmin=None,
+                    overdensity=200.,critical=False,at_cluster_z=True,
+                    mass_guess=2e14,sigma_guess=2e13):
+    from orphics.stats import fit_gauss
+    
+    cinv = np.linalg.inv(profile_cov)
+    lnlikes = []
+    for mass in masses:
+        profile_theory = binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges,lmax,lmin,overdensity,critical,at_cluster_z)
+        diff = profile_data - profile_theory
+        lnlike = -0.5 * np.dot(np.dot(diff,cinv),diff)
+        lnlikes.append(lnlike)
+    
+    fit_mass,mass_err,_,like_fit = fit_gauss(masses,np.exp(lnlikes),mu_guess=mass_guess,sigma_guess=sigma_guess)
+    return lnlikes,like_fit,fit_mass,mass_err
+
 def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
     """Given a cutout kappa map centered on a cluster and a redshift,
     returns a mass estimate and variance of the estimate by applying a matched filter.

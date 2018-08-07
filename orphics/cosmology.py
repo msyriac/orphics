@@ -108,7 +108,10 @@ class Cosmology(object):
             
         self.mnu = cosmo['mnu']
         self.w0 = cosmo['w0']
-        self.wa = cosmo['wa']
+        try:
+            self.wa = cosmo['wa']
+        except:
+            self.wa = 0.
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
         #print("WARNING: theta fixed!!!")
