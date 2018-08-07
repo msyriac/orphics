@@ -108,14 +108,23 @@ class Cosmology(object):
             
         self.mnu = cosmo['mnu']
         self.w0 = cosmo['w0']
-        self.wa = cosmo['wa']
+        try:
+            self.wa = cosmo['wa']
+        except:
+            self.wa = 0.
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
         #print("WARNING: theta fixed!!!")
         self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
         #self.pars.set_cosmology(ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,num_massive_neutrinos=3,nnu=self.nnu,H0=None,cosmomc_theta=1.04e-2)
         self.pars.Reion.Reionization = 0
-        self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
+        try:
+            self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
+        except:
+            assert np.abs(self.wa)<1e-3, "Non-zero wa requires PPF, which requires devel version of pycamb to be installed."
+            print("WARNING: Could not use PPF dark energy model with pycamb. Falling back to non-PPF. Please install the devel branch of pycamb.")
+            self.pars.set_dark_energy(w=self.w0)
+                  
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
         self.nonlinear = nonlinear
@@ -1406,3 +1415,24 @@ def class_cls(lmax,params=None,cosmo=None,zmin=None,zmax=None,bias=None,dndz_fil
     return retcls,cosmo,params
     
 
+
+
+class ClassCosmology(object):
+
+    def __init__(self,params,pol=True,gal=True):
+
+        oparams = {
+            'output': 'tCl lCl',
+            'l_max_scalars': lmax,
+            'lensing': 'yes',
+            'A_s': 2.3e-9,
+            'n_s': 0.9624, 
+            'h': 0.6711,
+            'omega_b': 0.022068,
+            'omega_cdm': 0.12029,
+            'selection':'tophat',
+            'selection_mean':'%f'%smean,
+            'selection_width': '%f'%shalfwidth,
+            'selection_bias':'%f'%bias,
+            'number count contributions' : 'density, rsd, lensing, gr',
+            'dNdz_selection':'%s'%dndz_file,'l_max_lss':lmax,'l_max_scalars':lmax}

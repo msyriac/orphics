@@ -355,11 +355,11 @@ def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
             except:
                 yval = 0.
             try:
-                paramlabely = latex_dict[paramY]
+                paramlabely = '$%s$' % latex_dict[paramY]
             except:
                 paramlabely = '$%s$' % paramY
             try:
-                paramlabelx = latex_dict[paramX]
+                paramlabelx = '$%s$' % latex_dict[paramX]
             except:
                 paramlabelx = '$%s$' % paramX
             if center_marker:
