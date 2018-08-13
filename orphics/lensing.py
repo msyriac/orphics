@@ -22,32 +22,52 @@ from six.moves import cPickle as pickle
 
 from orphics import stats
 
+def validate_geometry(shape,wcs,verbose=False):
+    area = enmap.area(shape,wcs)*(180./np.pi)**2.
+    if verbose: print("Geometry area : ", area, " sq.deg.")
+    if area>41252.:
+        print("WARNING: Geometry has area larger than full-sky.")
+        print(shape,wcs)
+    if area>(1./60.60.):
+        print("WARNING: Geometry has area less than 1 arcmin^2.")
+        print(shape,wcs)
+    res = np.rad2deg(maps.resolution(shape,wcs))
+    if verbose: print("Geometry pixel width : ", res/60., " arcmin.")
+    if res>30.0:
+        print("WARNING: Geometry has pixel larger than 30 degrees.")
+        print(shape,wcs)
+    if res<(1./60./60.):
+        print("WARNING: Geometry has pixel smaller than 1 arcsecond.")
+        print(shape,wcs)
 
-def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges,lmax,lmin=None,overdensity=200.,critical=False,at_cluster_z=True):
+
+
+
+def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin=None,overdensity=200.,critical=False,at_cluster_z=True):
     # mass in msolar/h
     # cc Cosmology object
     modrmap = enmap.modrmap(shape,wcs)
-    binner = bin2D(modrmap,bin_edges)
+    binner = bin2D(modrmap,bin_edges_arcmin*np.pi/180./60.)
     k = nfw_kappa(mass,modrmap,cc,zL=z,concentration=conc,overdensity=overdensity,critical=critical,atClusterZ=at_cluster_z)
     kmask = maps.mask_kspace(shape,wcs,lmin=lmin,lmax=lmax)
     kf = maps.filter_map(k,kmask)
     cents,k1d = binner.bin(kf)
     return cents,k1d
 
-def fit_nfw_profile(profile_data,profile_cov,masses,conc,cc,shape,wcs,bin_edges,lmax,lmin=None,
+def fit_nfw_profile(profile_data,profile_cov,masses,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin=None,
                     overdensity=200.,critical=False,at_cluster_z=True,
                     mass_guess=2e14,sigma_guess=2e13):
     from orphics.stats import fit_gauss
-    
     cinv = np.linalg.inv(profile_cov)
     lnlikes = []
     for mass in masses:
-        profile_theory = binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges,lmax,lmin,overdensity,critical,at_cluster_z)
+        cents,profile_theory = binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin,overdensity,critical,at_cluster_z)
         diff = profile_data - profile_theory
         lnlike = -0.5 * np.dot(np.dot(diff,cinv),diff)
         lnlikes.append(lnlike)
-    
-    fit_mass,mass_err,_,like_fit = fit_gauss(masses,np.exp(lnlikes),mu_guess=mass_guess,sigma_guess=sigma_guess)
+    fit_mass,mass_err,_,_ = fit_gauss(masses,np.exp(lnlikes),mu_guess=mass_guess,sigma_guess=sigma_guess)
+    gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
+    like_fit = gaussian(masses,fit_mass,mass_err)
     return lnlikes,like_fit,fit_mass,mass_err
 
 def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
@@ -240,9 +260,6 @@ def lensing_noise(ells,ntt,nee,nbb,
 
     from orphics import cosmology, stats
 
-    if (shape is None) or (wcs is None):
-        shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
-    modlmap = enmap.modlmap(shape,wcs)
     if theory is None: theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
                                                      useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
 
@@ -263,12 +280,31 @@ def lensing_noise(ells,ntt,nee,nbb,
 
     pol = False if estimators==['TT'] else True
 
-    nTX = maps.interp(ells,ntt)(modlmap)
-    nTY = maps.interp(ells,y_ntt)(modlmap)
-    nEX = maps.interp(ells,nee)(modlmap)
-    nEY = maps.interp(ells,y_nee)(modlmap)
-    nBX = maps.interp(ells,nbb)(modlmap)
-    nBY = maps.interp(ells,y_nbb)(modlmap)
+    
+    if ells.ndim==2:
+        assert shape is None
+        assert wcs is None
+        modlmap = ells
+        shape = modlmap.shape
+        wcs = modlmap.wcs
+        validate_geometry(shape,wcs,verbose=True)
+        nTX = ntt
+        nTY = y_ntt
+        nEX = nee
+        nEY = y_nee
+        nBX = nbb
+        nBY = y_nbb
+
+    else:
+        if (shape is None) or (wcs is None):
+            shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
+        modlmap = enmap.modlmap(shape,wcs)
+        nTX = maps.interp(ells,ntt)(modlmap)
+        nTY = maps.interp(ells,y_ntt)(modlmap)
+        nEX = maps.interp(ells,nee)(modlmap)
+        nEY = maps.interp(ells,y_nee)(modlmap)
+        nBX = maps.interp(ells,nbb)(modlmap)
+        nBY = maps.interp(ells,y_nbb)(modlmap)
 
     kmask_TX = maps.mask_kspace(shape,wcs,lmin=ellmin_t,lmax=ellmax_t,lxcut=lxcut_t,lycut=lycut_t)
     kmask_TY = maps.mask_kspace(shape,wcs,lmin=y_ellmin_t,lmax=y_ellmax_t,lxcut=y_lxcut_t,lycut=y_lycut_t)
