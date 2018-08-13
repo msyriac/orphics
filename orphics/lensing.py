@@ -28,11 +28,11 @@ def validate_geometry(shape,wcs,verbose=False):
     if area>41252.:
         print("WARNING: Geometry has area larger than full-sky.")
         print(shape,wcs)
-    if area>(1./60.60.):
+    if area<(1./60./60.):
         print("WARNING: Geometry has area less than 1 arcmin^2.")
         print(shape,wcs)
     res = np.rad2deg(maps.resolution(shape,wcs))
-    if verbose: print("Geometry pixel width : ", res/60., " arcmin.")
+    if verbose: print("Geometry pixel width : ", res*60., " arcmin.")
     if res>30.0:
         print("WARNING: Geometry has pixel larger than 30 degrees.")
         print(shape,wcs)
