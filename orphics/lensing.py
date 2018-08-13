@@ -65,7 +65,9 @@ def fit_nfw_profile(profile_data,profile_cov,masses,z,conc,cc,shape,wcs,bin_edge
         diff = profile_data - profile_theory
         lnlike = -0.5 * np.dot(np.dot(diff,cinv),diff)
         lnlikes.append(lnlike)
-    fit_mass,mass_err,_,like_fit = fit_gauss(masses,np.exp(lnlikes),mu_guess=mass_guess,sigma_guess=sigma_guess)
+    fit_mass,mass_err,_,_ = fit_gauss(masses,np.exp(lnlikes),mu_guess=mass_guess,sigma_guess=sigma_guess)
+    gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
+    like_fit = gaussian(masses,fit_mass,mass_err)
     return lnlikes,like_fit,fit_mass,mass_err
 
 def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
