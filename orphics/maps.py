@@ -1965,7 +1965,7 @@ class InterpStack(object):
 
 
 
-def interpolate_grid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=3,**kwargs):
+def interpolate_grid(inGrid,inY,inX,outY=None,outX=None,regular=True,kind="cubic",kx=3,ky=3,**kwargs):
     '''
     if inGrid is [j,i]
     Assumes inY is along j axis
@@ -1975,9 +1975,11 @@ def interpolate_grid(inGrid,inY,inX,outY,outX,regular=True,kind="cubic",kx=3,ky=
 
     if regular:
         interp_spline = RectBivariateSpline(inY,inX,inGrid,kx=kx,ky=ky,**kwargs)
+        if (outY is None) and (outX is None): return interp_spline
         outGrid = interp_spline(outY,outX)
     else:
         interp_spline = interp2d(inX,inY,inGrid,kind=kind,**kwargs)
+        if (outY is None) and (outX is None): return lambda y,x: interp_spline(x,y)
         outGrid = interp_spline(outX,outY)
     
 
