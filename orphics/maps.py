@@ -1842,10 +1842,13 @@ def cutout_slice(shape,wcs,arcmin_width=None,ra=None,dec=None,iy=None,ix=None,pa
     if Npix is None: Npix = int(arcmin_width/res)
     if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
     s = np.s_[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
-    return s,res
+    return s,res,Npix
     
 def cutout(imap,arcmin_width=None,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False,res=None,Npix=None,proj="car"):
-    s,res = cutout_slice(imap.shape,imap.wcs,arcmin_width=arcmin_width,ra=ra,dec=dec,iy=iy,ix=ix,pad=pad,corner=corner,res=res,Npix=Npix)
+    ret = cutout_slice(imap.shape,imap.wcs,arcmin_width=arcmin_width,ra=ra,dec=dec,iy=iy,ix=ix,pad=pad,corner=corner,res=res,Npix=Npix)
+    if ret is None:
+        return None
+    s,res,Npix = ret
     cutout = imap[s]
     if preserve_wcs:
         return cutout
