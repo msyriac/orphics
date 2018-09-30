@@ -106,7 +106,7 @@ def read_fisher_dataframe(csv_file):
 def read_fisher_pickle(pkl_file):
     import cPickle as pickle
     params,fmat = pickle.load(open(pkl_file,'rb'))
-    return FisherMatrix(fmat = fmat,param_list = params,skip_inv=True)
+    return FisherMatrix(fmat = fmat,param_list = params)#,skip_inv=True)
 
 def read_fisher(csv_file,delimiter=','):
     fmat = np.loadtxt(csv_file,delimiter=delimiter)
@@ -115,7 +115,7 @@ def read_fisher(csv_file,delimiter=','):
     fline = fline.replace("#","")
     columns = fline.strip().split(delimiter)
     assert len(set(columns)) == len(columns)
-    return FisherMatrix(fmat = fmat,param_list = columns)
+    return FisherMatrix(fmat = fmat,param_list = columns)#,skip_inv=True)
 
 def rename_fisher(fmat,pmapping):
     old_params = fmat.params
@@ -124,7 +124,7 @@ def rename_fisher(fmat,pmapping):
         if key not in old_params: continue
         i = old_params.index(key)
         new_params[i] = pmapping[key]
-    return FisherMatrix(fmat=fmat.values,param_list=new_params)
+    return FisherMatrix(fmat=fmat.values,param_list=new_params)#,skip_inv=True)
     
 class FisherMatrix(DataFrame):
     """
@@ -180,7 +180,7 @@ class FisherMatrix(DataFrame):
     """
 
     
-    def __init__(self,fmat,param_list,delete_params=None,prior_dict=None,skip_inv=False):
+    def __init__(self,fmat,param_list,delete_params=None,prior_dict=None):#,skip_inv=False):
         """
         fmat            -- (n,n) shape numpy array containing initial Fisher matrix for n parameters
         param_list      -- n-element list specifying diagonal order of fmat
@@ -210,9 +210,9 @@ class FisherMatrix(DataFrame):
             for prior in prior_dict.keys():
                 self.add_prior(prior,prior_dict[prior])
 
-        self._changed = True
-        if not(skip_inv):
-            self._update()
+        # self._changed = True
+        # if not(skip_inv):
+        #     self._update()
 
             
     def copy(self, order='K'):
@@ -221,16 +221,17 @@ class FisherMatrix(DataFrame):
         will create an independent Fnew that is not a view of the original.
         """
         #self._update()
-        f = FisherMatrix(pd.DataFrame.copy(self), list(self.params),skip_inv=True)
+        f = FisherMatrix(pd.DataFrame.copy(self), list(self.params))#,skip_inv=True)
         #f._finv = self._finv
         #f._changed = False
-        f._changed = True
+        # f._changed = True
         return f
 
-    def _update(self):
-        if self._changed:
-            self._finv = np.linalg.inv(self.values)
-            self._changed = False
+    # def _update(self):
+    #     self._finv = np.linalg.inv(self.values)
+    #     # if self._changed:
+    #     #     self._finv = np.linalg.inv(self.values)
+    #     #     self._changed = False
         
     def __radd__(self,other):
         return self._add(other,radd=True)
@@ -244,21 +245,22 @@ class FisherMatrix(DataFrame):
             new_fpd = pd.DataFrame.radd(self,other.copy(),fill_value=0)
         else:
             new_fpd = pd.DataFrame.add(self,other.copy(),fill_value=0)
-        return FisherMatrix(np.nan_to_num(new_fpd.values),new_fpd.columns.tolist())
+        return FisherMatrix(np.nan_to_num(new_fpd.values),new_fpd.columns.tolist())#,skip_inv=True)
 
     def add_prior(self,param,prior):
         """
         Adds 1-sigma value 'prior' to the parameter name specified by 'param'
         """
         self[param][param] += 1./prior**2.
-        self._changed = True
+        # self._changed = True
         
     def sigmas(self):
         """
         Returns marginalized 1-sigma uncertainties on each parameter in the Fisher matrix.
         """
-        self._update()
-        errs = np.diagonal(self._finv)**(0.5)
+        # self._update()
+        finv = np.linalg.inv(self.values)
+        errs = np.diagonal(finv)**(0.5)
         return dict(zip(self.params,errs))
     
     def delete(self,params):
@@ -269,19 +271,20 @@ class FisherMatrix(DataFrame):
         self.drop(labels=params,axis=1,inplace=True)
         self.params = self.columns.tolist()
         assert set(self.index.tolist())==set(self.params)
-        self._changed = True
+        # self._changed = True
 
     def marge_var_2param(self,param1,param2):
         """
         Returns the sub-matrix corresponding to two parameters param1 and param2.
         Useful for contour plots.
         """
-        self._update()
+        # self._update()
+        finv = np.linalg.inv(self.values)
         i = self.params.index(param1)
         j = self.params.index(param2)
-        chi211 = self._finv[i,i]
-        chi222 = self._finv[j,j]
-        chi212 = self._finv[i,j]
+        chi211 = finv[i,i]
+        chi222 = finv[j,j]
+        chi212 = finv[i,j]
         
         return np.array([[chi211,chi212],[chi212,chi222]])
 

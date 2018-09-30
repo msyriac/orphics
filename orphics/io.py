@@ -5,7 +5,7 @@ import numpy as np
 import os,sys,logging,time
 import contextlib
 import itertools
-
+import traceback
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
