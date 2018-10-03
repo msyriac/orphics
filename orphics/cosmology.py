@@ -37,6 +37,7 @@ defaultConstants = {'TCMB': 2.7255
                     ,'n_cib': 1.2
                     ,'A_tsz': 5.6
                     ,'ell0sec': 3000.
+
 }
 
 # Planck TT,TE,EE+lowP 2015 cosmology but with updated tau and minimal neutrino mass
@@ -152,14 +153,19 @@ class Cosmology(object):
 
         if not(low_acc):
             self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
-            if nonlinear:
-                self.pars.NonLinear = model.NonLinear_both
-            else:
-                self.pars.NonLinear = model.NonLinear_none
+        else:
+            self.pars.set_accuracy(AccuracyBoost=1.0, lSampleBoost=1.0, lAccuracyBoost=1.0)
+            
+        if nonlinear:
+            self.pars.NonLinear = model.NonLinear_both
+        else:
+            self.pars.NonLinear = model.NonLinear_none
         if not(skipCls) and (clTTFixFile is None):
             if verbose: print("Generating theory Cls...")
             if not(low_acc):
                 self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
+            else:
+                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=1, max_eta_k=2*(lmax+500))
             if nonlinear:
                 self.pars.NonLinear = model.NonLinear_both
             else:
