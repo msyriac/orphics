@@ -700,7 +700,7 @@ def enmap_power_from_orphics_theory(theory,lmax=None,ells=None,lensed=False,dime
         ells = np.arange(0,lmax,1)
     if ells.ndim==1: oned = True
     cltt, clee, clte, clbb = unpack_cmb_theory(theory,ells,lensed=lensed)
-    ps = np.zeros((3,3,fine_ells.size)) if oned else np.zeros((3,3,ells.shape[0],ells.shape[1]))
+    ps = np.zeros((3,3,ells.size)) if oned else np.zeros((3,3,ells.shape[0],ells.shape[1]))
     ps[0,0] = cltt
     ps[1,1] = clee
     ps[0,1] = clte
