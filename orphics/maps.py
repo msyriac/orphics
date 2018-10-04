@@ -1,12 +1,33 @@
 from __future__ import print_function 
-from enlib import enmap, utils, bench, resample
+from sotools import enmap, utils, resample
+from enlib import bench
 import numpy as np
-from enlib.fft import fft,ifft
+from sotools.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
 from orphics import io,cosmology,stats
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
+
+def get_ecc(img):
+    """Returns eccentricity from central moments of image
+    """
+    from skimage import measure
+    
+    M = measure.moments_central(np.asarray(img),order=2)
+    Cov = np.array([[M[2,0],M[1,1]],
+                    [M[1,1],M[0,2]]])/M[0,0]
+
+    mu20 = M[2,0]/M[0,0]
+    mu11 = M[1,1]/M[0,0]
+    mu02 = M[0,2]/M[0,0]
+
+    l1 = (mu20+mu02)/2. + np.sqrt(4.*mu11**2.+(mu20-mu02)**2.)/2.
+    l2 = (mu20+mu02)/2. - np.sqrt(4.*mu11**2.+(mu20-mu02)**2.)/2.
+
+
+    e = np.sqrt(1.-l2/l1)
+    return e
 
 def filter_alms(alms,lmin,lmax):
     import healpy as hp
@@ -430,7 +451,7 @@ class MapRotatorEquator(MapRotator):
         else:
             return rotated
     
-def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=False,pos_target=None):
+def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=False,pos_target=None,center_target=None,center_source=None):
     """ Given a source geometry (shape_source,wcs_source)
     return the pixel positions in the target geometry (shape_target,wcs_target)
     if the source geometry were rotated such that its center lies on the center
@@ -443,8 +464,8 @@ def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=F
     from enlib import coordinates
     
     # what are the center coordinates of each geometries
-    center_source = enmap.pix2sky(shape_source,wcs_source,(shape_source[0]/2.,shape_source[1]/2.))
-    center_target = enmap.pix2sky(shape_target,wcs_target,(shape_target[0]/2.,shape_target[1]/2.))
+    if center_source is None: center_source = enmap.pix2sky(shape_source,wcs_source,(shape_source[0]/2.,shape_source[1]/2.))
+    if center_target is None: center_target = enmap.pix2sky(shape_target,wcs_target,(shape_target[0]/2.,shape_target[1]/2.))
     decs,ras = center_source
     dect,rat = center_target
 
@@ -2019,19 +2040,20 @@ class MatchedFilter(object):
 
 
 
-def mask_center(imap):
+def mask_center(inmap):
+    imap = inmap.copy()
     Ny,Nx = imap.shape
     assert Ny==Nx
     N = Ny
     if N%2==1:
-        imap[N/2,N/2] = np.nan
+        imap[N//2,N//2] = np.nan
     else:
-        imap[N/2,N/2] = np.nan
-        imap[N/2-1,N/2] = np.nan
-        imap[N/2,N/2-1] = np.nan
-        imap[N/2-1,N/2-1] = np.nan
+        imap[N//2,N//2] = np.nan
+        imap[N//2-1,N//2] = np.nan
+        imap[N//2,N//2-1] = np.nan
+        imap[N//2-1,N//2-1] = np.nan
 
-
+    return imap
 
         
 class Purify(object):

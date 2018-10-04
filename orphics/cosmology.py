@@ -35,6 +35,7 @@ defaultConstants = {'TCMB': 2.7255
                     ,'n_cib': 1.2
                     ,'A_tsz': 5.6
                     ,'ell0sec': 3000.
+
 }
 
 # Planck TT,TE,EE+lowP 2015 cosmology but with updated tau and minimal neutrino mass
@@ -75,49 +76,33 @@ class Cosmology(object):
 
 
         self.zmax = zmax
-
         self.c['TCMBmuK'] = self.c['TCMB'] * 1.0e6
-
         try:
             self.nnu = cosmo['nnu']
         except:
             self.nnu = defaultCosmology['nnu']
-            
-        self.H0 = cosmo['H0']
-        self.h = self.H0/100.
-        try:
-            self.omch2 = cosmo['omch2']
-            self.om = (cosmo['omch2']+cosmo['ombh2'])/self.h**2.
-        except:
-            self.omch2 = (cosmo['om']-cosmo['ob'])*self.H0*self.H0/100./100.
-            self.om = cosmo['om']
-            
-        try:
-            self.ombh2 = cosmo['ombh2']
-            self.ob = cosmo['ombh2']/self.h**2.
-        except:
-            self.ombh2 = cosmo['ob']*self.H0*self.H0/100./100.
-            self.ob = cosmo['ob']
-
-
+        self.omch2 = cosmo['omch2']
+        self.ombh2 = cosmo['ombh2']
+        if 'om' in cosmo.keys() or 'ob' in cosmo.keys(): raise NotImplementedError
         try:
             self.tau = cosmo['tau']
         except:
             self.tau = defaultCosmology['tau']
             warnings.warn("No tau specified; assuming default of "+str(self.tau))
-            
-            
-        self.mnu = cosmo['mnu']
-        self.w0 = cosmo['w0']
+        try:
+            self.mnu = cosmo['mnu']
+        except:
+            self.mnu = defaultCosmology['mnu']
+            warnings.warn("No mnu specified; assuming default of "+str(self.mnu))
+        try:
+            self.w0 = cosmo['w0']
+        except:
+            self.w0 = -1
         try:
             self.wa = cosmo['wa']
         except:
             self.wa = 0.
         self.pars = camb.CAMBparams()
-        self.pars.Reion.Reionization = 0
-        #print("WARNING: theta fixed!!!")
-        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
-        #self.pars.set_cosmology(ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,num_massive_neutrinos=3,nnu=self.nnu,H0=None,cosmomc_theta=1.04e-2)
         self.pars.Reion.Reionization = 0
         try:
             self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
@@ -125,6 +110,17 @@ class Cosmology(object):
             assert np.abs(self.wa)<1e-3, "Non-zero wa requires PPF, which requires devel version of pycamb to be installed."
             print("WARNING: Could not use PPF dark energy model with pycamb. Falling back to non-PPF. Please install the devel branch of pycamb.")
             self.pars.set_dark_energy(w=self.w0)
+        
+        try:
+            theta = cosmo['theta100']/100.
+            H0 = None
+            print("WARNING: Using theta100 parameterization. H0 ignored.")
+        except:
+            H0 = cosmo['H0']
+            theta = None
+        
+        self.pars.set_cosmology(H0=H0, cosmomc_theta=theta,ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
+        self.pars.Reion.Reionization = 0
                   
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
@@ -136,6 +132,11 @@ class Cosmology(object):
         
 
         self.results= camb.get_background(self.pars)
+
+        self.H0 = self.results.hubble_parameter(0.)
+        assert self.H0>40. and self.H0<100.
+        self.h = self.H0/100.
+        
         self.omnuh2 = self.pars.omegan * ((self.H0 / 100.0) ** 2.)
         self.chistar = self.results.conformal_time(0)- model.tau_maxvis.value
         self.zstar = self.results.redshift_at_comoving_radial_distance(self.chistar)
@@ -153,14 +154,19 @@ class Cosmology(object):
 
         if not(low_acc):
             self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
-            if nonlinear:
-                self.pars.NonLinear = model.NonLinear_both
-            else:
-                self.pars.NonLinear = model.NonLinear_none
+        else:
+            self.pars.set_accuracy(AccuracyBoost=1.0, lSampleBoost=1.0, lAccuracyBoost=1.0)
+            
+        if nonlinear:
+            self.pars.NonLinear = model.NonLinear_both
+        else:
+            self.pars.NonLinear = model.NonLinear_none
         if not(skipCls) and (clTTFixFile is None):
             if verbose: print("Generating theory Cls...")
             if not(low_acc):
                 self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
+            else:
+                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=1, max_eta_k=2*(lmax+500))
             if nonlinear:
                 self.pars.NonLinear = model.NonLinear_both
             else:
@@ -168,10 +174,6 @@ class Cosmology(object):
             theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless,verbose=verbose,prefix="_low_acc_"+str(low_acc))
             self.clttfunc = lambda ell: theory.lCl('TT',ell)
             self.theory = theory
-
-            # ells = np.arange(2,lmax,1)
-            # cltts = self.clttfunc(ells)
-            # np.savetxt("data/cltt_lensed_Feb18.txt",np.vstack((ells,cltts)).transpose())
 
             
         self.kmax = kmax
@@ -700,7 +702,7 @@ def enmap_power_from_orphics_theory(theory,lmax=None,ells=None,lensed=False,dime
         ells = np.arange(0,lmax,1)
     if ells.ndim==1: oned = True
     cltt, clee, clte, clbb = unpack_cmb_theory(theory,ells,lensed=lensed)
-    ps = np.zeros((3,3,fine_ells.size)) if oned else np.zeros((3,3,ells.shape[0],ells.shape[1]))
+    ps = np.zeros((3,3,ells.size)) if oned else np.zeros((3,3,ells.shape[0],ells.shape[1]))
     ps[0,0] = cltt
     ps[1,1] = clee
     ps[0,1] = clte

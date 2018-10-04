@@ -2,9 +2,10 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from enlib import enmap, utils, bench
+from sotools import enmap, utils
+from enlib import bench
 try:
-    from enlib import lensing as enlensing
+    from sotools import lensing as enlensing
 except:
     print("WARNING: Couldn't load enlib lensing. You might need to compile enlib/interpol. Some features will be unavailable.")
 
