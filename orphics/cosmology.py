@@ -1,8 +1,6 @@
 from __future__ import print_function
-import camb
 import warnings
 from math import pi
-from camb import model, initialpower
 import numpy as np
 
 from scipy.interpolate import interp1d
@@ -63,6 +61,9 @@ class Cosmology(object):
     http://cosmicpy.github.io/
     '''
     def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True,skipPower=True,pkgrid_override=None,kmax=10.,skip_growth=True,nonlinear=True,zmax=10.,low_acc=False,z_growth=None,camb_var=None):
+        import camb
+        from camb import model
+        
 
         self.camb_var = camb_var
         self.dimensionless = dimensionless
@@ -261,6 +262,7 @@ class Cosmology(object):
 
         
     def _initPower(self,pkgrid_override=None):
+        import camb
         print("initializing power...")
         if pkgrid_override is None:
             self.pars.Transfer.accurate_massive_neutrinos = True

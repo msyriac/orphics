@@ -97,6 +97,9 @@ def check_fisher_sanity(fmat,param_list):
     assert Ny==len(param_list)
     assert len(param_list)==len(set(param_list))
 
+def write_fisher(filename,fmat,delim=','):
+    np.savetxt(filename,fmat,header=(delim).join(fmat.params),delimiter=delim)
+
 
 def read_fisher_dataframe(csv_file):
     df = pd.read_csv(csv_file,index_col=0)
