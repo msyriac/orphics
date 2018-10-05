@@ -270,7 +270,7 @@ class Plotter(object):
             self._ax.plot(x,y,ls=ls,marker=marker,label=label,**kwargs)
             self._ax.fill_between(x, y-yerr, y+yerr, alpha=alpha)
         else:
-            self._ax.errorbar(x,y,yerr=yerr,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,**kwargs)
+            self._ax.errorbar(x,y,yerr=yerr,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)
         if label is not None: self.do_legend = True
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,**kwargs):
