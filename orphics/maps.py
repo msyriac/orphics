@@ -1,7 +1,8 @@
 from __future__ import print_function 
-from enlib import enmap, utils, bench, resample
+from sotools import enmap, utils, resample
+from enlib import bench
 import numpy as np
-from enlib.fft import fft,ifft
+from sotools.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
 from orphics import io,cosmology,stats

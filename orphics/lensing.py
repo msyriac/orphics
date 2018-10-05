@@ -2,9 +2,10 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from enlib import enmap, utils, bench
+from sotools import enmap, utils
+from enlib import bench
 try:
-    from enlib import lensing as enlensing
+    from sotools import lensing as enlensing
 except:
     print("WARNING: Couldn't load enlib lensing. You might need to compile enlib/interpol. Some features will be unavailable.")
 
@@ -275,8 +276,8 @@ def lensing_noise(ells,ntt,nee,nbb,
     if y_ellmax_e is None: y_ellmax_e=ellmax_e
     if y_ellmax_b is None: y_ellmax_b=ellmax_b
 
-    if ellmin_k is None: ellmin_k = min(ellmin_t,ellmin_e,ellmin_b,y_ellmin_t,y_ellmin_e,y_ellmin_b)
-    if ellmax_k is None: ellmax_k = max(ellmax_t,ellmax_e,ellmax_b,y_ellmax_t,y_ellmax_e,y_ellmax_b)
+    if ellmin_k is None: ellmin_k = bin_edges.min() #min(ellmin_t,ellmin_e,ellmin_b,y_ellmin_t,y_ellmin_e,y_ellmin_b)
+    if ellmax_k is None: ellmax_k = bin_edges.max() #max(ellmax_t,ellmax_e,ellmax_b,y_ellmax_t,y_ellmax_e,y_ellmax_b)
 
     pol = False if estimators==['TT'] else True
 
