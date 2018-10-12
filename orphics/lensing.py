@@ -2,7 +2,7 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from sotools import enmap, utils
+from pixell import enmap, utils
 from enlib import bench
 try:
     from sotools import lensing as enlensing

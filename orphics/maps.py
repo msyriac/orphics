@@ -1,8 +1,8 @@
 from __future__ import print_function 
-from sotools import enmap, utils, resample
+from pixell import enmap, utils, resample
 from enlib import bench
 import numpy as np
-from sotools.fft import fft,ifft
+from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
 from orphics import io,cosmology,stats
@@ -74,7 +74,7 @@ def crop_center(img,cropy,cropx):
     starty = y//2-(cropy//2)
     return img[...,starty:starty+cropy,startx:startx+cropx]
 
-def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None):
+def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None,mask=1):
     """Get the binned power spectrum of a map in one line of code.
     (At the cost of flexibility and reusability of expensive parts)"""
     
@@ -83,8 +83,9 @@ def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None
     modlmap = enmap.modlmap(shape,wcs) if modlmap is None else modlmap
     fc = FourierCalc(shape,wcs) if fc is None else fc
     binner = stats.bin2D(modlmap,bin_edges) if binner is None else binner
-    p2d,_,_ = fc.power2d(imap,imap2)
-    return binner.bin(p2d)
+    p2d,_,_ = fc.power2d(imap*mask,imap2*mask if imap2 is not None else None)
+    cents,p1d = binner.bin(p2d)
+    return cents,p1d/np.mean(mask**2.)
 
 def interp(x,y,bounds_error=False,fill_value=0.,**kwargs):
     return interp1d(x,y,bounds_error=bounds_error,fill_value=fill_value,**kwargs)
@@ -805,7 +806,8 @@ def ilc_index(ndim):
 
 def ilc_map_term(kmaps,cinv,response):
     """response^T . Cinv . kmaps """
-    return np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
+    #return np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
+    return np.einsum('k,k...->...',response,np.einsum('kl...,l...->k...',cinv,kmaps))
     
 def silc_noise(cinv,response=None):
     """ Derived from Eq 4 of arXiv:1006.5599"""
@@ -1216,7 +1218,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
     # get auto power of I,Q,U
     auto = 0.
     for ksplit in ksplits:
-        auto += fourier_calc.power2d(kmap=ksplit,dtype=np.float32)[0].astype(np.float32)
+        auto += fourier_calc.power2d(kmap=ksplit)[0]
     auto /= Nsplits
 
     # do cross powers of I,Q,U
@@ -1224,7 +1226,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
     cross = 0.
     for i in range(len(ksplits)):
         for j in range(i+1,len(ksplits)):
-            cross += fourier_calc.power2d(kmap=ksplits[i],kmap2=ksplits[j],dtype=np.float32)[0].astype(np.float32)
+            cross += fourier_calc.power2d(kmap=ksplits[i],kmap2=ksplits[j])[0]
     cross /= Ncrosses
         
     if do_cross:
@@ -1232,7 +1234,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
         cross_teb = 0.
         for i in range(len(ksplits)):
             for j in range(i+1,len(ksplits)):
-                cross_teb += fourier_calc.power2d(kmap=kteb_splits[i],kmap2=kteb_splits[j],dtype=np.float32)[0].astype(np.float32)
+                cross_teb += fourier_calc.power2d(kmap=kteb_splits[i],kmap2=kteb_splits[j])[0]
         cross_teb /= Ncrosses
     else:
         cross_teb = None
