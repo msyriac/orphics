@@ -47,9 +47,11 @@ class Pow2Cat(object):
         self.ncomp = ncomp
         
     def get_map(self,seed=None):
+        """Get correlated galaxy and kappa map """
         return self.mgen.get_map(seed=seed,scalar=True)
 
     def get_cat(self,ngals,seed=None):
+        """Get a catalog with total number of galaxies ngals and a kappa map that are correlated."""
         retmap = self.get_map(seed=seed)
         if self.ncomp==1:
             gmap = retmap[0]
