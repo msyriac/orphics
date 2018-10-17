@@ -5,7 +5,7 @@ from orphics import maps
 from pixell import enmap, utils
 from enlib import bench
 try:
-    from sotools import lensing as enlensing
+    from pixell import lensing as enlensing
 except:
     print("WARNING: Couldn't load enlib lensing. You might need to compile enlib/interpol. Some features will be unavailable.")
 
@@ -151,6 +151,7 @@ class FlatLensingSims(object):
             ps_noise[2,2] = (noise_b_uk_arcmin*np.pi/180./60.)**2.
         self.ngen = maps.MapGen(shape,wcs,ps_noise)
         self.ps_noise = ps_noise
+        self.ps_kk = ps_kk
 
     def get_unlensed(self,seed=None):
         return self.mgen.get_map(seed=seed)

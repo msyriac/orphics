@@ -75,11 +75,11 @@ def factorize_2d_convolution_integral(expr,l1funcs=None,l2funcs=None,groups=None
             if not((s/d).has(d)):
                 if found:
                     print(s,group)
-                    raise ValueError, "Groups don't seem to be mutually exclusive."
+                    raise ValueError("Groups don't seem to be mutually exclusive.")
                 index = i
                 found = True
         if not(found):
-            raise ValueError, "Couldn't associate a group"
+            raise ValueError("Couldn't associate a group")
         return index
 
 

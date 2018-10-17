@@ -353,6 +353,9 @@ class FourierCalc(object):
         norm = 1. if pixel_units else self.normfact
         return np.real(np.conjugate(kmap1)*kmap2)*norm,kmap1
 
+    def ifft(self,kmap):
+        return ifft(kmap,axes=[-2,-1],normalize=True)
+
     def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None, dtype=None):
         """
         Calculate the power spectrum of emap crossed with emap2 (=emap if None)
@@ -752,7 +755,7 @@ def silc(kmaps,cinv,response=None):
     weighted = ilc_map_term(kmaps,cinv,response)
     # Get response^T Cinv response
     norm = ilc_comb_a_b(response,response,cinv)
-    return np.nan_to_num(weighted/norm)
+    return weighted * silc_noise(cinv,response) #np.nan_to_num(weighted/norm)
 
 def cilc(kmaps,cinv,response_a,response_b):
     """Constrained ILC -- Make a constrained internal linear combination (ILC) of given fourier space maps at different frequencies
@@ -804,11 +807,6 @@ def ilc_index(ndim):
     else:
         raise ValueError
 
-def ilc_map_term(kmaps,cinv,response):
-    """response^T . Cinv . kmaps """
-    #return np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
-    return np.einsum('k,k...->...',response,np.einsum('kl...,l...->k...',cinv,kmaps))
-    
 def silc_noise(cinv,response=None):
     """ Derived from Eq 4 of arXiv:1006.5599"""
     response = ilc_def_response(response,cinv)
@@ -827,10 +825,16 @@ def cilc_noise(cinv,response_a,response_b):
     return np.nan_to_num(numer/denom)
 
 
+def ilc_map_term(kmaps,cinv,response):
+    """response^T . Cinv . kmaps """
+    #return np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
+    return np.einsum('k,k...->...',response,np.einsum('kl...,l...->k...',cinv,kmaps))
+    
 def ilc_comb_a_b(response_a,response_b,cinv):
     """Return a^T cinv b"""
     pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
-    return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
+    #return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
+    return np.nan_to_num(np.einsum('l,l...->...',response_a,np.einsum('k,kl...->l...',response_b,cinv)))
 
 
 def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method="isotropic"):
@@ -860,7 +864,7 @@ def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method
         return downsample_power(retpow.shape,kmaps[0].wcs,retpow,ndown=ndown,order=order,exp=None,fftshift=fftshift,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False)
 
 
-def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,kmask=None):
+def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,ellmaxes=None,data=True,fgmax=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -873,7 +877,6 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
     Returns beam-deconvolved covariance matrix
     """
 
-    kmask = np.ones(ells.shape,dtype=np.int) if kmask is None else kmask
     nfreqs = len(noises)
     if cmb_ps.ndim==2:
         cshape = (nfreqs,nfreqs,1,1)
@@ -884,33 +887,29 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
 
     Covmat = np.tile(cmb_ps,cshape)
 
-    if plot:
-        pl = io.Plotter(yscale='log',ylabel="$\\ell^2 C_{\\ell}$",xlabel="$\\ell$")
-        pl.add(ells,cmb_ps*ells**2.,color='k',lw=3)
     for i,(kbeam1,freq1,noise1) in enumerate(zip(kbeams,freqs,noises)):
         for j,(kbeam2,freq2,noise2) in enumerate(zip(kbeams,freqs,noises)):
             print("Populating covariance for ",freq1,"x",freq2)
             if i==j:
-                instnoise = np.nan_to_num(noise1/kbeam1**2.)
-                instnoise[kmask==0] = np.inf
-                Covmat[i,j,:] += instnoise
-                if plot:
-                    pl.add(ells,instnoise*ells**2.,lw=2,ls="--",label=str(freq1))
+                instnoise = np.nan_to_num(noise1/kbeam1**2.) 
+                Covmat[i,j,...] += instnoise
 
             for component in components:
                 fgnoise = fnoise.get_noise(component,freq1,freq2,ells)
-                Covmat[i,j,:] += fgnoise
-                if plot:
-                    pl.add(ells,fgnoise*ells**2.,lw=2,alpha=0.5,label=component+"_"+str(freq1)+"_"+str(freq2))
-    if plot:
-        pl._ax.set_xlim(0,6000)
-        pl._ax.set_ylim(1,1e5)
-        pl.legend(loc='upper left',labsize=10)
-        pl.done(plot_save)
+                if (fgmax is not None) and component=='tsz':
+                    fgnoise[ells>fgmax] = fgnoise[fgmax]
+                Covmat[i,j,...] += fgnoise
+
+            if data:
+                Covmat[i,j][ells>ellmaxes[i]] = 1e90 # !!!
+                Covmat[i,j][ells>ellmaxes[j]] = 1e90 # !!!
+            #if i>=j:
+            #    io.plot_img(np.fft.fftshift(np.log10(Covmat[i,j,:])),lim=[-10,3])
+                
 
     return Covmat
 
-def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,eigpow=True):
+def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,eigpow=True,ellmaxes=None,data=True,fgmax=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -922,12 +921,13 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_s
 
     Returns beam-deconvolved inv covariance matrix
     """
-    Covmat = ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot,plot_save)
+    Covmat = np.nan_to_num(ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot,plot_save,ellmaxes=ellmaxes,data=data,fgmax=fgmax))
     print("Inverting covariance...")
 
     if eigpow:
-        from enlib import utils
-        return utils.eigpow(Covmat, -1.,axes=[0,1])
+        from pixell import utils
+        cinv = utils.eigpow(Covmat, -1.,axes=[0,1])
+        return cinv,Covmat
     else:
         cinv = np.linalg.inv(Covmat.T).T
         return cinv
