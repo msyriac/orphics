@@ -53,10 +53,10 @@ def fit_gauss(x,y,mu_guess=None,sigma_guess=None):
     ynorm = np.trapz(y,x)
     ynormalized = y/ynorm
     gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
-    popt,pcov = curve_fit(gaussian,x,ynormalized,p0=[mu_guess,sigma_guess])
+    popt,pcov = curve_fit(gaussian,x,ynormalized,p0=[mu_guess,sigma_guess])#,bounds=([-np.inf,0],[np.inf,np.inf]))
     fit_mean = popt[0]
     fit_sigma = popt[1]
-    return fit_mean,fit_sigma,ynorm,ynormalized
+    return fit_mean,np.abs(fit_sigma),ynorm,ynormalized
 
     
 class Solver(object):
