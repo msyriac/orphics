@@ -58,6 +58,13 @@ def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin=None,overdens
 def fit_nfw_profile(profile_data,profile_cov,masses,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin=None,
                     overdensity=200.,critical=False,at_cluster_z=True,
                     mass_guess=2e14,sigma_guess=2e13):
+    """
+    Returns
+    lnlikes - actual lnlike as function of masses
+    like_fit - gaussian fit as function of masses
+    fit_mass - fit mass
+    mass_err - fit mass err
+    """
     from orphics.stats import fit_gauss
     cinv = np.linalg.inv(profile_cov)
     lnlikes = []
@@ -69,7 +76,7 @@ def fit_nfw_profile(profile_data,profile_cov,masses,z,conc,cc,shape,wcs,bin_edge
     fit_mass,mass_err,_,_ = fit_gauss(masses,np.exp(lnlikes),mu_guess=mass_guess,sigma_guess=sigma_guess)
     gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
     like_fit = gaussian(masses,fit_mass,mass_err)
-    return lnlikes,like_fit,fit_mass,mass_err
+    return np.array(lnlikes),np.array(like_fit),fit_mass,mass_err
 
 def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
     """Given a cutout kappa map centered on a cluster and a redshift,
