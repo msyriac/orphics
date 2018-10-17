@@ -1390,8 +1390,9 @@ def class_cls(lmax,params=None,cosmo=None,zmin=None,zmax=None,bias=None,dndz_fil
         'selection_width': '%f'%shalfwidth,
         'selection_bias':'%f'%bias,
         'number count contributions' : 'density, rsd, lensing, gr',
-        'dNdz_selection':'%s'%dndz_file,'l_max_lss':lmax,'l_max_scalars':lmax}
+        'l_max_lss':lmax,'l_max_scalars':lmax}
 
+    if dndz_file is not None: oparams['dNdz_selection'] = '%s'%dndz_file
     if params is not None:
         for key in params.keys():
             oparams[key] = params[key]
