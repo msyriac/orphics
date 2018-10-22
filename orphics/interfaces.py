@@ -7,6 +7,16 @@ import subprocess
 import numpy as np
 import healpy as hp
 
+
+class WebSky(object):
+
+    def __init__(self,froot):
+        pass
+
+    def get_tsz(nu):
+        y = self.get_y()
+        
+
 class PlanckLensing(object):
 
     def __init__(self,froot="/gpfs01/astro/workarea/msyriac/data/planck/pr3/",nside=2048):

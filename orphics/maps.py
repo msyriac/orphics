@@ -361,7 +361,7 @@ class FourierCalc(object):
         Calculate the power spectrum of emap crossed with emap2 (=emap if None)
         Returns in radians^2 by default unles pixel_units specified
         """
-
+        wcs = emap.wcs if emap is not None else kmap.wcs
         if kmap is not None:
             lteb1 = kmap
             ndim = kmap.ndim
@@ -394,7 +394,7 @@ class FourierCalc(object):
             if lteb2.ndim>2:
                 lteb2 = lteb2[0]
             p2d = self.f2power(lteb1,lteb2,pixel_units)
-            return p2d,lteb1,lteb2
+            return enmap.enmap(p2d,wcs),enmap.enmap(lteb1,wcs),enmap.enmap(lteb2,wcs)
 
 
 
@@ -864,7 +864,7 @@ def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method
         return downsample_power(retpow.shape,kmaps[0].wcs,retpow,ndown=ndown,order=order,exp=None,fftshift=fftshift,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False)
 
 
-def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,ellmaxes=None,data=True,fgmax=None):
+def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,ellmaxes=None,data=True,fgmax=None,narray=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -877,7 +877,7 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
     Returns beam-deconvolved covariance matrix
     """
 
-    nfreqs = len(noises)
+    nfreqs = len(freqs)
     if cmb_ps.ndim==2:
         cshape = (nfreqs,nfreqs,1,1)
     elif cmb_ps.ndim==1:
@@ -887,12 +887,17 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
 
     Covmat = np.tile(cmb_ps,cshape)
 
-    for i,(kbeam1,freq1,noise1) in enumerate(zip(kbeams,freqs,noises)):
-        for j,(kbeam2,freq2,noise2) in enumerate(zip(kbeams,freqs,noises)):
+    for i,freq1 in enumerate(freqs):
+        for j,freq2 in enumerate(freqs):
             print("Populating covariance for ",freq1,"x",freq2)
-            if i==j:
-                instnoise = np.nan_to_num(noise1/kbeam1**2.) 
-                Covmat[i,j,...] += instnoise
+            if narray is not None:
+                Covmat[i,j,...] += narray[i,j,...]
+            else:
+                if i==j:
+                    kbeam1 = kbeams[i]
+                    noise1 = noises[i]
+                    instnoise = np.nan_to_num(noise1/kbeam1**2.) 
+                    Covmat[i,j,...] += instnoise
 
             for component in components:
                 fgnoise = fnoise.get_noise(component,freq1,freq2,ells)
@@ -909,7 +914,7 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
 
     return Covmat
 
-def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,eigpow=True,ellmaxes=None,data=True,fgmax=None):
+def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,eigpow=True,ellmaxes=None,data=True,fgmax=None,narray=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -921,7 +926,7 @@ def ilc_cinv(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_s
 
     Returns beam-deconvolved inv covariance matrix
     """
-    Covmat = np.nan_to_num(ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot,plot_save,ellmaxes=ellmaxes,data=data,fgmax=fgmax))
+    Covmat = np.nan_to_num(ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot,plot_save,ellmaxes=ellmaxes,data=data,fgmax=fgmax,narray=narray))
     print("Inverting covariance...")
 
     if eigpow:
@@ -2529,3 +2534,41 @@ def get_grf_cmb(shape,wcs,theory,spec,seed=None):
 def get_grf_realization(shape,wcs,power2d,seed=None):
     mg = MapGen(shape,wcs,power2d)
     return mg.get_map(seed=seed)
+
+
+class QuickSim(object):
+    def __init__(self,deg,px,theory=None,pol=False):
+        from orphics import cosmology
+        self.shape,self.wcs = rect_geometry(width_deg=deg,px_res_arcmin=px)
+        self.modlmap = enmap.modlmap(self.shape,self.wcs)
+        self.lmax = self.modlmap.max()
+        self.ells = np.arange(0,self.lmax,1)
+        if theory is None: theory = cosmology.default_theory()
+        self.theory = theory
+        ncomp = 3 if pol else 1
+        ps = np.zeros((ncomp,ncomp,self.ells.size))
+        self.cltt = theory.lCl('TT',self.ells)
+        ps[0,0] = self.cltt
+        if pol:
+            self.clee = theory.lCl('EE',self.ells)
+            self.clte = theory.lCl('TE',self.ells)
+            self.clbb = theory.lCl('BB',self.ells)
+            ps[1,1] = self.clee
+            ps[2,2] = self.clbb
+            ps[0,1] = self.clte
+            ps[1,0] = self.clte
+        if pol: self.shape = (3,)+self.shape
+        self.mgen = MapGen(self.shape,self.wcs,ps)
+        self.fc = FourierCalc(self.shape,self.wcs)
+    def get_map(self,seed=None):
+        return self.mgen.get_map(seed=seed)
+            
+def ftrans(p2d,tfunc=np.log10):
+    wcs = None
+    try: wcs = p2d.wcs
+    except: pass
+    t2d = tfunc(np.fft.fftshift(p2d))
+    if wcs is None:
+        return t2d
+    else:
+        return enmap.enmap(t2d,wcs)

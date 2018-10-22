@@ -138,6 +138,11 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
+def eplot(img):
+    from enlib import enplot
+    plots = enplot.get_plots(img)
+    enplot.show(plots)
+
 def blend(fg_file,bg_file,alpha,save_file=None,verbose=True):
     from PIL import Image
     foreground = Image.open(fg_file)
@@ -249,7 +254,7 @@ class Plotter(object):
         self.do_legend = False
 
 
-    def legend(self,loc='upper left',labsize=12,numpoints=1,**kwargs):
+    def legend(self,loc='best',labsize=12,numpoints=1,**kwargs):
         self.do_legend = False
         handles, labels = self._ax.get_legend_handles_labels()
         legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=numpoints,frameon = 1,**kwargs)
