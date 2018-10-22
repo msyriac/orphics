@@ -3,18 +3,17 @@ import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
 from pixell import enmap, utils
-from enlib import bench
 try:
     from pixell import lensing as enlensing
 except:
-    print("WARNING: Couldn't load enlib lensing. You might need to compile enlib/interpol. Some features will be unavailable.")
+    print("WARNING: Couldn't load pixell lensing. Some features will be unavailable.")
 
 from scipy.integrate import simps
 from scipy.interpolate import splrep,splev
 
 from scipy.fftpack import fftshift,ifftshift,fftfreq
 from scipy.interpolate import interp1d
-from enlib.fft import fft,ifft
+from pixell.fft import fft,ifft
 
 from orphics.stats import bin2D
 
@@ -197,7 +196,7 @@ def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,
     kbeam -- (Ny,Nx) array of 2d beam wavenumbers
 
     """
-    from enlib import lensing as enlensing
+    from pixell import lensing as enlensing
 
     assert iucov.ndim==4
     ncomp = iucov.shape[0]
@@ -374,7 +373,7 @@ def lens_cov(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     kbeam -- (Ny,Nx) array of 2d beam wavenumbers
 
     """
-    from enlib import lensing as enlensing
+    from pixell import lensing as enlensing
 
     Scov = ucov.copy()
     
