@@ -801,7 +801,7 @@ class TheorySpectra:
 
     def __init__(self):
 
-
+        self.always_unlensed = False
         self._uCl={}
         self._lCl={}
         self._gCl = {}
@@ -884,6 +884,7 @@ class TheorySpectra:
     def uCl(self,XYType,ell):
         return self._Cl(XYType,ell,lensed=False)
     def lCl(self,XYType,ell):
+        if self.always_unlensed: return self.uCl(XYType,ell)
         return self._Cl(XYType,ell,lensed=True)
     
 

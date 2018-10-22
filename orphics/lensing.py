@@ -164,16 +164,19 @@ class FlatLensingSims(object):
         return self.mgen.get_map(seed=seed)
     def get_kappa(self,seed=None):
         return self.kgen.get_map(seed=seed)
-    def get_sim(self,seed_cmb=None,seed_kappa=None,seed_noise=None,lens_order=5,return_intermediate=False):
+    def get_sim(self,seed_cmb=None,seed_kappa=None,seed_noise=None,lens_order=5,return_intermediate=False,skip_lensing=False):
         unlensed = self.get_unlensed(seed_cmb)
-        if not(self._fixed):
-            kappa = self.get_kappa(seed_kappa)
-            self.alpha = alpha_from_kappa(kappa,posmap=self.posmap)
+        if skip_lensing:
+            lensed = unlensed
+            kappa = lensed.copy()*0
         else:
-            kappa = None
-            assert seed_kappa is None
-        
-        lensed = enlensing.displace_map(unlensed, self.alpha, order=lens_order)
+            if not(self._fixed):
+                kappa = self.get_kappa(seed_kappa)
+                self.alpha = alpha_from_kappa(kappa,posmap=self.posmap)
+            else:
+                kappa = None
+                assert seed_kappa is None
+            lensed = enlensing.displace_map(unlensed, self.alpha, order=lens_order)
         beamed = maps.filter_map(lensed,self.kbeam)
         noise_map = self.ngen.get_map(seed=seed_noise)
         
