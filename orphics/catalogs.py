@@ -48,7 +48,7 @@ class Pow2Cat(object):
         """Get correlated galaxy and kappa map """
         return curvedsky.rand_map(self.shape, self.wcs, self.ps, lmax=self.lmax, seed=seed, spin=0)
 
-    def get_cat(self,ngals,seed=None,depth_threshold=0.5,cull_voids=True):
+    def get_cat(self,ngals,seed=None,depth_threshold=0.5,cull_voids=True,add_jitter=True):
         """Get a catalog with total number of galaxies ngals and a kappa map that are correlated."""
         retmap = self.get_map(seed=seed)
         if self.ncomp==1:
@@ -72,7 +72,7 @@ class Pow2Cat(object):
         pixmap = (enmap.pixmap(self.shape,self.wcs)).reshape(2,Ny*Nx)
         nobjs = sampled.reshape(-1)
         cat = np.repeat(pixmap,nobjs,-1).astype(np.float64)
-        jitter = np.random.uniform(-0.5,0.5,size=cat.shape)
+        jitter = np.random.uniform(-0.5,0.5,size=cat.shape) if add_jitter else 0.
         cat += jitter
         decs,ras = np.rad2deg(enmap.pix2sky(self.shape,self.wcs,cat))
         if self.ncomp==1:
