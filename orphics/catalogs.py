@@ -191,7 +191,7 @@ class CatMapper(object):
         if self.curved:
             return np.histogram(self.pixs,bins=self.shape,weights=weights,range=[0,self.shape])[0].astype(np.float32)
         else:
-            Ny,Nx = self.shape
+            Ny,Nx = self.shape[-2:]
             return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
 
     def _counts(self):
