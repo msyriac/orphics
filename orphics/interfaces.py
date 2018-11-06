@@ -91,7 +91,7 @@ def websky_halos(dirpath="./",mmin=-np.inf,mmax=np.inf):
     vzpos   = peakdata[:,5][sel]
     h = h
     M = M
-
+    from orphics import cosmology
     vecs = np.swapaxes(np.array([xpos,ypos,zpos]),0,1)
     ras,decs = hp.vec2ang(vecs,lonlat=True)
     params = cosmology.defaultCosmology
@@ -167,10 +167,12 @@ class PlanckLensing(object):
         
     
         
-    def load_planck_lensing(self,tsz_deproj=False,pr2=False,est="MV"):
+    def load_planck_lensing(self,tsz_deproj=False,pr2=False,est="MV",inhom=False):
         assert est in ['TT','PP','MV']
         if tsz_deproj:
             pdir = self.froot + "COM_Lensing_Szdeproj_4096_R3.00/TT/"
+        elif inhom:
+            pdir = self.froot + "COM_Lensing_Inhf_2048_R3.00/%s/" % est
         else:
             pdir = self.froot + "COM_Lensing_4096_R3.00/%s/" % est
 

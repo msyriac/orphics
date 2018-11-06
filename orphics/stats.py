@@ -213,29 +213,15 @@ class FisherMatrix(DataFrame):
             for prior in prior_dict.keys():
                 self.add_prior(prior,prior_dict[prior])
 
-        # self._changed = True
-        # if not(skip_inv):
-        #     self._update()
-
             
     def copy(self, order='K'):
         """
         >> Fnew = F.copy()
         will create an independent Fnew that is not a view of the original.
         """
-        #self._update()
-        f = FisherMatrix(pd.DataFrame.copy(self), list(self.params))#,skip_inv=True)
-        #f._finv = self._finv
-        #f._changed = False
-        # f._changed = True
+        f = FisherMatrix(pd.DataFrame.copy(self), list(self.params))
         return f
 
-    # def _update(self):
-    #     self._finv = np.linalg.inv(self.values)
-    #     # if self._changed:
-    #     #     self._finv = np.linalg.inv(self.values)
-    #     #     self._changed = False
-        
     def __radd__(self,other):
         return self._add(other,radd=True)
 
@@ -248,14 +234,13 @@ class FisherMatrix(DataFrame):
             new_fpd = pd.DataFrame.radd(self,other.copy(),fill_value=0)
         else:
             new_fpd = pd.DataFrame.add(self,other.copy(),fill_value=0)
-        return FisherMatrix(np.nan_to_num(new_fpd.values),new_fpd.columns.tolist())#,skip_inv=True)
+        return FisherMatrix(np.nan_to_num(new_fpd.values),new_fpd.columns.tolist())
 
     def add_prior(self,param,prior):
         """
         Adds 1-sigma value 'prior' to the parameter name specified by 'param'
         """
         self[param][param] += 1./prior**2.
-        # self._changed = True
         
     def sigmas(self):
         """
@@ -274,7 +259,10 @@ class FisherMatrix(DataFrame):
         self.drop(labels=params,axis=1,inplace=True)
         self.params = self.columns.tolist()
         assert set(self.index.tolist())==set(self.params)
-        # self._changed = True
+
+    def reordered(self,params):
+        # Return a reordered version of self
+        return self[params].T[params]
 
     def marge_var_2param(self,param1,param2):
         """

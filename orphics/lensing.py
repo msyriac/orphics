@@ -2299,3 +2299,240 @@ class SplitLensing(object):
         kc = k - (1./nsplits**2.)*kiisum
         return (nsplits**4.*self.qpower(kc,kc)-4.*nsplits**2.*psum+4.*psum2)/nsplits/(nsplits-1.)/(nsplits-2.)/(nsplits-3.)
             
+
+
+
+class QE(object):
+    def __init__(self,shape,wcs,cmb,xnoise,xbeam,ynoise=None,ybeam=None,ests=None,cmb_response=None):
+        modlmap = enmap.modlmap(shape,wcs)
+        self.modlmap = modlmap
+        self.shape = shape
+        self.wcs = wcs
+        kbeamx = self._process_beam(xbeam)
+        kbeamy = self._process_beam(ybeam) if ybeam is not None else kbeamx.copy()
+        
+
+    def _process_beam(self,beam):
+        beam = np.asarray(beam)
+        if beam.ndim==0:
+            kbeam = maps.gauss_beam(beam,modlmap)
+        elif beam.ndim==1:
+            ells = np.arange(0,beam.size)
+            kbeam = maps.interp(ells,maps.gauss_beam(beam,ells))(self.modlmap)
+        elif beam.ndim==2:
+            kbeam = beam
+            assert kbeam.shape==self.shape
+        return kbeam
+        
+    def reconstruct(XY,kmap=None,imap=None,est=None,return_ft=True):
+        X,Y = XY
+        WXY = self.WXY(XY)
+        WY = self.WY(Y+Y)
+        lx = self.lxMap
+        ly = self.lyMap
+        if Y in ['E','B']:
+            phaseY = self.phaseY
+        else:
+            phaseY = 1.
+        phaseB = (int(Y=='B')*1.j)+(int(Y!='B'))
+        fMask = self.fmaskK
+        HighMapStar = ifft((self.kHigh[Y]*WY*phaseY*phaseB),axes=[-2,-1],normalize=True).conjugate()
+        kPx = fft(ifft(self.kGradx[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])
+        kPy = fft(ifft(self.kGrady[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])        
+        rawKappa = ifft((1.j*lx*kPx) + (1.j*ly*kPy),axes=[-2,-1],normalize=True).real
+        AL = np.nan_to_num(self.AL[XY])
+        assert not(np.any(np.isnan(rawKappa)))
+        lmap = self.N.modLMap
+        kappaft = -self.fmask_func(AL*fft(rawKappa,axes=[-2,-1]))
+        if return_ft:
+            return kappaft
+        else:
+            kappa = ifft(kappaft,axes=[-2,-1],normalize=True).real
+            return kappa,kappaft
+    
+    def norm(self,XY):
+        kbeamx = self.kbeamx
+        kbeamy = self.kbeamy
+        allTerms = []
+        if XY=='TT':
+            clunlenTTArrNow = self.uClNow2d['TT'].copy()
+            WXY = self.WXY('TT')*kbeamx*l1Scale
+            WY = self.WY('TT')*kbeamy*l2Scale
+            preG = WY
+            rfact = 2.**0.25
+            for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                preF = ell1*ell2*clunlenTTArrNow*WXY
+                preFX = ell1*WXY
+                preGX = ell2*clunlenTTArrNow*WY
+                calc = ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True)
+                                     +ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True),axes=[-2,-1])
+                allTerms += [calc]
+        elif XY == 'EE':
+            clunlenEEArrNow = self.uClNow2d['EE'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            sinf = sin2phi(lxhat,lyhat)
+            sinsqf = sinf**2.
+            cosf = cos2phi(lxhat,lyhat)
+            cossqf = cosf**2.
+            WXY = self.WXY('EE')*kbeamx
+            WY = self.WY('EE')*kbeamy
+            rfact = 2.**0.25
+            for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
+                    preF = trigfact*ell1*ell2*clunlenEEArrNow*WXY
+                    preG = trigfact*WY
+                    allTerms += [ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+                    preFX = trigfact*ell1*clunlenEEArrNow*WY
+                    preGX = trigfact*ell2*WXY
+                    allTerms += [ell1*ell2*fft(ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY == 'EB':
+            clunlenEEArrNow = self.uClNow2d['EE'].copy()
+            clunlenBBArrNow = self.uClNow2d['BB'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            WXY = self.WXY('EB')*kbeamx
+            WY = self.WY('BB')*kbeamy
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = ellsq*clunlenEEArrNow*WXY
+                preG = WY
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)
+                                           *ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY == 'BE':
+            clunlenEEArrNow = self.uClNow2d['EE'].copy()
+            clunlenBBArrNow = self.uClNow2d['BB'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            WXY = self.WXY('BE')*kbeamx
+            WY = self.WY('EE')*kbeamy
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = WXY
+                preG = ellsq*clunlenEEArrNow*WY
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)
+                                           *ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY=='ET':
+            clunlenTEArrNow = self.uClNow2d['TE'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+
+            lx = self.lxMap
+            ly = self.lyMap
+
+
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+
+            sinf = sin2phi(lxhat,lyhat)
+            sinsqf = sinf**2.
+            cosf = cos2phi(lxhat,lyhat)
+            cossqf = cosf**2.
+
+
+            WXY = self.WXY('ET')*kbeamx
+            WY = self.WY('TT')*kbeamy
+
+            rfact = 2.**0.25
+            for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                preF = ell1*ell2*clunlenTEArrNow*WXY
+                preG = WY
+                allTerms += [ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+                for trigfact in [cosf,sinf]:
+
+                    preFX = trigfact*ell1*clunlenTEArrNow*WY
+                    preGX = trigfact*ell2*WXY
+
+                    allTerms += [ell1*ell2*fft(ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY=='TE':
+            clunlenTEArrNow = self.uClNow2d['TE'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            sinf = sin2phi(lxhat,lyhat)
+            sinsqf = sinf**2.
+            cosf = cos2phi(lxhat,lyhat)
+            cossqf = cosf**2.
+            WXY = self.WXY('TE')*kbeamx
+            WY = self.WY('EE')*kbeamy
+            rfact = 2.**0.25
+            for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
+                    preF = trigfact*ell1*ell2*clunlenTEArrNow*WXY
+                    preG = trigfact*WY
+                    allTerms += [ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+                for trigfact in [cosf,sinf]:
+                    preFX = trigfact*ell1*clunlenTEArrNow*WY
+                    preGX = trigfact*ell2*WXY
+                    allTerms += [ell1*ell2*fft(ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY == 'TB':
+            clunlenTEArrNow = self.uClNow2d['TE'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            WXY = self.WXY('TB')*kbeamx
+            WY = self.WY('BB')*kbeamy
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = ellsq*clunlenTEArrNow*WXY
+                preG = WY
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)
+                                           *ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        else:
+            print("ERROR: Unrecognized polComb")
+            sys.exit(1)    
+        ALinv = np.real(np.sum( allTerms, axis = 0))
+        alval = np.nan_to_num(1. / ALinv)
+        if self.fmask is not None: alval = self.fmask_func(alval,self.fmask)
+        l4 = (lmap**2.) * ((lmap + 1.)**2.)
+        NL = l4 *alval/ 4.
+        NL[np.where(np.logical_or(lmap >= self.bigell, lmap <2.))] = 0.
+        retval = np.nan_to_num(NL.real * self.pixScaleX*self.pixScaleY  )
+        if setNl:
+            self.Nlkk[XY] = retval.copy()
+        return retval * 2. * np.nan_to_num(1. / lmap/(lmap+1.))
+
+
+    
