@@ -2323,8 +2323,43 @@ class QE(object):
             kbeam = beam
             assert kbeam.shape==self.shape
         return kbeam
+
+
+    def WXY(self,XY):
+        X,Y = XY
+        if Y=='B': Y='E'
+        gradClXY = X+Y
+        if XY=='ET': gradClXY = 'TE'
+        if XY=='BE': gradClXY = 'EE'
+        totnoise = self.noiseXX2d[X+X].copy() if self.noiseX_is_total else (self.lClFid2d[X+X].copy()+self.noiseXX2d[X+X].copy())
+        W = self.fmask_func(np.nan_to_num(self.uClFid2d[gradClXY].copy()/totnoise)*self.kBeamX,self.fMaskXX[X+X])
+        W[self.modLMap>self.gradCut]=0.
+        if X=='T':
+            W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        else:
+            W[np.where(self.modLMap >= self.lmax_P)] = 0.
+        return W
         
-    def reconstruct(XY,kmap=None,imap=None,est=None,return_ft=True):
+
+    def WY(self,YY):
+        assert YY[0]==YY[1]
+        totnoise = self.noiseYY2d[YY].copy() if self.noiseY_is_total else (self.lClFid2d[YY].copy()*self.kBeamY**2.+self.noiseYY2d[YY].copy())
+        W = self.fmask_func(np.nan_to_num(1./totnoise)*self.kBeamY,self.fMaskYY[YY]) #* self.modLMap  # !!!!!
+        W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        if YY[0]=='T':
+            W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        else:
+            W[np.where(self.modLMap >= self.lmax_P)] = 0.
+        return W
+
+
+    def reconstruct_from_iqu(self,XYs,imapx,imapy=None,return_ft=True):
+        pass
+    
+    def reconstruct(self,XYs,kmapx=None,kmapy=None,imapx=None,imapy=None,return_ft=True):
+        pass
+        
+    def reconstruct_xy(self,XY,kmapx=None,kmapy=None,imapx=None,imapy=None,return_ft=True):
         X,Y = XY
         WXY = self.WXY(XY)
         WY = self.WY(Y+Y)
@@ -2536,3 +2571,88 @@ class QE(object):
 
 
     
+def rdn0(icov,alpha,beta,qfunc,sobj,comm):
+    """
+    RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction minus mean-field in fourier space
+    sobj.get_prepared_kmap("T",(0,0,1)
+
+    e.g. rdn0(0,"TT","TE",qest.get_kappa,sobj,100,comm)
+    """
+    nsims = sobj.nsims
+    eX,eY = alpha
+    eA,eB = beta
+    qa = lambda x,y: qfunc(alpha,x,y)
+    qb = lambda x,y: qfunc(beta,x,y)
+    power = lambda x,y: x*y.conj()
+    # Data
+    X = sobj.get_prepared_kmap(eX,(0,0,0))
+    Y = sobj.get_prepared_kmap(eY,(0,0,0))
+    A = sobj.get_prepared_kmap(eA,(0,0,0))
+    B = sobj.get_prepared_kmap(eB,(0,0,0))
+    # Sims
+    rdn0 = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
+        Xs  = sobj.get_prepared_kmap(eX,(icov,0,i))
+        Ys  = sobj.get_prepared_kmap(eY,(icov,0,i))
+        As  = sobj.get_prepared_kmap(eA,(icov,0,i))
+        Bs  = sobj.get_prepared_kmap(eB,(icov,0,i))
+        Ysp = sobj.get_prepared_kmap(eY,(icov,1,i))
+        Asp = sobj.get_prepared_kmap(eA,(icov,1,i))
+        Bsp = sobj.get_prepared_kmap(eB,(icov,1,i))
+        rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+            + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B)) \
+            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+    totrdn0 = utils.allreduce(rdn0,comm) 
+    return totrdn0/nsims
+
+def mcn1(icov,alpha,beta,qfunc,sobj,comm):
+    """
+    MCN1 for alpha=XY cross beta=AB
+    qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
+    """
+    nsims = sobj.nsims
+    eX,eY = alpha
+    eA,eB = beta
+    qa = lambda x,y: qfunc(alpha,x,y)
+    qb = lambda x,y: qfunc(beta,x,y)
+    power = lambda x,y: x*y.conj()
+    mcn1 = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
+        Xsk   = sobj.get_prepared_kmap(eX,(icov,2,i))
+        Yskp  = sobj.get_prepared_kmap(eY,(icov,3,i))
+        Ask   = sobj.get_prepared_kmap(eA,(icov,2,i))
+        Bskp  = sobj.get_prepared_kmap(eB,(icov,3,i))
+        Askp  = sobj.get_prepared_kmap(eA,(icov,3,i))
+        Bsk   = sobj.get_prepared_kmap(eB,(icov,2,i))
+        Xs    = sobj.get_prepared_kmap(eX,(icov,0,i))
+        Ysp   = sobj.get_prepared_kmap(eY,(icov,1,i))
+        As    = sobj.get_prepared_kmap(eA,(icov,0,i))
+        Bsp   = sobj.get_prepared_kmap(eB,(icov,1,i))
+        Asp   = sobj.get_prepared_kmap(eA,(icov,1,i))
+        Bs    = sobj.get_prepared_kmap(eB,(icov,0,i))
+        mcn1 += power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
+            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)) \
+    return mcn1/nsims
+
+
+def mcmf(icov,alpha,qfunc,sobj,comm):
+    """
+    MCMF for alpha=XY
+    qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
+    """
+    nsims = sobj.nsims
+    eX,eY = alpha
+    qe = lambda x,y: qfunc(alpha,x,y)
+    mf = 0.
+    ntot = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
+        for j in range(2):
+            kx   = sobj.get_prepared_kmap(eX,(icov,j,i))
+            ky   = sobj.get_prepared_kmap(eY,(icov,j,i))
+            mf += qe(kx,ky)
+            ntot += 1.
+    mftot = utils.allreduce(mf,comm) 
+    totnot = utils.allreduce(ntot,comm) 
+    return mftot/totntot
+        
