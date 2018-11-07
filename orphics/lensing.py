@@ -2298,4 +2298,3 @@ class SplitLensing(object):
                 psum2 += self.qpower(kij,kij)
         kc = k - (1./nsplits**2.)*kiisum
         return (nsplits**4.*self.qpower(kc,kc)-4.*nsplits**2.*psum+4.*psum2)/nsplits/(nsplits-1.)/(nsplits-2.)/(nsplits-3.)
-            
