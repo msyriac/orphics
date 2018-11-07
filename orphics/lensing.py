@@ -2569,7 +2569,46 @@ class QE(object):
             self.Nlkk[XY] = retval.copy()
         return retval * 2. * np.nan_to_num(1. / lmap/(lmap+1.))
 
+"""
+=================
+Functions for lensing power spectrum estimation
 
+These are quite general (independent of pixelization), FFT/SHT region, array, etc.
+
+One abstracts out the following:
+
+qfunc(XY,x,y)
+which for estimator XY e.g. "TT"
+x,y accepts fourier transformed beam deconvolved low pass filtered inpainted purified T, E or B maps.
+It should probably belong to some prepared object which knows about filters etc.
+
+sobj
+This is the tricky object. It has to have the following function:
+get_prepared_kmap(X,seed)
+X can be "T", "E", or "B"
+The way seed is used is very important. It should have the following logic.
+seed = (icov,set,i)
+If i==0, it shouldn't matter what icov or set are, it always returns the corresponding "data" kmap.
+Otherwise i should range from 1 to nsims.
+This assumes there are icov x nset x nsims sims.
+set=0 has nsims
+set=1 has nsims
+set=2 has nsims
+set=3 has nsims
+set 2 and 3 should have common phi between corresponding sims, used in MCN1
+
+e.g. implementation:
+if set==0 or set==1:
+    cmb_seed = (icov,set,i)+(0,)
+    kappa_seed = (icov,set,i)+(1,)
+    noise_seed = (icov,set,i)+(2,)
+elif set==2 or set==3:
+    cmb_seed = (icov,set,i)+(0,)
+    kappa_seed = (icov,2,i)+(1,)
+    noise_seed = (icov,set,i)+(2,)
+
+=================
+"""
     
 def rdn0(icov,alpha,beta,qfunc,sobj,comm):
     """
@@ -2632,7 +2671,7 @@ def mcn1(icov,alpha,beta,qfunc,sobj,comm):
         Asp   = sobj.get_prepared_kmap(eA,(icov,1,i))
         Bs    = sobj.get_prepared_kmap(eB,(icov,0,i))
         mcn1 += power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
-            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs)) \
+            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
     return mcn1/nsims
 
 
