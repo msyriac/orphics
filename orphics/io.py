@@ -193,7 +193,7 @@ def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,
     if not(overwrite):
         if os.path.isfile(filename): return
     try:
-        from enlib import enmap, enplot
+        from pixell import enmap, enplot
     except:
         traceback.print_exc()
         cprint("Could not produce plot "+filename+". High resolution plotting requires enlib, which couldn't be imported. Continuing without plotting.",color='fail')

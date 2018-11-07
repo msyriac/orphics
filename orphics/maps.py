@@ -196,7 +196,7 @@ def bounds_from_list(blist):
     return np.array(blist).reshape((2,2))*np.pi/180.
         
 
-def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",pol=False,height_deg=None,height_arcmin=None,xoffset_degree=0.,yoffset_degree=0.,extra=False):
+def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",pol=False,height_deg=None,height_arcmin=None,xoffset_degree=0.,yoffset_degree=0.,extra=False,**kwargs):
     """
     Get shape and wcs for a rectangular patch of specified size and coordinate center
     """
@@ -214,7 +214,7 @@ def rect_geometry(width_arcmin=None,width_deg=None,px_res_arcmin=0.5,proj="car",
     arcmin =  utils.arcmin
     degree =  utils.degree
     pos = [[-vwidth*arcmin+yoffset_degree*degree,-hwidth*arcmin+xoffset_degree*degree],[vwidth*arcmin+yoffset_degree*degree,hwidth*arcmin+xoffset_degree*degree]]
-    shape, wcs = enmap.geometry(pos=pos, res=px_res_arcmin*arcmin, proj=proj)
+    shape, wcs = enmap.geometry(pos=pos, res=px_res_arcmin*arcmin, proj=proj,**kwargs)
     if pol: shape = (3,)+shape
     if extra:
         modlmap = enmap.modlmap(shape,wcs)
@@ -1531,8 +1531,14 @@ def enmap_from_healpix_file(ihealmap,shape,wcs,ncomp=1,unit=1,lmax=0,rot_method=
 #         return enmap.ndmap(imap,wcs)
 
 
-
-
+def get_planck_cutout(imap,ra,dec,arcmin,px=2.0,arcmin_y=None):
+    if arcmin_y is None: arcmin_y = arcmin
+    xsize = int(arcmin/px)
+    ysize = int(arcmin_y/px)
+    shape,wcs = enmap.geometry(pos=(0,0),shape=(ysize,xsize),res=np.deg2rad(px/60.))
+    return enmap.enmap(cutout_gnomonic(imap,rot=(ra,dec),coord=['G','C'],
+                    xsize=xsize,ysize=ysize,reso=px,gal_cut=0,flip='geo'),wcs)
+    
 def cutout_gnomonic(map,rot=None,coord=None,
              xsize=200,ysize=None,reso=1.5,
              nest=False,remove_dip=False,

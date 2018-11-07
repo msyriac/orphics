@@ -7,15 +7,148 @@ import subprocess
 import numpy as np
 import healpy as hp
 
+class WebSkySlicer(object):
 
-class WebSky(object):
-
-    def __init__(self,froot):
-        pass
-
-    def get_tsz(nu):
-        y = self.get_y()
+    def __init__(self,dirpath,npatches=72,height_deg=10.,px_arcmin=2.0,cache_alms=True):
+        assert npatches % 2 == 0
+        width_deg = 360./(npatches/2)
+        self.geoms = []
+        for i in range(npatches):
+            box = np.deg2rad([ [           0, i*width_deg    ],
+                               [  height_deg, (i+1)*width_deg] ])
+            shape,wcs = enmap.geometry(pos=box,res=np.deg2rad(px_arcmin/60.))
+            self.geoms.append((shape,wcs))
+            box = np.deg2rad([ [ -height_deg, i*width_deg    ],
+                               [           0, (i+1)*width_deg] ])
+            shape,wcs = enmap.geometry(pos=box,res=np.deg2rad(px_arcmin/60.))
+            self.geoms.append((shape,wcs))
+        self.dirpath = dirpath
+        self._cache = cache_alms
+        self._alm_cache = {}
+        self.npatches = npatches
         
+
+    def _load_map(self,path,index,lmax,tag):
+        shape,wcs = self.geoms[index]
+        try: palm = self._alm_cache[tag]
+        except: palm = None
+        imap,alms = reproject.enmap_from_healpix(self.dirpath+path, shape, wcs, lmax=lmax,
+                                                 rot=None,alm=palm,return_alm=True)
+        if self._cache: self._alm_cache[tag] = alms.copy()
+        return imap
+        
+    def get_y(self,index,lmax=6000):
+        ymap = self._load_map("tsz/compton-y.fits",index,lmax,"y")
+        return ymap
+        
+    def get_tsz(self,index,freq_ghz,lmax=6000):
+        return self.get_y(index,lmax=lmax)*2.7255e6*fgs.ffunc(freq_ghz)
+
+    def get_cib(self,index,freq_ghz,lmax=6000,halo=True,field=True):
+        freqs = np.array([143,217,353,545,857]) # available frequencies
+        freq = freqs[(np.abs(freqs - freq_ghz)).argmin()] # find closest frequency
+        scaling = fgs.cib_nu(freq_ghz)/fgs.cib_nu(freq) # apply scaling
+        cib = 0.
+        if halo: cib += self._load_map("cib/%d-halo.fits" % freq,index,lmax,"%d-halo")
+        if field: cib += self._load_map("cib/%d-field.fits" % freq,index,lmax,"%d-field")
+        return cib * scaling * 1e6 / fgs.JyPerSter_to_dimensionless(freq_ghz) * 2.7255e6
+        
+    def get_ksz(self,index,lmax=6000,halo=True,field=True):
+        ksz = 0.
+        if halo: ksz += self._load_map("ksz/ksz-halo.fits",index,lmax,"ksz-halo")
+        if field: ksz += self._load_map("ksz/ksz-field.fits",index,lmax,"ksz-field")
+        return ksz * 2.7255e6
+
+    def get_kappa(self,index,lmax=6000):
+        return self._load_map("tcmb/kappa.fits",index,lmax,"kappa")
+    
+    def get_cmb(self,index,lensed=True,lmax=6000):
+        lstring = "" if lensed else "un"
+        return self._load_map("tcmb/tcmb_%slensed_alms.fits" % lstring,index,lmax,"cmb_%slensed" % lstring) * 1e6
+
+def websky_halos(dirpath="./",mmin=-np.inf,mmax=np.inf):
+
+    pkfile           = open(dirpath+"halos/halos.pksc","rb")
+    Nhalo            = np.fromfile(pkfile, dtype=np.int32, count=1)[0]
+    RTHMAXin         = np.fromfile(pkfile, dtype=np.float32, count=1)
+    redshiftbox      = np.fromfile(pkfile, dtype=np.float32, count=1)
+
+    nfloats_perhalo = 10
+    npkdata         = nfloats_perhalo*Nhalo
+    peakdata        = np.fromfile(pkfile, dtype=np.float32, count=npkdata)
+    peakdata        = np.reshape(peakdata,(Nhalo,nfloats_perhalo))
+
+    Rth     = peakdata[:,6]
+    Omega_M   = 0.25
+    h         = 0.7
+    rho       = 2.775e11*Omega_M*h**2
+    M         = 4.0/3*np.pi*Rth**3*rho
+    sel = np.logical_and(M>mmin,M<=mmax)
+
+    xpos    = peakdata[:,0][sel]
+    ypos    = peakdata[:,1][sel]
+    zpos    = peakdata[:,2][sel]
+    vzpos   = peakdata[:,5][sel]
+    h = h
+    M = M
+    from orphics import cosmology
+    vecs = np.swapaxes(np.array([xpos,ypos,zpos]),0,1)
+    ras,decs = hp.vec2ang(vecs,lonlat=True)
+    params = cosmology.defaultCosmology
+    params['H0'] = 70.
+    params['omch2'] = 0.10331
+    params['ombh2'] = 0.01919
+    cc = cosmology.Cosmology(params,skipCls=True,skipPower=True,skip_growth=True)
+    cspeed = 2.9979458e8 / 1e3
+    chis = np.sqrt(xpos**2.+ypos**2.+zpos**2.)
+    zs = cc.results.redshift_at_comoving_radial_distance(chis) + vzpos/cspeed
+    return ras,decs,zs
+        
+        
+def sehgal_halos(halo_file="./../sehgal/halo_nbody_m200mean.hd5",mmin=-np.inf,mmax=np.inf,zmin=-np.inf,zmax=np.inf):
+    import pandas as pd
+    
+    df = pd.read_hdf(halo_file)
+
+    ra = df['RA']*np.pi/180.
+    dec = df['DEC']*np.pi/180.
+
+    new_dfs = []
+
+    for n in range(0,4):
+        new_df = df.copy()
+        new_df['RA'] = (ra+n*np.pi/2.)*180./np.pi
+        new_dfs.append(new_df.copy())
+
+    for n in range(4):
+        new_df = df.copy()
+        new_df['RA'] = (np.pi/2.-ra+n*np.pi/2.)*180./np.pi
+        new_df['DEC'] = -dec*180./np.pi
+        new_dfs.append(new_df.copy())
+
+    final_df = pd.concat(new_dfs)
+    assert final_df['RA'].size==8*df['RA'].size
+
+
+    cond = np.abs(final_df['RA'])>=0.
+    cond2 = np.abs(final_df['DEC'])>=0.
+    sel = cond2 & cond
+    final_df =final_df[sel]
+    df = final_df
+
+    sel = (df['Z']>zmin) & (df['Z']<zmax) & (df['M200']>mmin) & (df['M200']<mmax)
+
+    df = df[sel]
+
+    
+    zs = df['Z'].values
+    m200s = df['M200'].values
+    ras = df['RA'].values
+    decs = df['DEC'].values
+
+    return ras,decs,zs
+
+
 
 class PlanckLensing(object):
 
@@ -34,10 +167,12 @@ class PlanckLensing(object):
         
     
         
-    def load_planck_lensing(self,tsz_deproj=False,pr2=False,est="MV"):
+    def load_planck_lensing(self,tsz_deproj=False,pr2=False,est="MV",inhom=False):
         assert est in ['TT','PP','MV']
         if tsz_deproj:
             pdir = self.froot + "COM_Lensing_Szdeproj_4096_R3.00/TT/"
+        elif inhom:
+            pdir = self.froot + "COM_Lensing_Inhf_2048_R3.00/%s/" % est
         else:
             pdir = self.froot + "COM_Lensing_4096_R3.00/%s/" % est
 
