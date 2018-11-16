@@ -63,6 +63,15 @@ def mpi_distribute(num_tasks,avail_cores):
     
 
 
+def distribute(njobs,verbose=True):
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    numcores = comm.Get_size()
+    num_each,each_tasks = mpi_distribute(njobs,numcores)
+    if rank==0: print ("At most ", max(num_each) , " tasks...")
+    my_tasks = each_tasks[rank]
+    return comm,rank,my_tasks
+
 
 class MPIDict(object):
 

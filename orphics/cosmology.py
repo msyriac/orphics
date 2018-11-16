@@ -49,6 +49,15 @@ defaultCosmology = {'omch2': 0.1198
                     ,'tau':0.06
                     ,'nnu':3.046
                     ,'wa': 0.
+                    ,'Ysig': 0.02
+                    ,'gammaYsig': 0.02
+                    ,'betaYsig': 0.02
+                    ,'Y_star': 2.42e-10
+                    ,'alpha_ym': 0.04
+                    ,'b_ym': 0.02
+                    ,'beta_ym': 0.02
+                    ,'b_wl': 1.
+                    ,'gamma_ym': 0.02
 }
 
 
