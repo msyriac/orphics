@@ -1,11 +1,80 @@
 from __future__ import print_function
-import os,sys
+import os,sys,glob
 from tempfile import mkstemp
 from shutil import move,copyfile
 from os import remove, close
 import subprocess
 import numpy as np
 import healpy as hp
+
+# Python 2/3 compatibility
+try: basestring
+except NameError: basestring = str
+
+def load_sdss_redmapper(path,lams=True,zs=True):
+    from orphics import catalogs
+    extra = []
+    if lams: extra += ['LAMBDA']
+    if zs: extra += ['Z_LAMBDA']
+    return catalogs.load_fits('%s/redmapper_dr8_public_v6.3_catalog.fits' % path,column_names=['RA','DEC']+extra)
+
+class DR2(object):
+    def __init__(self,path,region,nsplits=4):
+        possible_seasons = ['s13','s14','s15','s16']
+        possible_arrays = ['pa1','pa2','pa3']
+        possible_freqs = ['f150','f090']
+        self.path = path
+        self.region = region
+        self.nsplits = nsplits
+        self.arrays = []
+        for season in possible_seasons:
+            for array in possible_arrays:
+                for freq in possible_freqs:
+                    gfiles = glob.glob("%s/%s_%s_%s_%s*" % (path,season,region,array,freq))
+                    if len(gfiles)>0: self.arrays.append("%s_%s_%s" % (season,array,freq))
+
+    def _expand(self,array):
+        err_msg = "array_id has to be an integer or an underscore separated string of form season_array_freq."
+        if isinstance(array,int):
+            array = self.arrays[array]
+        else:
+            assert isinstance(array,basestring), err_msg
+        assert array in self.arrays, "No array %s found." % (array)
+        tup = array.split('_')
+        return tup
+
+    def _fstr(self,season,array,freq,splitnum,var,srcfree):
+        strsrc = "_srcfree" if (srcfree and not(var)) else ""
+        strvar = "ivar" if var else "map"
+        strsplit = "coadd" if splitnum is None else "set%d" % splitnum
+        fstr = "%s/%s_%s_%s_%s_nohwp_night_3pass_4way_%s_%s%s.fits" % (self.path,season,self.region,array,freq,strsplit,strvar,strsrc)
+        return fstr
+            
+    def get_map(self,array_id=None,splits=False,srcfree=True,ivar=False,filenames=False,**kwargs):
+        """
+        """
+        from pixell import enmap
+        season,array,freq = self._expand(array_id)
+        if splits:
+            rmap = []
+            for i in range(self.nsplits):
+                fstr = self._fstr(season,array,freq,i,ivar,srcfree)
+                imap = fstr if filenames else enmap.read_map(fstr,**kwargs)
+                if imap.ndim==2: imap = imap[None]
+                rmap.append(imap)
+            return rmap if filenames else enmap.enmap(np.stack(rmap),imap.wcs)
+        else:
+            fstr = self._fstr(season,array,freq,None,ivar,srcfree)
+            return fstr if filenames else enmap.read_map(fstr,**kwargs)
+
+        
+    def get_beam(self,ells,array_id=None):
+        from orphics import maps
+        season,array,freq = self._expand(array_id)
+        if "150" in freq: fwhm = 1.4
+        if "090" in freq: fwhm = 1.4*150./90.
+        return maps.gauss_beam(ells,fwhm)
+        
 
 class WebSkySlicer(object):
 

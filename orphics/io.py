@@ -138,10 +138,13 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
-def eplot(img):
-    from enlib import enplot
+def hplot(img,savename=None):
+    from pixell import enplot
     plots = enplot.get_plots(img)
-    enplot.show(plots)
+    if savename is None:
+        enplot.show(plots)
+        return
+    enplot.write(savename,plots)
 
 def blend(fg_file,bg_file,alpha,save_file=None,verbose=True):
     from PIL import Image
@@ -270,7 +273,7 @@ class Plotter(object):
         return self._ax.hist(data,**kwargs)
     
         
-    def add_err(self,x,y,yerr,ls='none',band=False,alpha=0.5,marker="o",elinewidth=1,markersize=4,label=None,**kwargs):
+    def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",elinewidth=2,markersize=4,label=None,**kwargs):
         if band:
             self._ax.plot(x,y,ls=ls,marker=marker,label=label,**kwargs)
             self._ax.fill_between(x, y-yerr, y+yerr, alpha=alpha)
