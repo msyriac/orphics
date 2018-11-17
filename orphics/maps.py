@@ -67,6 +67,21 @@ def area_from_mask(mask):
     frac = m.sum()*1./np.prod(m.shape[-2:])
     return frac*mask.area()*(180./np.pi)**2., frac
 
+def get_central(img,fracy,fracx=None):
+    if fracy is None and fracx is None: return img
+    fracx = fracy if fracx is None else fracx
+    Ny,Nx = img.shape[-2:]
+    cropy = int(fracy*Ny)
+    cropx = int(fracx*Nx)
+    if cropy%2==0 and Ny%2==1:
+        cropy -= 1
+    else:
+        if cropy%2==1 and Ny%2==0: cropy -= 1
+    if cropx%2==0 and Nx%2==1:
+        cropx -= 1
+    else:
+        if cropx%2==1 and Nx%2==0: cropx -= 1
+    return crop_center(img,cropy,cropx)
 
 def crop_center(img,cropy,cropx):
     y,x = img.shape[-2:]
