@@ -785,8 +785,9 @@ class bin1D:
         self.bin_edges_min = self.bin_edges.min()
         self.bin_edges_max = self.bin_edges.max()
 
-    def binned(self,x,y):
-
+    def binned(self,ix,iy):
+        x = ix.copy()
+        y = iy.copy()
         # this just prevents an annoying warning (which is otherwise informative) everytime
         # all the values outside the bin_edges are nans
         y[x<self.bin_edges_min] = 0

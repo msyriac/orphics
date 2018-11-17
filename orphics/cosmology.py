@@ -49,6 +49,15 @@ defaultCosmology = {'omch2': 0.1198
                     ,'tau':0.06
                     ,'nnu':3.046
                     ,'wa': 0.
+                    ,'Ysig': 0.02
+                    ,'gammaYsig': 0.02
+                    ,'betaYsig': 0.02
+                    ,'Y_star': 2.42e-10
+                    ,'alpha_ym': 0.04
+                    ,'b_ym': 0.02
+                    ,'beta_ym': 0.02
+                    ,'b_wl': 1.
+                    ,'gamma_ym': 0.02
 }
 
 
@@ -1447,4 +1456,104 @@ class ClassCosmology(object):
             'selection_width': '%f'%shalfwidth,
             'selection_bias':'%f'%bias,
             'number count contributions' : 'density, rsd, lensing, gr',
-            'dNdz_selection':'%s'%dndz_file,'l_max_lss':lmax,'l_max_scalars':lmax}
+            'dNdz_selection':'%s'%dndz_file,
+            'l_max_lss':lmax,'l_max_scalars':lmax}
+
+
+def kmode_derivatives(ks,mus,param_list,fid_dict,step_dict,\
+                      scale_growth=True,rsd=False,linear=False,low_acc=True):
+    pass
+    
+def kmode_fisher(ks,mus,param_list,dPgg,dPgv,dPvv,fPgg,fPgv,fPvv,Ngg,Nvv, \
+                 verbose=False):
+    """
+    Fisher matrix for fields g(k,mu) and v(k,mu).
+    Returns F[g+v] and F[g]
+    dPgg, dPgv, dPvv are dictionaries of derivatives.
+    fPgg, fPgv, fPvv are fiducial powers.
+    """
+    from orphics.stats import FisherMatrix
+    # Populate Fisher matrix
+    num_params = len(param_list)
+    param_combs = itertools.combinations_with_replacement(param_list,2)
+    Fisher = np.zeros((num_params,num_params))
+    FisherG = np.zeros((num_params,num_params))
+    for param1,param2 in param_combs:
+        i = param_list.index(param1)
+        j = param_list.index(param2)
+        if verbose: print("Calculating Fisher for ",param1,param2)
+        integral = 0.
+        integralG = 0.
+        dCov1 = np.array([[dPgg[param1],dPgv[param1]],
+                       [dPgv[param1],dPvv[param1]]])
+        dCov2 = np.array([[dPgg[param2],dPgv[param2]],
+                       [dPgv[param2],dPvv[param2]]])
+        Cov = np.array([[Pgg_fid+Ngg,Pgv_fid],
+                       [Pgv_fid,Pvv_fid+Nvv]])
+        # Integrate over mu and k
+        for mu_id,mu in enumerate(mus[:-1]):                                                                                                     
+            dmu = mus[mu_id+1]-mus[mu_id]
+            for k_id,k in enumerate(ks[:-1]):
+                dk = ks[k_id+1]-ks[k_id]
+                dC1 = dCov1[:,:,mu_id,k_id]
+                dC2 = dCov2[:,:,mu_id,k_id]
+                Cinv = np.linalg.inv(Cov[:,:,mu_id,k_id])
+                CinvG = 1./Cov[0,0,mu_id,k_id]
+                trace = np.trace(np.dot(np.dot(dC1,Cinv),np.dot(dC2,Cinv)))
+                traceG = dC1[0,0]*dC2[0,0]*CinvG**2.
+                pref = (k**2.)*dk*V/(2.*np.pi)**2./2.*dmu
+                integral += pref*trace
+                integralG += pref*traceG
+        Fisher[i,j] = integral
+        if j!=i: Fisher[j,i] = integral
+        FisherG[i,j] = integralG
+        if j!=i: FisherG[j,i] = integralG
+    return stats.FisherMatrix(Fisher,param_list), \
+        stats.FisherMatrix(FisherG,param_list)
+
+def Pgg_Pvv_Pgv(ks,z,bg_scale=None,scale_growth=True,camb_kmax=10., \
+                low_acc=True,camb_var="delta_nonu",nonlinear=True):
+    """
+    All power spectra
+    params is a dictionary of cosmology and other parameters
+    bg_scale -- scale-dependent b(k) if any
+    """
+    # Load default params
+    fparams = defaultCosmology
+    # Override with params in passed dict
+    for param in params.keys():
+        fparams[param] = params[param]
+    # Hide output
+    with io.nostdout():
+        # Load cosmology object
+        cc = cosmology.Cosmology(fparams,skipCls=True,skipPower=False, \
+                                 skip_growth=False,zmax=z+1.,kmax=camb_kmax, \
+                                 low_acc=low_acc,camb_var=camb_var, \
+                                 nonlinear=nonlinear)
+    # Load galaxy bias
+    if bg_scale is None: bg = params['bg']
+    # Growth rate
+    f = cc.growth_scale_dependent(ks,z,'growth').ravel() if scale_growth \
+        else cc.growth_scale_independent(z)
+    # b^2 factor with anisotropy if rsd is True
+    bgeff = bg+f*fmu**2.
+    prefgg = bgeff**2.
+    # the isotropic matter-matter power
+    pm = cc.PK.P(z, ks, grid=False).ravel()
+    # reshaped to (mu,k)
+    pmu = np.resize(pm,(mus.size,ks.size))
+    # anisotropic galaxy power
+    retvalgg = prefgg * pmu * Wphoto**2.
+    # z -> a
+    ascale = cc.z2a(z)
+    # H(z)
+    Hz = cc.results.h_of_z(z)
+    # (faH/k)
+    fahk = f*ascale*Hz/ks
+    # Pvv = (faH/k)^2 * Pmm
+    prefvv = fahk**2.
+    retvalvv = prefvv * pmu
+    # Pgv = bgeff*(faH/k)*Pmm
+    prefgv = fahk*bgeff*Wphoto
+    retvalgv = prefgv * pmu
+    return retvalgg,retvalgv,retvalvv

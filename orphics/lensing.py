@@ -163,7 +163,7 @@ class FlatLensingSims(object):
         return self.mgen.get_map(seed=seed)
     def get_kappa(self,seed=None):
         return self.kgen.get_map(seed=seed)
-    def get_sim(self,seed_cmb=None,seed_kappa=None,seed_noise=None,lens_order=5,return_intermediate=False,skip_lensing=False):
+    def get_sim(self,seed_cmb=None,seed_kappa=None,seed_noise=None,lens_order=5,return_intermediate=False,skip_lensing=False,cfrac=None):
         unlensed = self.get_unlensed(seed_cmb)
         if skip_lensing:
             lensed = unlensed
@@ -181,9 +181,9 @@ class FlatLensingSims(object):
         
         observed = beamed + noise_map
         if return_intermediate:
-            return unlensed,kappa,lensed,beamed,noise_map,observed
+            return [ maps.get_central(x,cfrac) for x in [unlensed,kappa,lensed,beamed,noise_map,observed] ]
         else:
-            return observed
+            return maps.get_central(observed,cfrac)
         
         
 

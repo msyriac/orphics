@@ -67,6 +67,21 @@ def area_from_mask(mask):
     frac = m.sum()*1./np.prod(m.shape[-2:])
     return frac*mask.area()*(180./np.pi)**2., frac
 
+def get_central(img,fracy,fracx=None):
+    if fracy is None and fracx is None: return img
+    fracx = fracy if fracx is None else fracx
+    Ny,Nx = img.shape[-2:]
+    cropy = int(fracy*Ny)
+    cropx = int(fracx*Nx)
+    if cropy%2==0 and Ny%2==1:
+        cropy -= 1
+    else:
+        if cropy%2==1 and Ny%2==0: cropy -= 1
+    if cropx%2==0 and Nx%2==1:
+        cropx -= 1
+    else:
+        if cropx%2==1 and Nx%2==0: cropx -= 1
+    return crop_center(img,cropy,cropx)
 
 def crop_center(img,cropy,cropx):
     y,x = img.shape[-2:]
@@ -450,7 +465,7 @@ class MapRotatorEquator(MapRotator):
         rotated = MapRotator.rotate(self,imap,**kwargs)
 
         if self.downsample:
-            from enlib import resample
+            from pixell import resample
             return enmap.ndmap(resample.resample_fft(rotated,self.shape_final),self.wcs_final)
         else:
             return rotated
@@ -465,7 +480,7 @@ def get_rotated_pixels(shape_source,wcs_source,shape_target,wcs_target,inverse=F
     geometry to another CAR geometry.
     """
 
-    from enlib import coordinates
+    from pixell import coordinates
     
     # what are the center coordinates of each geometries
     if center_source is None: center_source = enmap.pix2sky(shape_source,wcs_source,(shape_source[0]/2.,shape_source[1]/2.))
@@ -593,7 +608,7 @@ def pixcov(shape,wcs,fourier_cov):
     fourier_cov = fourier_cov.astype(np.complex64, copy=False)
     bny,bnx = shape[-2:]
     #from numpy.fft import fft2 as hfft,ifft2 as hifft # TODO: update to fast fft
-    from enlib.fft import fft as hfft,ifft as hifft # This doesn't work ValueError:
+    from pixell.fft import fft as hfft,ifft as hifft # This doesn't work ValueError:
     # Invalid scheme: The output array and input array dtypes do not correspond to a valid fftw scheme.
 
 
@@ -1256,7 +1271,7 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
 
 class HealpixProjector(object):
     def __init__(self,shape,wcs,rot=None,ncomp=1):
-        from enlib import coordinates
+        from pixell import coordinates
         self.pmap = enmap.posmap(shape, wcs)
         
         assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
@@ -1276,7 +1291,7 @@ class HealpixProjector(object):
         self.rot = rot
         
     def project(self,ihealmap=None,hpmap=None,unit=1,lmax=0,first=0,return_hp=False):
-        from enlib import sharp, coordinates, curvedsky
+        from pixell import sharp, coordinates, curvedsky
         import healpy as hp
 
         dtype = np.float64
@@ -1314,7 +1329,7 @@ class HealpixProjector(object):
             return res
         
 def enmap_from_healpix_file(ihealmap,shape,wcs,ncomp=1,unit=1,lmax=0,rot_method="not-alm",rot=None,first=0):
-    from enlib import utils, sharp, coordinates, curvedsky
+    from pixell import utils, sharp, coordinates, curvedsky
     import healpy as hp
     
     # equatorial to galactic euler zyz angles
@@ -1973,7 +1988,7 @@ class InterpStack(object):
 
         
     def _rot_cut(self,submap,ra_rad,dec_rad,**kwargs):
-        from enlib import coordinates
+        from pixell import coordinates
     
         if submap.shape[0]<1 or submap.shape[1]<1:
             return None
@@ -2076,12 +2091,12 @@ class Purify(object):
         self.windict = init_deriv_window(window,px)
         lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes(shape,wcs)
 
-    def lteb_from_iqu(self,imap,method='pure',flip_q=True):
+    def lteb_from_iqu(self,imap,method='pure',flip_q=True,iau=False):
         """
-        maps must not have window applied!
+        maps must  have window applied!
         """
         sgnq = -1 if flip_q else 1
-        fT, fE, fB = iqu_to_pure_lteb(imap[0],sgnq*imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method)
+        fT, fE, fB = iqu_to_pure_lteb(imap[0],sgnq*imap[1],imap[2],self.modlmap,self.angLMap,windowDict=self.windict,method=method,iau=iau)
         return fT,-fE,-fB
         
 
@@ -2111,11 +2126,12 @@ def init_deriv_window(window,px):
 
 
 
-def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure'):
+def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure',iau=False):
     """
-    maps must not have window applied!
+    maps must  have window applied!
     """
 
+    if iau: angLMap = -angLMap
     window = windowDict
 
     win =window['Win']
@@ -2125,13 +2141,13 @@ def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure')
     d2Win_dy2=window['d2Win_dy2']
     d2Win_dxdy=window['d2Win_dxdy']
 
-    T_temp=T_map.copy()*win
+    T_temp=T_map.copy() #*win
     fT=fft(T_temp,axes=[-2,-1])
     
-    Q_temp=Q_map.copy()*win
+    Q_temp=Q_map.copy() #*win
     fQ=fft(Q_temp,axes=[-2,-1])
     
-    U_temp=U_map.copy()*win
+    U_temp=U_map.copy() #*win
     fU=fft(U_temp,axes=[-2,-1])
     
     fE=fT.copy()
@@ -2230,7 +2246,7 @@ class PatchArray(object):
         self._displace_pix = enmap.sky2pix(self.shape,self.wcs,pos, safe=False)
 
     def get_lensed(self, unlensed, order=3, mode="spline", border="cyclic"):
-        from enlib import lensing as enlensing
+        from pixell import lensing as enlensing
         return enlensing.displace_map(unlensed, self._displace_pix, order=order, mode=mode, border=border)
 
 
