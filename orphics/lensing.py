@@ -132,7 +132,7 @@ class FlatLensingSims(object):
         from orphics import cosmology
         if len(shape)<3 and pol: shape = (3,)+shape
         if noise_e_uk_arcmin is None: noise_e_uk_arcmin = np.sqrt(2.)*noise_uk_arcmin
-        if noise_b_uk_arcmin is None: noise_b_uk_arcmin = noise_b_uk_arcmin
+        if noise_b_uk_arcmin is None: noise_b_uk_arcmin = noise_e_uk_arcmin
         self.modlmap = enmap.modlmap(shape,wcs)
         Ny,Nx = shape[-2:]
         lmax = self.modlmap.max()
@@ -147,7 +147,7 @@ class FlatLensingSims(object):
             self._fixed = False
             ps_kk = theory.gCl('kk',self.modlmap).reshape((1,1,Ny,Nx))
             self.kgen = maps.MapGen(shape[-2:],wcs,ps_kk)
-            self.posmap = enmap.posmap(shape,wcs)
+            self.posmap = enmap.posmap(shape[-2:],wcs)
         self.kbeam = maps.gauss_beam(self.modlmap,beam_arcmin)
         ncomp = 3 if pol else 1
         ps_noise = np.zeros((ncomp,ncomp,Ny,Nx))
@@ -167,7 +167,7 @@ class FlatLensingSims(object):
         unlensed = self.get_unlensed(seed_cmb)
         if skip_lensing:
             lensed = unlensed
-            kappa = lensed.copy()*0
+            kappa = enmap.samewcs(lensed.copy()[0]*0,lensed)
         else:
             if not(self._fixed):
                 kappa = self.get_kappa(seed_kappa)
@@ -713,6 +713,13 @@ class QuadNorm(object):
         lmap = self.modLMap
         replaced = np.nan_to_num(self.getNlkk2d("TT",halo=True,l1Scale=self.fmask_func(ratio,self.fMaskXX["TT"]),l2Scale=self.fmask_func(ratio,self.fMaskYY["TT"]),setNl=False) / (2. * np.nan_to_num(1. / lmap/(lmap+1.))))
         unreplaced = self.Nlkk["TT"].copy()
+        return np.nan_to_num(unreplaced**2./replaced)
+
+    def super_dumb_N0_EEEE(self,data_power_2d_EE):
+        ratio = np.nan_to_num(data_power_2d_EE*self.WY("EE")/self.kBeamY)
+        lmap = self.modLMap
+        replaced = np.nan_to_num(self.getNlkk2d("EE",halo=True,l1Scale=self.fmask_func(ratio,self.fMaskXX["EE"]),l2Scale=self.fmask_func(ratio,self.fMaskYY["EE"]),setNl=False) / (2. * np.nan_to_num(1. / lmap/(lmap+1.))))
+        unreplaced = self.Nlkk["EE"].copy()
         return np.nan_to_num(unreplaced**2./replaced)
     
     def getNlkk2d(self,XY,halo=True,l1Scale=1.,l2Scale=1.,setNl=True):
@@ -2260,10 +2267,11 @@ def kappa_nfw(M,c,R,theta,cc,z):
 
 
 class SplitLensing(object):
-    def __init__(self,shape,wcs,qest):
+    def __init__(self,shape,wcs,qest,XY="TT"):
         # PS calculator
         self.fc = maps.FourierCalc(shape,wcs)
         self.qest = qest
+        self.est = XY
 
     def qpower(self,k1,k2):
         # PS func
@@ -2271,7 +2279,12 @@ class SplitLensing(object):
 
     def qfrag(self,a,b):
         # kappa func (accepts fts, returns ft)
-        k1 = self.qest.kappa_from_map('TT',T2DData=a.copy(),T2DDataY=b.copy(),alreadyFTed=True,returnFt=True)
+        if self.est=='TT':
+            k1 = self.qest.kappa_from_map(self.est,T2DData=a.copy(),T2DDataY=b.copy(),alreadyFTed=True,returnFt=True)
+        elif self.est=='EE': # wrong!
+            k1 = self.qest.kappa_from_map(self.est,T2DData=a.copy(),E2DData=a.copy(),B2DData=a.copy(),
+                                          T2DDataY=b.copy(),E2DDataY=b.copy(),B2DDataY=b.copy(),alreadyFTed=True,returnFt=True)
+            
         return k1
 
     def cross_estimator(self,ksplits):

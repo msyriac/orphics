@@ -49,15 +49,15 @@ defaultCosmology = {'omch2': 0.1198
                     ,'tau':0.06
                     ,'nnu':3.046
                     ,'wa': 0.
-                    ,'Ysig': 0.02
-                    ,'gammaYsig': 0.02
-                    ,'betaYsig': 0.02
+                    ,'Ysig': 0.127
+                    ,'gammaYsig': 0.
+                    ,'betaYsig': 0.
                     ,'Y_star': 2.42e-10
-                    ,'alpha_ym': 0.04
-                    ,'b_ym': 0.02
-                    ,'beta_ym': 0.02
+                    ,'alpha_ym': 1.79
+                    ,'b_ym': 0.8
+                    ,'beta_ym': 0.0
                     ,'b_wl': 1.
-                    ,'gamma_ym': 0.02
+                    ,'gamma_ym': 0.0
 }
 
 
@@ -147,8 +147,12 @@ class Cosmology(object):
         self.h = self.H0/100.
         
         self.omnuh2 = self.pars.omegan * ((self.H0 / 100.0) ** 2.)
-        self.chistar = self.results.conformal_time(0)- model.tau_maxvis.value
-        self.zstar = self.results.redshift_at_comoving_radial_distance(self.chistar)
+
+
+        # Now fixing zstar to Planck best fit!
+        self.zstar = 1089.
+        self.chistar = self.results.comoving_radial_distance(self.zstar)
+        
         
 
         # self.rho_crit0 = 3. / (8. * pi) * (self.h*100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
@@ -173,9 +177,9 @@ class Cosmology(object):
         if not(skipCls) and (clTTFixFile is None):
             if verbose: print("Generating theory Cls...")
             if not(low_acc):
-                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
+                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3 if nonlinear else 0, max_eta_k=2*(lmax+500))
             else:
-                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=1, max_eta_k=2*(lmax+500))
+                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=1 if nonlinear else 0, max_eta_k=2*(lmax+500))
             if nonlinear:
                 self.pars.NonLinear = model.NonLinear_both
             else:
@@ -811,6 +815,7 @@ class TheorySpectra:
     def __init__(self):
 
         self.always_unlensed = False
+        self.always_lensed = True
         self._uCl={}
         self._lCl={}
         self._gCl = {}
@@ -891,9 +896,14 @@ class TheorySpectra:
                 raise
 
     def uCl(self,XYType,ell):
+        if self.always_lensed:
+            assert not(self.always_unlensed)
+            return self.lCl(XYType,ell)
         return self._Cl(XYType,ell,lensed=False)
     def lCl(self,XYType,ell):
-        if self.always_unlensed: return self.uCl(XYType,ell)
+        if self.always_unlensed:
+            assert not(self.always_lensed)
+            return self.uCl(XYType,ell)
         return self._Cl(XYType,ell,lensed=True)
     
 
