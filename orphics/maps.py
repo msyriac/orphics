@@ -2594,3 +2594,16 @@ def ftrans(p2d,tfunc=np.log10):
         return t2d
     else:
         return enmap.enmap(t2d,wcs)
+
+def real_space_filter(kfilter):
+    return np.fft.ifftshift(ifft(kfilter+0j,normalize=True,axes=[-2,-1]).real)
+
+def rfilter(imap,kfilter=None,rfilter=None,mode='same',boundary='wrap',**kwargs):
+    """
+    Filter a real-space map imap with a k-space filter kfilter
+    but using a real-space convolution.
+    """
+    if rfilter is None: rfilter = real_space_filter(kfilter)
+    from scipy.signal import convolve2d
+    return enmap.samewcs(convolve2d(imap,rfilter,mode=mode,boundary=boundary,**kwargs),imap)
+    
