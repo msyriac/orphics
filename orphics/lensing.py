@@ -171,6 +171,7 @@ class FlatLensingSims(object):
         else:
             if not(self._fixed):
                 kappa = self.get_kappa(seed_kappa)
+                self.kappa = kappa
                 self.alpha = alpha_from_kappa(kappa,posmap=self.posmap)
             else:
                 kappa = None
@@ -1660,6 +1661,7 @@ class Estimator(object):
             rank = 0
             numcores = 1
 
+        self.wcs = wcs
         if rank==0:
             self.N = QuadNorm(shape,wcs,gradCut=gradCut,verbose=verbose,kBeamX=self.kBeamX,kBeamY=self.kBeamY,bigell=bigell,fmask=self.fmaskK)
 
@@ -1877,7 +1879,7 @@ class Estimator(object):
         if returnFt:
             return kappaft
         
-        self.kappa = ifft(kappaft,axes=[-2,-1],normalize=True).real
+        self.kappa = enmap.enmap(ifft(kappaft,axes=[-2,-1],normalize=True).real,self.wcs)
         try:
             assert not(np.any(np.isnan(self.kappa)))
         except:
@@ -2704,4 +2706,54 @@ def mcmf(icov,alpha,qfunc,sobj,comm):
     mftot = utils.allreduce(mf,comm) 
     totnot = utils.allreduce(ntot,comm) 
     return mftot/totntot
+        
+
+
+class L1Integral(object):
+    """
+    Calculates I(L) = \int d^2l_1 f(l1,l2)
+    on a grid.
+    L is assumed to lie along the positive x-axis.
+    This is ok for most integrals which are isotropic in L-space.
+    The integrand has shape (num_Ls,Ny,Nx)
+    """
+    def __init__(self,Ls,degrees=None,pixarcmin=None,shape=None,wcs=None,pol=True):
+        if (shape is None) or (wcs is None):
+            if degrees is None: degrees = 10.
+            if pixarcmin is None: pixarcmin = 2.0
+            shape,wcs = maps.rgeo(degrees,pixarcmin)
+        self.shape = shape
+        self.wcs = wcs
+
+        assert Ls.ndim==1
+        Ls = Ls[:,None,None]
+        ly,lx = enmap.lmap(shape,wcs)
+        self.l1x = lx.copy()
+        self.l1y = ly.copy()
+        l1y = ly[None,...] # - Ls*0
+        l1x = lx[None,...] # - Ls*0
+        l1 = enmap.modlmap(shape,wcs)[None,...]
+        l2y = -l1y
+        l2x = Ls - l1x
+        l2 = np.sqrt(l2x**2.+l2y**2.)
+        self.Ldl1 = Ls*l1x
+        self.Ldl2 = Ls*l2x
+        self.l1 = l1
+        self.l2 = l2
+            
+        if pol:
+            from orphics import symcoupling as sc
+            sl1x,sl1y,sl2x,sl2y,sl1,sl2 = sc.get_ells()
+            scost2t12,ssint2t12 = sc.substitute_trig(sl1x,sl1y,sl2x,sl2y,sl1,sl2)
+            feed_dict = {'l1x':l1x,'l1y':l1y,'l2x':l2x,'l2y':l2y,'l1':l1,'l2':l2}
+            cost2t12 = sc.evaluate(scost2t12,feed_dict)
+            sint2t12 = sc.evaluate(ssint2t12,feed_dict)
+            self.cost2t12 = cost2t12
+            self.sint2t12 = sint2t12
+
+    def _integrate(self,integrand)
+        integral = np.trapz(y=integrand,x=self.l1x,axis=-1)
+        integral = np.trapz(y=integral,x=self.l1y,axis=-1)
+        return integral
+
         

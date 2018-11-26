@@ -199,16 +199,6 @@ class ModeCoupling(object):
             self.ogroup_symbols[tag] = factorize_2d_convolution_integral(expr,l1funcs=self.l1funcs,l2funcs=self.l2funcs,
                                                                          validate=validate,groups=groups)
 
-    def _evaluate(self,symbolic_term,feed_dict):
-        symbols = list(symbolic_term.free_symbols)
-        func_term = sympy.lambdify(symbols,symbolic_term,dummify=False)
-        # func_term accepts as keyword arguments strings that are in symbols
-        # We need to extract a dict from feed_dict that only has the keywords
-        # in symbols
-        varstrs = [str(x) for x in symbols]
-        edict = {k: feed_dict[k] for k in varstrs}
-        evaled = np.nan_to_num(func_term(**edict))
-        return evaled
 
     def integrate(self,tag,feed_dict,xmask=None,ymask=None,cache=True,pixel_units=False):
         feed_dict['L'] = self.modlmap
@@ -225,10 +215,10 @@ class ModeCoupling(object):
             cached_u1s = []
             cached_u2s = []
             for u1 in self.ul1s[tag]:
-                l12d = self._evaluate(u1,feed_dict)*ones
+                l12d = evaluate(u1,feed_dict)*ones
                 cached_u1s.append(self._ifft(l12d*xmask))
             for u2 in self.ul2s[tag]:
-                l22d = self._evaluate(u2,feed_dict)*ones
+                l22d = evaluate(u2,feed_dict)*ones
                 cached_u2s.append(self._ifft(l22d*ymask))
 
 
@@ -242,9 +232,9 @@ class ModeCoupling(object):
                 ifft1 = cached_u1s[term['l1index']]
                 ifft2 = cached_u2s[term['l2index']]
             else:
-                l12d = self._evaluate(term['l1'],feed_dict)*ones
+                l12d = evaluate(term['l1'],feed_dict)*ones
                 ifft1 = self._ifft(l12d*xmask)
-                l22d = self._evaluate(term['l2'],feed_dict)*ones
+                l22d = evaluate(term['l2'],feed_dict)*ones
                 ifft2 = self._ifft(l22d*ymask)
             return ifft1,ifft2
         
@@ -252,7 +242,7 @@ class ModeCoupling(object):
         if ogroups is None:    
             for i,term in enumerate(self.integrands[tag]):
                 ifft1,ifft2 = get_l1l2(term)
-                ot2d = self._evaluate(term['other'],feed_dict)*ones
+                ot2d = evaluate(term['other'],feed_dict)*ones
                 ffft = self._fft(ifft1*ifft2)
                 val += ot2d*ffft
         else:
@@ -262,7 +252,7 @@ class ModeCoupling(object):
                 gindex = ogroups[i]
                 vals[gindex,...] += ifft1*ifft2 *ogroup_weights[i]
             for i,group in enumerate(ogroup_symbols):
-                ot2d = self._evaluate(ogroup_symbols[i],feed_dict)*ones            
+                ot2d = evaluate(ogroup_symbols[i],feed_dict)*ones            
                 ffft = self._fft(vals[i,...])
                 val += ot2d*ffft
 
@@ -285,20 +275,7 @@ class LensingModeCoupling(ModeCoupling):
         self.Ldl1 = (self.Lx*self.l1x+self.Ly*self.l1y)
         self.Ldl2 = (self.Lx*self.l2x+self.Ly*self.l2y)
         self.l1dl2 = (self.l1x*self.l2x+self.l2x*self.l2y)
-
-        phi1 = Symbol('phi1')
-        phi2 = Symbol('phi2')
-        cos2t12 = sympy.cos(2*(phi1-phi2))
-        sin2t12 = sympy.sin(2*(phi1-phi2))
-        simpcos = sympy.expand_trig(cos2t12)
-        simpsin = sympy.expand_trig(sin2t12)
-
-        self.cos2t12 = sympy.expand(sympy.simplify(simpcos.subs([(sympy.cos(phi1),self.l1x/self.l1),(sympy.cos(phi2),self.l2x/self.l2),
-                                (sympy.sin(phi1),self.l1y/self.l1),(sympy.sin(phi2),self.l2y/self.l2)])))
-
-        self.sin2t12 = sympy.expand(sympy.simplify(simpsin.subs([(sympy.cos(phi1),self.l1x/self.l1),(sympy.cos(phi2),self.l2x/self.l2),
-                                (sympy.sin(phi1),self.l1y/self.l1),(sympy.sin(phi2),self.l2y/self.l2)])))
-
+        self.cos2t12,self.sin2t12 = substitute_trig(self.l1x,self.l1y,self.l2x,self.l2y,self.l1,self.l2)
 
         self.theory2d = None
         if theory is not None:
@@ -355,10 +332,21 @@ class LensingModeCoupling(ModeCoupling):
             #(tCl1['EE']*tCl2['TT']*f - tCl1['TE']*tCl2['TE']*frev)/(tCl1['TT']*tCl2['EE']*tCl1['EE']*tCl2['TT']-(tCl1['TE']*tCl2['TE'])**2.)
             # this approximation is
             return (t1['EE']*t2['TT']*f - t1['TE']*t2['TE']*frev)/(t1['TT']*t2['EE']*t1['EE']*t2['TT'])
+
+        # frev = self.f(polcomb,uCl1,uCl2,rev=not(rev))
+        # ct1 = self.Cls("uCl",self.l1)
+        # ct2 = self.Cls("uCl",self.l2)
+        # tp2 = self.Cls("tClX",self.l2)
+        # tp1 = self.Cls("tClY",self.l1)
+        # tp2p = self.Cls("tClX",self.l1)
+        # tp1p = self.Cls("tClY",self.l2)
+        
+        # return (tp1['TT']*tp2['TT']*f - ct1['TT']*ct2['TT']*frev)/(tp1['TT']*tp2['TT']*tp1p['TT']*tp2p['TT'])
+
             
         X,Y = polcomb
         pfact = 0.5 if Y!='B' else 1.0
-        return f*pfact/t1[X+X]/t2[Y+Y]
+        return f*pfact/t1[X+X]/t2[Y+Y] 
         
 
         
@@ -494,7 +482,7 @@ class LensingModeCoupling(ModeCoupling):
               cross_xnoise_t=None,cross_ynoise_t=None,
               cross_xnoise_e=None,cross_ynoise_e=None,
               cross_xnoise_b=None,cross_ynoise_b=None,
-              theory_norm=None,hdv=True,save_expression="current",validate=True,cache=True,lensed_cls=None):
+              theory_norm=None,hdv=True,save_expression="current",validate=True,cache=True,lensed_cls=None,xest=False,crossxest=False):
         if ynoise_t is None: ynoise_t = noise_t
         if ynoise_e is None: ynoise_e = noise_e
         if ynoise_b is None: ynoise_b = noise_b
@@ -508,9 +496,16 @@ class LensingModeCoupling(ModeCoupling):
         uCl2 = self.Cls("uCl",self.l2)
         tCl1 = self.Cls("tClX",self.l1)
         tCl2 = self.Cls("tClY",self.l2)
+        if not(crossxest):
+            tCl1b = tCl1
+            tCl2b = tCl2
+        else:
+            tCl1b = self.Cls("tClY",self.l1)
+            tCl2b = self.Cls("tClX",self.l2)
+            
         Falpha = self.F_HDV(pol1,tCl1,tCl2,uCl1) if hdv else self.F_HuOk(pol1,tCl1,tCl2,uCl1,uCl2)
-        Fbeta = self.F_HDV(pol2,tCl1,tCl2,uCl1) if hdv else self.F_HuOk(pol2,tCl1,tCl2,uCl1,uCl2)
-        rFbeta = self.F_HDV(pol2,tCl1,tCl2,uCl1,uCl2,rev=True) if hdv else self.F_HuOk(pol2,tCl1,tCl2,uCl1,uCl2,rev=True)
+        Fbeta = self.F_HDV(pol2,tCl1b,tCl2b,uCl1) if hdv else self.F_HuOk(pol2,tCl1b,tCl2b,uCl1,uCl2)
+        rFbeta = self.F_HDV(pol2,tCl1b,tCl2b,uCl1,uCl2,rev=True) if hdv else self.F_HuOk(pol2,tCl1b,tCl2b,uCl1,uCl2,rev=True)
 
         def sanitize(plist):
             return ['TE' if x=='ET' else x for x in plist]
@@ -519,10 +514,14 @@ class LensingModeCoupling(ModeCoupling):
         Xa,Ya = pol1
         Xb,Yb = pol2
         XaXb,YaYb,XaYb,YaXb = sanitize([Xa+Xb,Ya+Yb,Xa+Yb,Ya+Xb])
-        Cxaxb1 = self.f_of_ell('tClcX_'+XaXb,self.l1) if XaXb not in zero_list else 0
-        Cyayb2 = self.f_of_ell('tClcY_'+YaYb,self.l2) if YaYb not in zero_list else 0
-        Cxayb1 = self.f_of_ell('tClcX_'+XaYb,self.l1) if XaYb not in zero_list else 0
-        Cyaxb2 = self.f_of_ell('tClcY_'+YaXb,self.l2) if YaXb not in zero_list else 0
+        xestx = 'tClX_' if (xest and not(crossxest)) else 'tClcX_'
+        xesty = 'tClY_' if (xest and not(crossxest)) else 'tClcY_'
+        xestx2 = 'tClcX_' if (xest and not(crossxest)) else 'tClX_'
+        xesty2 = 'tClcY_' if (xest and not(crossxest)) else 'tClY_'
+        Cxaxb1 = self.f_of_ell(xestx+XaXb,self.l1) if XaXb not in zero_list else 0
+        Cyayb2 = self.f_of_ell(xesty+YaYb,self.l2) if YaYb not in zero_list else 0
+        Cxayb1 = self.f_of_ell(xestx2+XaYb,self.l1) if XaYb not in zero_list else 0
+        Cyaxb2 = self.f_of_ell(xesty2+YaXb,self.l2) if YaXb not in zero_list else 0
         
         self.add_cross(save_expression,Falpha,Fbeta,rFbeta,Cxaxb1,Cyayb2,Cxayb1,Cyaxb2,validate=validate)
 
@@ -603,8 +602,35 @@ class LensingModeCoupling(ModeCoupling):
         self.add_factorized(save_expression,cross,validate=validate,groups=groups)
         ival = self.integrate(save_expression,feed_dict,xmask=xmask,ymask=ymask,cache=cache).real
         return np.nan_to_num(ival*Al**2.)/4.
+
+
         
         
 def mask_func(arr,mask):
     arr[mask<1.e-3] = 0.
     return arr
+
+def evaluate(symbolic_term,feed_dict):
+    symbols = list(symbolic_term.free_symbols)
+    func_term = sympy.lambdify(symbols,symbolic_term,dummify=False)
+    # func_term accepts as keyword arguments strings that are in symbols
+    # We need to extract a dict from feed_dict that only has the keywords
+    # in symbols
+    varstrs = [str(x) for x in symbols]
+    edict = {k: feed_dict[k] for k in varstrs}
+    evaled = np.nan_to_num(func_term(**edict))
+    return evaled
+
+
+def substitute_trig(l1x,l1y,l2x,l2y,l1,l2):
+    phi1 = Symbol('phi1')
+    phi2 = Symbol('phi2')
+    cos2t12 = sympy.cos(2*(phi1-phi2))
+    sin2t12 = sympy.sin(2*(phi1-phi2))
+    simpcos = sympy.expand_trig(cos2t12)
+    simpsin = sympy.expand_trig(sin2t12)
+    cos2t12 = sympy.expand(sympy.simplify(simpcos.subs([(sympy.cos(phi1),l1x/l1),(sympy.cos(phi2),l2x/l2),
+                            (sympy.sin(phi1),l1y/l1),(sympy.sin(phi2),l2y/l2)])))
+    sin2t12 = sympy.expand(sympy.simplify(simpsin.subs([(sympy.cos(phi1),l1x/l1),(sympy.cos(phi2),l2x/l2),
+                            (sympy.sin(phi1),l1y/l1),(sympy.sin(phi2),l2y/l2)])))
+    return cos2t12,sin2t12

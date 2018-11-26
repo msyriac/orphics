@@ -2607,3 +2607,10 @@ def rfilter(imap,kfilter=None,rfilter=None,mode='same',boundary='wrap',**kwargs)
     from scipy.signal import convolve2d
     return enmap.samewcs(convolve2d(imap,rfilter,mode=mode,boundary=boundary,**kwargs),imap)
     
+
+def rgeo(degrees,pixarcmin,**kwargs):
+    """
+    Return shape,wcs geometry pair for patch of width degrees and 
+    resolution pixarcmin.
+    """
+    return rect_geometry(width_deg=degrees,px_res_arcmin=pixarcmin,**kwargs)
