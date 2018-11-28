@@ -29,22 +29,23 @@ def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh,plot_file=None):
 
 
     
-def fit_linear_model(x,y,ycov,funcs,dofs=None):
+def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True):
     """
     Given measurements with known uncertainties, this function fits those to a linear model:
     y = a0*funcs[0](x) + a1*funcs[1](x) + ...
     and returns the best fit coefficients a0,a1,... and their uncertainties as a covariance matrix
     """
+    s = solve if deproject else np.linalg.solve
     C = ycov
-    y = y.reshape((y.size,1))
+    y = y[:,None] 
     A = np.zeros((y.size,len(funcs)))
     for i,func in enumerate(funcs):
         A[:,i] = func(x)
-    cov = np.linalg.inv(np.dot(A.T,np.linalg.solve(C,A)))
-    b = np.dot(A.T,np.linalg.solve(C,y))
+    cov = np.linalg.inv(np.dot(A.T,solve(C,A)))
+    b = np.dot(A.T,solve(C,y))
     X = np.dot(cov,b)
     YAX = y - np.dot(A,X)
-    chisquare = np.dot(YAX.T,np.linalg.solve(C,YAX))
+    chisquare = np.dot(YAX.T,solve(C,YAX))
     dofs = len(x)-len(funcs)-1 if dofs is None else dofs
     pte = 1 - chi2.cdf(chisquare, dofs)    
     return X,cov,chisquare/dofs,pte

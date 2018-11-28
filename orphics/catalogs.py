@@ -46,11 +46,12 @@ class Pow2Cat(object):
         
     def get_map(self,seed=None):
         """Get correlated galaxy and kappa map """
-        return curvedsky.rand_map(self.shape, self.wcs, self.ps, lmax=self.lmax, seed=seed, spin=0)
+        alms = curvedsky.rand_alm_healpy(self.ps, lmax=self.lmax, seed=seed)
+        return alms,curvedsky.rand_map(self.shape, self.wcs, alm=alms, lmax=self.lmax, seed=seed, spin=0)
 
     def get_cat(self,ngals,seed=None,depth_threshold=0.5,cull_voids=True,add_jitter=True):
         """Get a catalog with total number of galaxies ngals and a kappa map that are correlated."""
-        retmap = self.get_map(seed=seed)
+        alms,retmap = self.get_map(seed=seed)
         if self.ncomp==1:
             gmap = retmap[0]
         else:
@@ -77,10 +78,7 @@ class Pow2Cat(object):
         jitter = np.random.uniform(-0.5,0.5,size=cat.shape) if add_jitter else 0.
         cat += jitter
         decs,ras = np.rad2deg(enmap.pix2sky(self.shape,self.wcs,cat))
-        if self.ncomp==1:
-            return ras,decs,gmap
-        else:
-            return ras,decs,gmap,kmap
+        return ras,decs,alms,retmap
 
 def load_fits(fits_file,column_names,hdu_num=1,Nmax=None):
     hdu = fits.open(fits_file)
@@ -211,6 +209,8 @@ class CatMapper(object):
     def get_delta(self):
         delta = (self.counts/self.nmean-1.)
         if not self.curved:
+            parea = enmap.pixsizemap(delta.shape, self.wcs)*((180.*60./np.pi)**2.)
+            delta = ((delta+1.)*self.nmean/self.ngal_per_arcminsq/parea)-1.
             delta = enmap.enmap(delta,self.wcs)
         return delta
     

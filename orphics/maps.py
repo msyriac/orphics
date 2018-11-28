@@ -9,6 +9,26 @@ from orphics import io,cosmology,stats
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 
+
+def psizemap(shape,wcs):
+    """
+    Return map of pixel areas in radians for a cylindrical map.
+    Contrast with enmap.pixsizemap which is not specific to cylindrical
+    maps but is not accurate near the poles at the time of this writing.
+    """
+    dra, ddec = wcs.wcs.cdelt*utils.degree
+    dec = enmap.posmap([shape[-2],1],wcs)[0,:,0]
+    area = np.abs(dra*(np.sin(np.minimum(np.pi/2.,dec+ddec/2))-np.sin(np.maximum(-np.pi/2.,dec-ddec/2))))
+    Nx = shape[-1]
+    return enmap.ndmap(area[...,None].repeat(Nx,axis=-1),wcs)
+    
+def white_noise(shape,wcs,noise_muK_arcmin):
+    """
+    Generate a non-band-limited white noise map.
+    """
+    pmap = psizemap(shape,wcs)*((180.*60./np.pi)**2.)
+    return (noise_muK_arcmin/np.sqrt(pmap))*np.random.standard_normal(shape)
+
 def get_ecc(img):
     """Returns eccentricity from central moments of image
     """

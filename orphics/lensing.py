@@ -2751,7 +2751,7 @@ class L1Integral(object):
             self.cost2t12 = cost2t12
             self.sint2t12 = sint2t12
 
-    def _integrate(self,integrand)
+    def _integrate(self,integrand):
         integral = np.trapz(y=integrand,x=self.l1x,axis=-1)
         integral = np.trapz(y=integral,x=self.l1y,axis=-1)
         return integral
