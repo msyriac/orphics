@@ -168,11 +168,18 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
     return ret
         
 
-def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
+def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
     '''
     mollview plot for healpix wrapper
     '''
     import healpy as hp
+    if lim is None:
+        cmin = cmax = None
+    elif type(lim) is list or type(lim) is tuple:
+        cmin,cmax = lim
+    else:
+        cmin =-lim
+        cmax = lim
     retimg = hp.mollview(hp_map,min=cmin,max=cmax,coord=coord,return_projected_map=return_projected_map,**kwargs)
     if filename is not None:
         plt.savefig(filename)
@@ -292,9 +299,9 @@ class Plotter(object):
         Ny=data.shape[1]
         arr=data[clip:Nx-clip,clip:Ny-clip]
 
-        if type(lim) is list:
+        if type(lim) is list or type(lim) is tuple:
             limmin,limmax = lim
-        elif lim==None:
+        elif lim is None:
             limmin=None
             limmax = None
         else:

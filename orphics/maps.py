@@ -2634,3 +2634,5 @@ def rgeo(degrees,pixarcmin,**kwargs):
     resolution pixarcmin.
     """
     return rect_geometry(width_deg=degrees,px_res_arcmin=pixarcmin,**kwargs)
+
+
