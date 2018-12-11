@@ -700,15 +700,12 @@ def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,wei
 def cosine_window(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
     # Based on a routine by Thibaut Louis
     win=np.ones((Ny,Nx))
-    
     i = np.arange(Nx) 
     j = np.arange(Ny)
     ii,jj = np.meshgrid(i,j)
-
     # ii is array of x indices
     # jj is array of y indices
     # numpy indexes (j,i)
-
     # xdirection
     if lenApodX>0:
         r=ii.astype(float)-padX
@@ -725,7 +722,6 @@ def cosine_window(Ny,Nx,lenApodY=30,lenApodX=30,padY=0,padX=0):
         sel = np.where(jj>=((Ny-1)-lenApodY-padY))
         r=((Ny-1)-jj-padY).astype(float)
         win[sel] *= 1./2*(1-np.cos(-np.pi*r[sel]/lenApodY))
-
     win[0:padY,:]=0
     win[:,0:padX]=0
     win[Ny-padY:,:]=0
@@ -862,13 +858,11 @@ def cilc_noise(cinv,response_a,response_b):
 
 def ilc_map_term(kmaps,cinv,response):
     """response^T . Cinv . kmaps """
-    #return np.einsum('k,kij->ij',response,np.einsum('klij,lij->kij',cinv,kmaps))
     return np.einsum('k,k...->...',response,np.einsum('kl...,l...->k...',cinv,kmaps))
     
 def ilc_comb_a_b(response_a,response_b,cinv):
     """Return a^T cinv b"""
     pind = ilc_index(cinv.ndim) # either "p" or "ij" depending on whether we are dealing with 1d or 2d power
-    #return np.einsum('l,l'+pind+'->'+pind,response_a,np.einsum('k,kl'+pind+'->l'+pind,response_b,cinv))
     return np.nan_to_num(np.einsum('l,l...->...',response_a,np.einsum('k,kl...->l...',response_b,cinv)))
 
 
@@ -899,7 +893,9 @@ def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method
         return downsample_power(retpow.shape,kmaps[0].wcs,retpow,ndown=ndown,order=order,exp=None,fftshift=fftshift,fft=False,logfunc=lambda x: x,ilogfunc=lambda x: x,fft_up=False)
 
 
-def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_save=None,ellmaxes=None,data=True,fgmax=None,narray=None):
+def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
+            plot_save=None,ellmaxes=None,data=True,fgmax=None,
+            narray=None,fdict=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -935,7 +931,10 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise,plot=False,plot_sa
                     Covmat[i,j,...] += instnoise
 
             for component in components:
-                fgnoise = fnoise.get_noise(component,freq1,freq2,ells)
+                if fdict is None:
+                    fgnoise = fnoise.get_noise(component,freq1,freq2,ells)
+                else:
+                    fgnoise = fdict[component](ells,freq1,freq2)
                 if (fgmax is not None) and component=='tsz':
                     fgnoise[ells>fgmax] = fgnoise[fgmax]
                 Covmat[i,j,...] += fgnoise

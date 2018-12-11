@@ -26,6 +26,19 @@ def nostdout():
 @contextlib.contextmanager
 def no_context():
     yield None
+
+## PARSING
+
+def but_her_emails(string=None,filename=None):
+    """Extract email addresses from a string
+    or file."""
+    import re
+    if string is None:
+        with open("emails.txt",'r') as myfile:
+            string=myfile.read().replace('\n', '')
+    match = re.findall(r'[\w\.-]+@[\w\.-]+', string)
+    return match
+
     
 ## LOGGING
 
@@ -138,9 +151,9 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
-def hplot(img,savename=None):
+def hplot(img,savename=None,**kwargs):
     from pixell import enplot
-    plots = enplot.get_plots(img)
+    plots = enplot.get_plots(img,**kwargs)
     if savename is None:
         enplot.show(plots)
         return
@@ -228,8 +241,8 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,xlabel=None,ylabel=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,**kwargs):
-
+    def __init__(self,xlabel=None,ylabel=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
+        self.scalefn = scalefn
         matplotlib.rc('axes', linewidth=thk)
         matplotlib.rc('axes', labelcolor='k')
         self.thk = thk
@@ -271,9 +284,12 @@ class Plotter(object):
 
         return legend
            
-    def add(self,x,y,label=None,**kwargs):
+    def add(self,x,y,label=None,lw=2,linewidth=None,**kwargs):
+        if linewidth is not(None): lw = linewidth
         if label is not None: self.do_legend = True
-        return self._ax.plot(x,y,label=label,**kwargs)
+        scaler = self.scalefn(x)
+        yc = y*scaler
+        return self._ax.plot(x,yc,label=label,linewidth=lw,**kwargs)
 
 
     def hist(self,data,**kwargs):
@@ -281,11 +297,14 @@ class Plotter(object):
     
         
     def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",elinewidth=2,markersize=4,label=None,**kwargs):
+        scaler = self.scalefn(x)
+        yc = y*scaler
+        yerrc = yerr*scaler
         if band:
-            self._ax.plot(x,y,ls=ls,marker=marker,label=label,**kwargs)
-            self._ax.fill_between(x, y-yerr, y+yerr, alpha=alpha)
+            self._ax.plot(x,yc,ls=ls,marker=marker,label=label,**kwargs)
+            self._ax.fill_between(x, yc-yerrc, y+yerrc, alpha=alpha)
         else:
-            self._ax.errorbar(x,y,yerr=yerr,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)
+            self._ax.errorbar(x,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)
         if label is not None: self.do_legend = True
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,**kwargs):
