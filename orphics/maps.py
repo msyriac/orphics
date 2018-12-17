@@ -1,6 +1,5 @@
 from __future__ import print_function 
 from pixell import enmap, utils, resample
-from enlib import bench
 import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d

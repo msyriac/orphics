@@ -2,7 +2,7 @@ from __future__ import print_function
 import numpy as np
 from sympy import Symbol,Function
 import sympy
-from enlib import fft as efft, enmap, bench
+from pixell import fft as efft, enmap
 from orphics import maps,io,stats,cosmology,lensing
 import os,sys
 
