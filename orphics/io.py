@@ -76,6 +76,14 @@ def get_logger(logname)        :
     
 ### FILE I/O
 
+def config_from_yaml(filename):
+    import yaml
+    with open(filename) as f:
+        config = yaml.safe_load(f)
+    return config
+
+
+
 def dict_from_section(config,section_name):
     try:
         del config._sections[section_name]['__name__']
@@ -161,8 +169,10 @@ def hplot(img,savename=None,**kwargs):
 
 def blend(fg_file,bg_file,alpha,save_file=None,verbose=True):
     from PIL import Image
-    foreground = Image.open(fg_file)
+    foreground = Image.open(fg_file) #.convert('RGB')
     background = Image.open(bg_file)
+    print(foreground.mode)
+    print(background.mode)
     blended = Image.blend(foreground, background, alpha=alpha)
     if save_file is not None:
         blended.save(save_file)

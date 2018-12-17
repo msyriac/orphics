@@ -2757,3 +2757,40 @@ class L1Integral(object):
         return integral
 
         
+
+
+
+class JointRecon(object):
+
+    def __init__(self,shape,wcs):
+        self. = {}
+        self.estimators = {}
+        pass
+    def add_map(self,name,kmask,ptype="T",noise_beam_deconvolved=None,total_noise_beam_deconvolved=None):
+        pass
+    def load_map(self,name,imap=None,kmap=None):
+        pass
+    def build_estimator(self,tag,xname,yname,cross_noise=None):
+        pass
+    def cov(self,tag1,tag2):
+        pass
+    def get_cov_matrix(self,tags):
+        pass
+    
+
+
+jr = JointRecon(shape,wcs)
+jr.add_map("Ts",tmask,"T",noise)
+jr.add_map("Tc",tmask,"T",noise)
+jr.add_map("Es",tmask,"E",noise)
+jr.add_map("Bs",tmask,"E",noise)
+jr.build_estimator("TcTs","Tc","Ts",0)
+jr.build_estimator("TsTc","Ts","Tc",0)
+jr.build_estimator("TsEs","Ts","Es",0)
+jr.build_estimator("EsTs","Es","Ts",0)
+jr.build_estimator("EsBs","Es","Bs",0)
+jr.build_estimator("EsEs","Es","Es",0)
+jr.build_estimator("TsBs","Ts","Ts",0)
+ncov = jr.get_cov_matrix(["TpTa","TaTp"])
+
+

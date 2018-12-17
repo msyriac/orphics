@@ -779,14 +779,10 @@ def silc(kmaps,cinv,response=None):
 
     Fourier transform of ILC estimate, (Ny,Nx) array 
     """
-
     response = ilc_def_response(response,cinv)
-    
     # Get response^T Cinv kmaps
     weighted = ilc_map_term(kmaps,cinv,response)
-    # Get response^T Cinv response
-    norm = ilc_comb_a_b(response,response,cinv)
-    return weighted * silc_noise(cinv,response) #np.nan_to_num(weighted/norm)
+    return weighted * silc_noise(cinv,response)
 
 def cilc(kmaps,cinv,response_a,response_b):
     """Constrained ILC -- Make a constrained internal linear combination (ILC) of given fourier space maps at different frequencies
@@ -895,7 +891,7 @@ def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method
 
 def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
             plot_save=None,ellmaxes=None,data=True,fgmax=None,
-            narray=None,fdict=None):
+            narray=None,fdict=None,verbose=True,analysis_beam=1.,lmins=None,lmaxs=None):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -916,27 +912,29 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
     else:
         raise ValueError
 
-    Covmat = np.tile(cmb_ps,cshape)
+    Covmat = np.tile(cmb_ps,cshape)*analysis_beam**2.
 
     for i,freq1 in enumerate(freqs):
         for j,freq2 in enumerate(freqs):
-            print("Populating covariance for ",freq1,"x",freq2)
+            if verbose: print("Populating covariance for ",freq1,"x",freq2)
             if narray is not None:
                 Covmat[i,j,...] += narray[i,j,...]
             else:
                 if i==j:
                     kbeam1 = kbeams[i]
                     noise1 = noises[i]
-                    instnoise = np.nan_to_num(noise1/kbeam1**2.) 
+                    instnoise = np.nan_to_num(noise1*analysis_beam**2./kbeam1**2.) 
                     Covmat[i,j,...] += instnoise
 
             for component in components:
                 if fdict is None:
                     fgnoise = fnoise.get_noise(component,freq1,freq2,ells)
                 else:
-                    fgnoise = fdict[component](ells,freq1,freq2)
+                    fgnoise = np.nan_to_num(fdict[component](ells,freq1,freq2))
+                fgnoise[np.abs(fgnoise)>1e90] = 0
                 if (fgmax is not None) and component=='tsz':
                     fgnoise[ells>fgmax] = fgnoise[fgmax]
+                fgnoise = fgnoise * analysis_beam**2.
                 Covmat[i,j,...] += fgnoise
 
             if data:
@@ -944,6 +942,10 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
                 Covmat[i,j][ells>ellmaxes[j]] = 1e90 # !!!
             #if i>=j:
             #    io.plot_img(np.fft.fftshift(np.log10(Covmat[i,j,:])),lim=[-10,3])
+            if i==j:
+                if lmins is not None: Covmat[i,j][ells<lmins[i]] = np.inf
+                if lmaxs is not None: Covmat[i,j][ells>lmaxs[i]] = np.inf
+
                 
 
     return Covmat
