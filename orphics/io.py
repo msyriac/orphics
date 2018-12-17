@@ -159,13 +159,14 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
-def hplot(img,savename=None,**kwargs):
+def hplot(img,savename=None,verbose=True,**kwargs):
     from pixell import enplot
     plots = enplot.get_plots(img,**kwargs)
     if savename is None:
         enplot.show(plots)
         return
     enplot.write(savename,plots)
+    if verbose: cprint("Saved plot to "+ savename,color="g")
 
 def blend(fg_file,bg_file,alpha,save_file=None,verbose=True):
     from PIL import Image
