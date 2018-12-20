@@ -102,7 +102,8 @@ def get_central(img,fracy,fracx=None):
         if cropx%2==1 and Nx%2==0: cropx -= 1
     return crop_center(img,cropy,cropx)
 
-def crop_center(img,cropy,cropx):
+def crop_center(img,cropy,cropx=None):
+    cropx = cropy if cropx is None else cropx
     y,x = img.shape[-2:]
     startx = x//2-(cropx//2)
     starty = y//2-(cropy//2)
