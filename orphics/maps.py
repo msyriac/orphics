@@ -1210,7 +1210,38 @@ class NoiseModel(object):
     def add_beam_2d(self,beam_2d_transform):
         assert self.shape[-2:]==beam_2d_transform.shape
         self.kbeam2d = beam_2d_transform
+
+
+def split_calc(isplits,jsplits=None,fourier_calc=None):
+    """
+    Calculate the best estimate of the signal (from mean of crosses)
+    and of the noise (total - mean crosses) power.
+
+    isplits (and jsplits) are (nsplits,Ny,Nx) fourier transforms of
+    windowed maps. No window correction is applied to the result.
+    No polarization rotation is done either.
+    """
+    shape,wcs = isplits.shape,isplits.wcs
+    assert isplits.ndim==3
+    fc = fourier_calc if is not None else maps.FourierCalc(shape[-2:],wcs)
+    icoadd = isplits.mean(axis=0)
+    jcoadd = jsplits.mean(axis=0) if jsplits is not None else None
+    total = fc.f2power(kmap=icoadd,kmap2=jcoadd)
+    insplits = isplits.shape[0]
+    jnsplits = jsplits.shape[0] if jsplits is not None else insplits
+    ncrosses = 0.
+    totcross = 0.
+    for i in range(insplits):
+        for j in range(jnsplits):
+            totcross += fc.f2power(isplits[i],jsplits[j] if jspits is not None else isplits[i])
+            ncrosses += 1.
+    crosses = totcross / ncrosses
+    noise = total - crosses
+    return total,crosses,noise
+
     
+    
+        
 def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
     """
     Calculate noise power spectra by subtracting cross power of splits 
