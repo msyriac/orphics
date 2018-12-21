@@ -2264,7 +2264,6 @@ def kappa_nfw(M,c,R,theta,cc,z):
     comL = cc.results.comoving_radial_distance(z)*cc.h
     winAtLens = (comS-comL)/comS
     kappa = kappa_nfw_generic(theta,z,comL,np.abs(M),c,R,winAtLens)
-
     return sgn*kappa
 
 

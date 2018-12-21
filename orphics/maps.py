@@ -2637,3 +2637,63 @@ def rgeo(degrees,pixarcmin,**kwargs):
     return rect_geometry(width_deg=degrees,px_res_arcmin=pixarcmin,**kwargs)
 
 
+
+class SymmMat(object):
+    """
+    A memory efficient but not very flexible symmetric matrix.
+    If a matrix (e.g. covariance) is large but symmetric,
+    this lets you reduce the memory footprint by <50% by
+    only storing the upper right triangle.
+    
+    e.g.:
+    >>> a = SymmMat(3,(100,100))
+    >>> a[0,1] = np.ones((100,100))
+    After this, a[0,1] and and a[1,0] will return the same
+    matrix.
+    However, only two leading indices are supported (hence, a matrix)
+    and the usual numpy slicing on these doesn't work. a[0][1] doesn't
+    work either. The trailing dimensions can be of arbitary shape.
+    e.g.
+    >>> a = SymmMat(3,(2,100,100))
+    is also valid.
+
+
+    You can convert the symmetric matrix to a full footprint good old
+    numpy array with:
+    >>> array = a.to_array()
+
+    However, you usually don't want to do this on the full array, since
+    the whole point of using this was to never have the full matrix
+    in memory. Instead, you are allowed to specify a slice of the
+    trailing dimensions:
+    >>> array = a.to_array(np.s_[:10,:10])
+    allowing you to loop over slices as you please.
+
+    """
+    def __init__(self,ncomp,shape):
+        self.ncomp = ncomp
+        self.shape = shape
+        ndat = ncomp*(ncomp+1)//2
+        self.data = np.empty((ndat,)+shape)
+        
+    def yx_to_k(self,y,x):
+        if y>x: return self.yx_to_k(x,y)
+        return y*self.ncomp+x - y*(y+1)//2
+    
+    def __getitem__(self, tup):
+        y, x = tup
+        return self.data[self.yx_to_k(y,x)]
+    
+    def __setitem__(self, tup, data):
+        y, x = tup
+        self.data[self.yx_to_k(y,x)] = data
+        
+    def to_array(self,sel=np.s_[...]):
+        oshape = self.data[0][sel].shape
+        out = np.empty((self.ncomp,self.ncomp,)+oshape)
+        for y in range(self.ncomp):
+            for x in range(y,self.ncomp):
+                out[y,x] = self.data[self.yx_to_k(y,x)][sel].copy()
+                out[x,y] = out[y,x].copy()
+        return out
+
