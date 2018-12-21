@@ -390,6 +390,10 @@ class FourierCalc(object):
 
     def ifft(self,kmap):
         return ifft(kmap,axes=[-2,-1],normalize=True)
+    
+    def fft(self,emap):
+        return enmap.samewcs(enmap.fft(emap,normalize=False), emap)
+        
 
     def power2d(self,emap=None, emap2=None,nthread=0,pixel_units=False,skip_cross=False,rot=True, kmap=None, kmap2=None, dtype=None):
         """
@@ -1212,7 +1216,7 @@ class NoiseModel(object):
         self.kbeam2d = beam_2d_transform
 
 
-def split_calc(isplits,jsplits=None,fourier_calc=None):
+def split_calc(isplits,jsplits,fourier_calc=None):
     """
     Calculate the best estimate of the signal (from mean of crosses)
     and of the noise (total - mean crosses) power.
@@ -1223,17 +1227,18 @@ def split_calc(isplits,jsplits=None,fourier_calc=None):
     """
     shape,wcs = isplits.shape,isplits.wcs
     assert isplits.ndim==3
-    fc = fourier_calc if is not None else maps.FourierCalc(shape[-2:],wcs)
+    fc = fourier_calc if fourier_calc is not None else maps.FourierCalc(shape[-2:],wcs)
     icoadd = isplits.mean(axis=0)
-    jcoadd = jsplits.mean(axis=0) if jsplits is not None else None
-    total = fc.f2power(kmap=icoadd,kmap2=jcoadd)
+    jcoadd = jsplits.mean(axis=0) 
+    total = fc.f2power(icoadd,jcoadd)
     insplits = isplits.shape[0]
-    jnsplits = jsplits.shape[0] if jsplits is not None else insplits
+    jnsplits = jsplits.shape[0] 
     ncrosses = 0.
     totcross = 0.
     for i in range(insplits):
         for j in range(jnsplits):
-            totcross += fc.f2power(isplits[i],jsplits[j] if jspits is not None else isplits[i])
+            if i==j: continue
+            totcross += fc.f2power(isplits[i],jsplits[j])
             ncrosses += 1.
     crosses = totcross / ncrosses
     noise = total - crosses
@@ -2669,7 +2674,7 @@ def rgeo(degrees,pixarcmin,**kwargs):
 
 
 
-class SymmMat(object):
+class SymMat(object):
     """
     A memory efficient but not very flexible symmetric matrix.
     If a matrix (e.g. covariance) is large but symmetric,
@@ -2677,7 +2682,7 @@ class SymmMat(object):
     only storing the upper right triangle.
     
     e.g.:
-    >>> a = SymmMat(3,(100,100))
+    >>> a = SymMat(3,(100,100))
     >>> a[0,1] = np.ones((100,100))
     After this, a[0,1] and and a[1,0] will return the same
     matrix.
@@ -2685,7 +2690,7 @@ class SymmMat(object):
     and the usual numpy slicing on these doesn't work. a[0][1] doesn't
     work either. The trailing dimensions can be of arbitary shape.
     e.g.
-    >>> a = SymmMat(3,(2,100,100))
+    >>> a = SymMat(3,(2,100,100))
     is also valid.
 
 
@@ -2701,11 +2706,11 @@ class SymmMat(object):
     allowing you to loop over slices as you please.
 
     """
-    def __init__(self,ncomp,shape):
+    def __init__(self,ncomp,shape,data=None):
         self.ncomp = ncomp
         self.shape = shape
         ndat = ncomp*(ncomp+1)//2
-        self.data = np.empty((ndat,)+shape)
+        self.data = data if data is not None else np.empty((ndat,)+shape)
         
     def yx_to_k(self,y,x):
         if y>x: return self.yx_to_k(x,y)
@@ -2728,3 +2733,8 @@ class SymmMat(object):
                 out[x,y] = out[y,x].copy()
         return out
 
+def symmat_from_data(data):
+    ndat = data.shape[0]
+    shape = data.shape[1:]
+    ncomp = int(0.5*(np.sqrt(8*ndat+1)-1))
+    return SymMat(ncomp,shape,data=data)
