@@ -1216,7 +1216,7 @@ class NoiseModel(object):
         self.kbeam2d = beam_2d_transform
 
 
-def split_calc(isplits,jsplits,fourier_calc=None):
+def split_calc(isplits,jsplits,icoadd,jcoadd,fourier_calc=None):
     """
     Calculate the best estimate of the signal (from mean of crosses)
     and of the noise (total - mean crosses) power.
@@ -1228,8 +1228,6 @@ def split_calc(isplits,jsplits,fourier_calc=None):
     shape,wcs = isplits.shape,isplits.wcs
     assert isplits.ndim==3
     fc = fourier_calc if fourier_calc is not None else maps.FourierCalc(shape[-2:],wcs)
-    icoadd = isplits.mean(axis=0)
-    jcoadd = jsplits.mean(axis=0) 
     total = fc.f2power(icoadd,jcoadd)
     insplits = isplits.shape[0]
     jnsplits = jsplits.shape[0] 
@@ -2467,11 +2465,6 @@ def convolve_gaussian(imap,fwhm=None,nsigma=5.0):
     @param fwhm Full Width Half Max in arcmin
     @param nsigma Number of sigmas the Gaussian kernel is defined out to.
 
-
-    """
-    
-
-    """
     @param sigmaY standard deviation of Gaussian in pixel units in the Y direction
     @param sigmaX standard deviation of Gaussian in pixel units in the X direction
 
@@ -2485,121 +2478,6 @@ def convolve_gaussian(imap,fwhm=None,nsigma=5.0):
     g = gauss_kern(sigmaY, sigmaX,nsigma=nsigma)
         
     return convolve(imap,g)
-
-
-
-
-class MultiArray(object):
-
-    def __init__(self,shape,wcs,taper=None):
-        self.flat_cmb_inited = False
-        self.ngens = []
-        self.labels = []
-        self.freqs = []
-        self.beams = []
-        self.fgs = []
-        self.fgens = {}
-        self.ref_freqs = {}
-        self.freq_scale_func = {}
-        self.shape = shape
-        self.wcs = wcs
-        self.pol = True if len(shape[-3:])==3 else False
-
-    def add_array(self,label,freq_ghz,beam_arcmin=None,noise_uk_arcmin_T=None,noise_uk_arcmin_P=None,ps_noise=None,beam2d=None,beam_func=None,lknee_T=0,lknee_P=0,alpha_T=1,alpha_P=1,dimensionless=False):
-        
-        self.labels.append(label)
-        self.freqs.append(freq_ghz)
-        
-        modlmap = enmap.modlmap(self.shape,self.wcs)
-        if beam2d is None: beam2d = gauss_beam(modlmap,beam_arcmin)
-        
-        nT = cosmology.white_noise_with_atm_func(modlmap,noise_uk_arcmin_T,lknee_T,alpha_T,dimensionless)
-        Ny,Nx = modlmap.shape
-        if self.pol:
-            nP = cosmology.white_noise_with_atm_func(modlmap,noise_uk_arcmin_P,lknee_P,alpha_P,dimensionless)
-            ps_noise = np.zeros((3,3,Ny,Nx))
-            ps_noise[0,0] = nT
-            ps_noise[1,1] = nP
-            ps_noise[2,2] = nP
-        else:
-            ps_noise = np.zeros((1,1,Ny,Nx))
-            ps_noise[0,0] = nT
-            nP = 0
-
-        self.beams.append(beam2d)
-        ps_noise[:,:,modlmap<2] = 0
-        self.ngens.append( MapGen(self.shape,self.wcs,ps_noise) )
-        return np.nan_to_num(nT/beam2d**2.),np.nan_to_num(nP/beam2d**2.)
-        
-
-    def get_full_sky_cmb_sim(self,sim_root,index):
-        pass
-
-    def init_flat_cmb_sim(self,ps_cmb,flat_lensing=False,fixed_kappa=None,buffer_deg=None):
-        self.flat_cmb_inited = True
-        self.mgen = MapGen(self.shape,self.wcs,ps_cmb)
-
-    def add_gaussian_foreground(self,label,ps_fg,ref_freq,freq_scale_func):
-        self.fgens[label] = MapGen(self.shape,self.wcs,ps_fg)
-        self.ref_freqs[label] = ref_freq
-        self.freq_scale_func[label] = freq_scale_func
-        self.fgs.append(label)
-        
-    
-    def get_sky(self,foregrounds = None,cmb_seed=None,noise_seed=None,fg_seed=None,return_fg=False):
-        cmb = self.mgen.get_map(seed=cmb_seed)
-        foregrounds = self.fgs if foregrounds is None else foregrounds
-
-        observed = []
-        if return_fg: input_fg = []
-
-        fgmaps = {}
-        for foreground in foregrounds:
-            fgmaps[foreground] = self.fgens[foreground].get_map(seed=fg_seed)
-            
-        for i in range(len(self.labels)):
-            noise = self.ngens[i].get_map(seed=noise_seed)
-            freq = self.freqs[i]
-
-            fgs = 0.
-            for foreground in foregrounds:
-                fgs += fgmaps[foreground] * self.freq_scale_func[foreground](freq) / self.freq_scale_func[foreground](self.ref_freqs[foreground])
-
-            sky = filter_map(cmb + fgs,self.beams[i])
-            observed.append( sky + noise )
-            if return_fg: input_fg.append( fgs.copy() )
-            
-        if return_fg:
-            return np.stack(observed),np.stack(input_fg)
-        else:
-            return np.stack(observed)
-        
-    def lens_cmb(self,imap,input_kappa=None):
-        pass
-
-    def get_flat_sky_cmb_sim(self,lens_with_kappa=False,seed_cmb=None,seed_kappa=None):
-        assert self.flat_cmb_inited
-        assert not(self.lensed_power)
-        
-        self.fcmbsim.get_map(seed=seed_cmb)
-        pass
-    
-    def get_noise_sim(self,label,pol=True,buffer_deg=None):
-        pass
-
-
-    def fft_data(self,imaps,kmask=None):
-
-        kmask = np.ones(imaps.shape[-2:]) if kmask is None else kmask
-
-        retks = []
-        for i in range(len(self.labels)):
-            retk = np.nan_to_num(enmap.fft(imaps[i])*kmask/self.beams[i])
-            retk[kmask==0] = 0.
-            retks.append(retk)
-
-        return np.stack(retks)
-
 
 
 def get_grf_cmb(shape,wcs,theory,spec,seed=None):
@@ -2724,13 +2602,24 @@ class SymMat(object):
         y, x = tup
         self.data[self.yx_to_k(y,x)] = data
         
-    def to_array(self,sel=np.s_[...]):
-        oshape = self.data[0][sel].shape
+    def to_array(self,sel=np.s_[...],flatten=False):
+        """
+        Convert the SymMat object to a numpy array, optionally selecting a 
+        slice of the data.
+
+        Args:
+            sel: a numpy slice allowing for selection of the projected array.
+            Use np.s_ to construct this.
+            flatten: whether to flatten the array before selecting with sel 
+        """
+        oshape = self.data[0].reshape(-1)[sel].shape if flatten else self.data[0][sel].shape
         out = np.empty((self.ncomp,self.ncomp,)+oshape)
         for y in range(self.ncomp):
             for x in range(y,self.ncomp):
-                out[y,x] = self.data[self.yx_to_k(y,x)][sel].copy()
-                out[x,y] = out[y,x].copy()
+                kindex = self.yx_to_k(y,x)
+                data = self.data[kindex].reshape(-1) if flatten else self.data[kindex]
+                out[y,x] = data[sel].copy()
+                if x!=y: out[x,y] = out[y,x].copy()
         return out
 
 def symmat_from_data(data):
@@ -2738,3 +2627,96 @@ def symmat_from_data(data):
     shape = data.shape[1:]
     ncomp = int(0.5*(np.sqrt(8*ndat+1)-1))
     return SymMat(ncomp,shape,data=data)
+
+
+
+class SplitSimulator(object):
+    def __init__(self,shape,wcs,beams,freqs,noises,lknees,alphas,nsplits,pss,nu0,lmins,lmaxs,theory=None,atmosphere=True,lensing=False,dust=False,do_fgs=True,lpass=False,aseed=None,ell_min_noise=200):
+        self.lensing = lensing
+        self.lpass = lpass
+        self.aseed = aseed
+        ncomp = pss.shape[0]
+        self.fgs = do_fgs
+        self.dust = dust
+        if not(atmosphere):
+            lknees = [0.]*len(freqs)
+            alphas = [1.]*len(freqs)
+        self.nu0 = nu0
+        self.freqs = freqs
+        self.lmins = lmins
+        self.lmaxs = lmaxs
+        self.modlmap = enmap.modlmap(shape,wcs)
+        lmax = self.modlmap.max()
+        if theory is None: theory = cosmology.default_theory()
+        ells = np.arange(0,lmax,1)
+        cltt = theory.uCl('TT',ells) if lensing else theory.lCl('TT',ells)
+        self.cseed = 0
+        self.kseed = 1
+        self.nseed = 2
+        self.fgen = MapGen((ncomp,)+shape[-2:],wcs,pss)
+        self.cgen = MapGen(shape[-2:],wcs,cltt[None,None])
+        self.shape, self.wcs = shape,wcs
+        self.arrays = range(len(freqs))
+        self.nsplits = nsplits
+        self.ngens = []
+        self.kbeams = []
+        self.ebeams = []
+        self.ps_noises = []
+        self.eps_noises = []
+        for array in self.arrays:
+            ps_noise = cosmology.noise_func(ells,0.,noises[array],lknee=lknees[array],alpha=alphas[array])
+            ps_noise[ells<ell_min_noise] = ps_noise[ells>=ell_min_noise].max()
+            if lpass: ps_noise[ells<lmins[array]] = 0
+            self.ps_noises.append(interp(ells,ps_noise.copy())(self.modlmap))
+            self.eps_noises.append(ps_noise.copy())
+            self.ngens.append( MapGen(shape[-2:],wcs,ps_noise[None,None]*nsplits[array]) )
+            self.kbeams.append( gauss_beam(self.modlmap,beams[array]) )
+            self.ebeams.append( gauss_beam(ells,beams[array]))
+        self.ells = ells
+
+    def get_corr(self,seed):
+        fmap = self.fgen.get_map(seed=(self.aseed,self.kseed,seed),scalar=True)
+        return fmap
+
+    def _lens(self,unlensed,kappa,lens_order=5):
+        from orphics import lensing
+        from pixell import lensing as enlensing
+        self.kappa = kappa
+        alpha = lensing.alpha_from_kappa(kappa,posmap=enmap.posmap(self.shape,self.wcs))
+        lensed = enlensing.displace_map(unlensed, alpha, order=lens_order)
+        return lensed
+
+    def get_sim(self,seed):
+        from szar import foregrounds as fg
+        ret = self.get_corr(seed)
+        if self.dust:
+            kappa,tsz,cib = ret
+        else:
+            kappa,tsz = ret
+        unlensed = self.cgen.get_map(seed=(self.aseed,self.cseed,seed))
+        lensed = self._lens(unlensed,kappa) if self.lensing else unlensed
+        self.lensed = lensed.copy()
+        tcmb = 2.726e6
+        self.y = tsz.copy()/tcmb/fg.ffunc(self.nu0)
+        observed = []
+        noises = []
+        for array in self.arrays:
+            scaled_tsz = tsz * fg.ffunc(self.freqs[array]) / fg.ffunc(self.nu0) if self.fgs else 0.
+            if self.dust:
+                scaled_cib = cib * fg.cib_nu(self.freqs[array]) / fg.cib_nu(self.nu0) if self.fgs else 0.
+            else:
+                scaled_cib = 0.
+            sky = lensed + scaled_tsz + scaled_cib
+            beamed = filter_map(sky,self.kbeams[array])
+            observed.append([])
+            noises.append([])
+            for split in range(self.nsplits[array]):
+                noise = self.ngens[array].get_map(seed=(self.aseed,self.nseed,seed,split,array))
+                observed[array].append(beamed+noise)
+                noises[array].append(noise)
+            observed[array] = enmap.enmap(np.stack(observed[array]),self.wcs)
+            noises[array] = enmap.enmap(np.stack(noises[array]),self.wcs)
+            if self.lpass:
+                observed[array] = filter_map(observed[array],mask_kspace(self.shape,self.wcs,lmin=self.lmins[array]))             
+                noises[array] = filter_map(noises[array],mask_kspace(self.shape,self.wcs,lmin=self.lmins[array]))             
+        return observed,noises
