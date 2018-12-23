@@ -12,6 +12,14 @@ try:
 except:
     dout_dir = "./"
 
+class latex:
+    ell = "$\\ell$"
+    L = "$L$"
+    dl = "$D_{\\ell}$"
+    cl = "$C_{\\ell}$"
+    cL = "$C_{L}$"
+    ratcl = "$\Delta C_{\\ell}/C_{\\ell}$"
+
 class DummyFile(object):
     def write(self, x): pass
 
@@ -159,9 +167,9 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
-def hplot(img,savename=None,verbose=True,**kwargs):
+def hplot(img,savename=None,verbose=True,grid=False,**kwargs):
     from pixell import enplot
-    plots = enplot.get_plots(img,**kwargs)
+    plots = enplot.get_plots(img,grid=grid,**kwargs)
     if savename is None:
         enplot.show(plots)
         return

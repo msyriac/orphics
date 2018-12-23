@@ -7,7 +7,7 @@ import yaml,six
 from orphics import io,cosmology,stats
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
-
+import warnings
 
 def psizemap(shape,wcs):
     """
@@ -1216,7 +1216,7 @@ class NoiseModel(object):
         self.kbeam2d = beam_2d_transform
 
 
-def split_calc(isplits,jsplits,icoadd,jcoadd,fourier_calc=None):
+def split_calc(isplits,jsplits,icoadd,jcoadd,fourier_calc=None,alt=False):
     """
     Calculate the best estimate of the signal (from mean of crosses)
     and of the noise (total - mean crosses) power.
@@ -1231,15 +1231,27 @@ def split_calc(isplits,jsplits,icoadd,jcoadd,fourier_calc=None):
     total = fc.f2power(icoadd,jcoadd)
     insplits = isplits.shape[0]
     jnsplits = jsplits.shape[0] 
-    ncrosses = 0.
-    totcross = 0.
-    for i in range(insplits):
-        for j in range(jnsplits):
-            if i==j: continue
-            totcross += fc.f2power(isplits[i],jsplits[j])
-            ncrosses += 1.
-    crosses = totcross / ncrosses
-    noise = total - crosses
+
+    if alt:
+        assert insplits==jnsplits
+        noise = 0.
+        for i in range(insplits):
+            diff1 = isplits[i] - icoadd
+            diff2 = jsplits[i] - jcoadd
+            noise = noise + fc.f2power(diff1,diff2)
+        noise = noise / ((1.-1./insplits)*insplits**2)
+        crosses = total - noise
+    else:
+        ncrosses = 0.
+        totcross = 0.
+        for i in range(insplits):
+            for j in range(jnsplits):
+                if i==j: continue
+                totcross += fc.f2power(isplits[i],jsplits[j])
+                ncrosses += 1.
+        crosses = totcross / ncrosses
+        noise = total - crosses
+
     return total,crosses,noise
 
     
@@ -2631,16 +2643,27 @@ def symmat_from_data(data):
 
 
 class SplitSimulator(object):
-    def __init__(self,shape,wcs,beams,freqs,noises,lknees,alphas,nsplits,pss,nu0,lmins,lmaxs,theory=None,atmosphere=True,lensing=False,dust=False,do_fgs=True,lpass=False,aseed=None,ell_min_noise=200):
+    def __init__(self,shape,wcs,beams,freqs,noises,nsplits,
+                 lknees=None,alphas=None,pss=None,nu0=None,
+                 lmins=None,lmaxs=None,
+                 theory=None,atmosphere=True,lensing=False,
+                 dust=False,do_fgs=False,
+                 lpass=False,aseed=1,ell_min_noise=200):
         self.lensing = lensing
         self.lpass = lpass
         self.aseed = aseed
-        ncomp = pss.shape[0]
+        if pss is not None:
+            ncomp = pss.shape[0]
+        else:
+            if lensing: ncomp = 1
+            assert not(do_fgs)
+            assert not(dust)
         self.fgs = do_fgs
         self.dust = dust
-        if not(atmosphere):
+        if not(atmosphere) or (lknees is None) or (alphas is None) :
             lknees = [0.]*len(freqs)
             alphas = [1.]*len(freqs)
+            warnings.warn("No atmosphere in split simulator.")
         self.nu0 = nu0
         self.freqs = freqs
         self.lmins = lmins
@@ -2650,14 +2673,18 @@ class SplitSimulator(object):
         if theory is None: theory = cosmology.default_theory()
         ells = np.arange(0,lmax,1)
         cltt = theory.uCl('TT',ells) if lensing else theory.lCl('TT',ells)
+        self.theory = theory
         self.cseed = 0
         self.kseed = 1
         self.nseed = 2
-        self.fgen = MapGen((ncomp,)+shape[-2:],wcs,pss)
+        if (pss is None) and lensing:
+            pss = theory.gCl('kk',ells)[None]
+        if pss is not None:
+            self.fgen = MapGen((ncomp,)+shape[-2:],wcs,pss)
         self.cgen = MapGen(shape[-2:],wcs,cltt[None,None])
         self.shape, self.wcs = shape,wcs
         self.arrays = range(len(freqs))
-        self.nsplits = nsplits
+        self.nsplits = np.asarray(nsplits).astype(np.int)
         self.ngens = []
         self.kbeams = []
         self.ebeams = []
@@ -2688,20 +2715,24 @@ class SplitSimulator(object):
 
     def get_sim(self,seed):
         from szar import foregrounds as fg
-        ret = self.get_corr(seed)
-        if self.dust:
-            kappa,tsz,cib = ret
-        else:
-            kappa,tsz = ret
+        if self.lensing or self.fgs:
+            ret = self.get_corr(seed)
+            if self.dust:
+                kappa,tsz,cib = ret
+            else:
+                kappa,tsz = ret
         unlensed = self.cgen.get_map(seed=(self.aseed,self.cseed,seed))
         lensed = self._lens(unlensed,kappa) if self.lensing else unlensed
         self.lensed = lensed.copy()
         tcmb = 2.726e6
-        self.y = tsz.copy()/tcmb/fg.ffunc(self.nu0)
+        if self.fgs: self.y = tsz.copy()/tcmb/fg.ffunc(self.nu0)
         observed = []
         noises = []
         for array in self.arrays:
-            scaled_tsz = tsz * fg.ffunc(self.freqs[array]) / fg.ffunc(self.nu0) if self.fgs else 0.
+            if self.fgs:
+                scaled_tsz = tsz * fg.ffunc(self.freqs[array]) / fg.ffunc(self.nu0) if self.fgs else 0.
+            else:
+                scaled_tsz = 0.
             if self.dust:
                 scaled_cib = cib * fg.cib_nu(self.freqs[array]) / fg.cib_nu(self.nu0) if self.fgs else 0.
             else:
