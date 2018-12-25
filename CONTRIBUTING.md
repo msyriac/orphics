@@ -16,7 +16,7 @@ b. That you contribute to `msyriac`'s version with your own new neat features an
 To do (a), you should regularly get in sync with my version. You do this as follows:
 
 ```
-git remote fetch upstream
+git fetch upstream
 git merge upstream/master
 ```
 
