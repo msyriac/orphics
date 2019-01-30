@@ -145,7 +145,7 @@ class Cosmology(object):
         assert self.H0>40. and self.H0<100.
         self.h = self.H0/100.
         
-        self.omnuh2 = self.pars.omegan * ((self.H0 / 100.0) ** 2.)
+        self.omnuh2 = self.pars.omnuh2
 
 
         # Now fixing zstar to Planck best fit!

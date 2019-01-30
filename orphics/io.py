@@ -260,8 +260,12 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,xlabel=None,ylabel=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
+    def __init__(self,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
         self.scalefn = scalefn
+        if xyscale is not None:
+            scalemap = {'log':'log','lin':'linear'}
+            xscale = scalemap[xyscale[:3]]
+            yscale = scalemap[xyscale[3:]]
         matplotlib.rc('axes', linewidth=thk)
         matplotlib.rc('axes', labelcolor='k')
         self.thk = thk
@@ -315,15 +319,15 @@ class Plotter(object):
         return self._ax.hist(data,**kwargs)
     
         
-    def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",elinewidth=2,markersize=4,label=None,**kwargs):
+    def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",elinewidth=2,markersize=4,label=None,mulx=1.,addx=0.,**kwargs):
         scaler = self.scalefn(x)
         yc = y*scaler
         yerrc = yerr*scaler
         if band:
-            self._ax.plot(x,yc,ls=ls,marker=marker,label=label,**kwargs)
-            self._ax.fill_between(x, yc-yerrc, y+yerrc, alpha=alpha)
+            self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,**kwargs)
+            self._ax.fill_between(x*mulx+addx, yc-yerrc, y+yerrc, alpha=alpha)
         else:
-            self._ax.errorbar(x,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)
+            self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)
         if label is not None: self.do_legend = True
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,**kwargs):

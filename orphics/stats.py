@@ -201,6 +201,11 @@ class FisherMatrix(DataFrame):
 	
         check_fisher_sanity(fmat,param_list)
         pd.DataFrame.__init__(self,fmat.copy(),columns=param_list,index=param_list)
+        try:
+            a = self.params
+            raise ValueError # self.params should not already exist
+        except:
+            pass
         self.params = param_list
             
         cols = self.columns.tolist()

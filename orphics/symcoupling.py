@@ -580,6 +580,8 @@ class LensingModeCoupling(ModeCoupling):
         uC2 = uCl1['TT'] if rev else uCl2['TT']
         return Ldl2*uC2
 
+    
+
     def F_shear(self,tCl1,tCl2,uCl1,duCl1,uCl2=None,duCl2=None,rev=False):
         Ldl1 = self.Ldl1 if not(rev) else self.Ldl2
         l1 = self.l1 if not(rev) else self.l2

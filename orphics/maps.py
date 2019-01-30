@@ -389,7 +389,7 @@ class FourierCalc(object):
         return np.real(np.conjugate(kmap1)*kmap2)*norm,kmap1
 
     def ifft(self,kmap):
-        return ifft(kmap,axes=[-2,-1],normalize=True)
+        return enmap.enmap(ifft(kmap,axes=[-2,-1],normalize=True),self.wcs)
     
     def fft(self,emap):
         return enmap.samewcs(enmap.fft(emap,normalize=False), emap)
@@ -1216,7 +1216,7 @@ class NoiseModel(object):
         self.kbeam2d = beam_2d_transform
 
 
-def split_calc(isplits,jsplits,icoadd,jcoadd,fourier_calc=None,alt=False):
+def split_calc(isplits,jsplits,icoadd,jcoadd,fourier_calc=None,alt=True):
     """
     Calculate the best estimate of the signal (from mean of crosses)
     and of the noise (total - mean crosses) power.
@@ -2678,7 +2678,7 @@ class SplitSimulator(object):
         self.kseed = 1
         self.nseed = 2
         if (pss is None) and lensing:
-            pss = theory.gCl('kk',ells)[None]
+            pss = theory.gCl('kk',ells)[None,None]
         if pss is not None:
             self.fgen = MapGen((ncomp,)+shape[-2:],wcs,pss)
         self.cgen = MapGen(shape[-2:],wcs,cltt[None,None])
@@ -2719,8 +2719,11 @@ class SplitSimulator(object):
             ret = self.get_corr(seed)
             if self.dust:
                 kappa,tsz,cib = ret
-            else:
+            elif self.fgs:
                 kappa,tsz = ret
+            else:
+                kappa = ret[0]
+        
         unlensed = self.cgen.get_map(seed=(self.aseed,self.cseed,seed))
         lensed = self._lens(unlensed,kappa) if self.lensing else unlensed
         self.lensed = lensed.copy()
@@ -2751,3 +2754,59 @@ class SplitSimulator(object):
                 observed[array] = filter_map(observed[array],mask_kspace(self.shape,self.wcs,lmin=self.lmins[array]))             
                 noises[array] = filter_map(noises[array],mask_kspace(self.shape,self.wcs,lmin=self.lmins[array]))             
         return observed,noises
+
+
+class PolLensSplit(object):
+    def __init__(self,shape,wcs,beam,noise,nsplits,
+                 theory=None,
+                 aseed=1):
+        self.aseed = aseed
+        self.modlmap = enmap.modlmap(shape,wcs)
+        lmax = self.modlmap.max()
+        if theory is None: theory = cosmology.default_theory()
+        ells = np.arange(0,lmax,1)
+        cmb_ps = cosmology.enmap_power_from_orphics_theory(theory,ells=ells,lensed=False,dimensionless=False,orphics_dimensionless=False)
+        self.theory = theory
+        self.cseed = 0
+        self.kseed = 1
+        self.nseed = 2
+        pss = theory.gCl('kk',ells)[None,None]
+        self.kgen = MapGen((1,)+shape[-2:],wcs,pss)
+        self.cgen = MapGen((3,)+shape[-2:],wcs,cmb_ps)
+        self.shape, self.wcs = shape,wcs
+        self.nsplits = nsplits
+        tnoise = cosmology.noise_func(self.modlmap,0.,noise)
+        pnoise = cosmology.noise_func(self.modlmap,0.,noise) * 2.
+        self.ps_noise = enmap.zeros((3,3,)+self.shape[-2:])
+        self.ps_noise[0,0] = tnoise.copy()
+        self.ps_noise[1,1] = pnoise.copy()
+        self.ps_noise[2,2] = pnoise.copy()
+        self.ngen = MapGen((3,)+shape[-2:],wcs,self.ps_noise*nsplits)
+        self.kbeam =  gauss_beam(self.modlmap,beam)
+
+    def get_kappa(self,seed):
+        kmap = self.kgen.get_map(seed=(self.aseed,self.kseed,seed),scalar=True)
+        return kmap
+
+    def _lens(self,unlensed,kappa,lens_order=5):
+        from orphics import lensing
+        from pixell import lensing as enlensing
+        self.kappa = kappa
+        alpha = lensing.alpha_from_kappa(kappa,posmap=enmap.posmap(self.shape,self.wcs))
+        lensed = enlensing.displace_map(unlensed, alpha, order=lens_order)
+        return lensed
+
+    def get_sim(self,seed):
+        kappa = self.get_kappa(seed)[0]
+        unlensed = self.cgen.get_map(seed=(self.aseed,self.cseed,seed))
+        lensed = self._lens(unlensed,kappa) 
+        self.lensed = lensed.copy()
+        beamed = filter_map(lensed,self.kbeam)
+        observed = []
+        for split in range(self.nsplits):
+            noise = self.ngen.get_map(seed=(self.aseed,self.nseed,seed,split))
+            observed.append( beamed+noise )
+        observed = enmap.enmap(np.stack(observed),self.wcs)
+        return observed
+
+

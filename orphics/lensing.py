@@ -2313,6 +2313,7 @@ class SplitLensing(object):
         kc = k - (1./nsplits**2.)*kiisum
         return (nsplits**4.*self.qpower(kc,kc)-4.*nsplits**2.*psum+4.*psum2)/nsplits/(nsplits-1.)/(nsplits-2.)/(nsplits-3.)
 
+    
 class QE(object):
     def __init__(self,shape,wcs,cmb,xnoise,xbeam,ynoise=None,ybeam=None,ests=None,cmb_response=None):
         modlmap = enmap.modlmap(shape,wcs)
@@ -2729,8 +2730,8 @@ class L1Integral(object):
         ly,lx = enmap.lmap(shape,wcs)
         self.l1x = lx.copy()
         self.l1y = ly.copy()
-        l1y = ly[None,...] # - Ls*0
-        l1x = lx[None,...] # - Ls*0
+        l1y = ly[None,...]
+        l1x = lx[None,...]
         l1 = enmap.modlmap(shape,wcs)[None,...]
         l2y = -l1y
         l2x = Ls - l1x
@@ -2739,6 +2740,8 @@ class L1Integral(object):
         self.Ldl2 = Ls*l2x
         self.l1 = l1
         self.l2 = l2
+
+        print(self.Ldl1.shape,self.Ldl2.shape,self.l1.shape,self.l2.shape,self.l1x.shape,self.l1y.shape)
             
         if pol:
             from orphics import symcoupling as sc
@@ -2750,9 +2753,10 @@ class L1Integral(object):
             self.cost2t12 = cost2t12
             self.sint2t12 = sint2t12
 
-    def _integrate(self,integrand):
-        integral = np.trapz(y=integrand,x=self.l1x,axis=-1)
-        integral = np.trapz(y=integral,x=self.l1y,axis=-1)
+            
+    def integrate(self,integrand):
+        integral = np.trapz(y=integrand,x=self.l1x[0,:],axis=-1)
+        integral = np.trapz(y=integral,x=self.l1y[:,0],axis=-1)
         return integral
 
         
