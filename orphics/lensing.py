@@ -1309,7 +1309,7 @@ class NlGenerator(object):
         return nTX,nPX,nTY,nPY
 
         
-    def updateNoise(self,beamX,noiseTX,noisePX,tellminX,tellmaxX,pellminX,pellmaxX,beamY=None,noiseTY=None,noisePY=None,tellminY=None,tellmaxY=None,pellminY=None,pellmaxY=None,lkneesX=[0.,0.],alphasX=[1.,1.],lkneesY=[0.,0.],alphasY=[1.,1.],lxcutTX=0,lxcutTY=0,lycutTX=0,lycutTY=0,lxcutPX=0,lxcutPY=0,lycutPX=0,lycutPY=0,fgFuncX=None,beamFileX=None,fgFuncY=None,beamFileY=None,noiseFuncTX=None,noiseFuncTY=None,noiseFuncPX=None,noiseFuncPY=None):
+    def updateNoise(self,beamX,noiseTX,noisePX,tellminX,tellmaxX,pellminX,pellmaxX,beamY=None,noiseTY=None,noisePY=None,tellminY=None,tellmaxY=None,pellminY=None,pellmaxY=None,lkneesX=[0.,0.],alphasX=[1.,1.],lkneesY=[0.,0.],alphasY=[1.,1.],lxcutTX=0,lxcutTY=0,lycutTX=0,lycutTY=0,lxcutPX=0,lxcutPY=0,lycutPX=0,lycutPY=0,fgFuncX=None,beamFileX=None,fgFuncY=None,beamFileY=None,noiseFuncTX=None,noiseFuncTY=None,noiseFuncPX=None,noiseFuncPY=None,bellminY=None,bellmaxY=None):
 
         def setDefault(A,B):
             if A is None:
@@ -1324,6 +1324,9 @@ class NlGenerator(object):
         pellminY = setDefault(pellminY,pellminX)
         tellmaxY = setDefault(tellmaxY,tellmaxX)
         pellmaxY = setDefault(pellmaxY,pellmaxX)
+        bellminY = setDefault(bellminY,pellminY)
+        bellmaxY = setDefault(bellmaxY,pellmaxY)
+        
 
         self.N.lmax_T = self.N.bigell
         self.N.lmax_P = self.N.bigell
@@ -1365,6 +1368,9 @@ class NlGenerator(object):
         fMaskTY = maps.mask_kspace(self.shape,self.wcs,lmin=tellminY,lmax=tellmaxY,lxcut=lxcutTY,lycut=lycutTY)
         fMaskPX = maps.mask_kspace(self.shape,self.wcs,lmin=pellminX,lmax=pellmaxX,lxcut=lxcutPX,lycut=lycutPX)
         fMaskPY = maps.mask_kspace(self.shape,self.wcs,lmin=pellminY,lmax=pellmaxY,lxcut=lxcutPY,lycut=lycutPY)
+        fMaskBX = maps.mask_kspace(self.shape,self.wcs,lmin=pellminX,lmax=pellmaxX,lxcut=lxcutPX,lycut=lycutPX)
+        fMaskBY = maps.mask_kspace(self.shape,self.wcs,lmin=bellminY,lmax=bellmaxY,lxcut=lxcutPY,lycut=lycutPY)
+                
 
         if fgFuncX is not None:
             fg2d = fgFuncX(self.N.modLMap) #/ self.TCMB**2.
@@ -1378,8 +1384,8 @@ class NlGenerator(object):
 
         nListX = [nTX,nPX,nPX]
         nListY = [nTY,nPY,nPY]
-        fListX = [fMaskTX,fMaskPX,fMaskPX]
-        fListY = [fMaskTY,fMaskPY,fMaskPY]
+        fListX = [fMaskTX,fMaskPX,fMaskBX]
+        fListY = [fMaskTY,fMaskPY,fMaskBY]
         for i,noise in enumerate(nList):
             self.N.addNoise2DPowerXX(noise,nListX[i],fListX[i])
             self.N.addNoise2DPowerYY(noise,nListY[i],fListY[i])
