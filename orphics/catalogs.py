@@ -4,9 +4,84 @@ Utilities for dealing with galaxy catalogs, projecting catalogs into pixelated m
 
 
 import numpy as np
-from enlib import enmap, coordinates
+from pixell import enmap,curvedsky
 import healpy as hp
 from astropy.io import fits
+from orphics import maps
+
+class Pow2Cat(object):
+    def __init__(self,ells,clgg,clkg=None,clkk=None,depth_map=None,lmax=None):
+        """Initialize a catalog generator
+
+        Args:
+            ells: (nells,) array specifying multipoles at which clgg,clkg,clkk are defined
+            clgg: (nells,) array containing power spectrum of the field you want to Poisson sample from
+            clkg: (nells,) array containing cross-spectrum with the optional field you don't want to Poisson sample from (optional)
+            clkk: (nells,) array containing auto-spectrum of the field you don't want to Poisson sample from (optional)
+            depth_map: ndmap specifying depth. Max of this array will be divided out.
+                       
+        """
+        ls = np.arange(0,ells.max(),1)
+        self.lmax = ls.max()
+        clgg = maps.interp(ells,clgg)(ls)
+        if clkg is not None:
+            assert clkk is not None
+            ncomp = 2
+            clkg = maps.interp(ells,clkg)(ls)
+            clkk = maps.interp(ells,clkk)(ls)
+        else:
+            ncomp = 1
+        self.shape = (ncomp,)+depth_map.shape[-2:]
+        self.wcs = depth_map.wcs
+        ps = np.zeros((ncomp,ncomp,ls.size))
+        ps[0,0] = clgg
+        if clkg is not None:
+            ps[1,1] = clkk
+            ps[0,1] = clkg
+            ps[1,0] = clkg
+        self.depth_map = depth_map/depth_map.max()
+        assert np.all(self.depth_map>=0)
+        self.ps = ps
+        self.ncomp = ncomp
+        
+    def get_map(self,seed=None):
+        """Get correlated galaxy and kappa map """
+        alms = curvedsky.rand_alm_healpy(self.ps, lmax=self.lmax, seed=seed)
+        ncomp = 1 if len(self.shape)==2 else self.shape[0]
+        omap   = enmap.empty((ncomp,)+self.shape[-2:], self.wcs, dtype=np.float64)
+        omap = curvedsky.alm2map(alms, omap, spin=0)
+        return alms,omap
+
+    def get_cat(self,ngals,seed=None,depth_threshold=0.5,cull_voids=True,add_jitter=True):
+        """Get a catalog with total number of galaxies ngals and a kappa map that are correlated."""
+        alms,retmap = self.get_map(seed=seed)
+        if self.ncomp==1:
+            gmap = retmap[0]
+        else:
+            gmap,kmap = retmap
+            kmap -= kmap.mean()
+        gmap -= gmap.mean()
+        if cull_voids:
+            gmap[gmap<-1] = -1
+        else:
+            assert gmap.min()>-1, "The galaxy field has too much power and thus regions of underdensity < -1."
+        
+        gmodmap = gmap.copy()
+        dmap = self.depth_map
+        dmap[dmap<depth_threshold] = 0
+        pdecs,pras = gmap.posmap()
+        ngalmap = (gmodmap+1.)*dmap*np.cos(pdecs)
+        ngalmap *= (ngals/ngalmap.sum())
+        sampled = np.random.poisson(ngalmap).astype(np.float64)
+        sampled = sampled
+        Ny,Nx = self.shape[-2:]
+        pixmap = (enmap.pixmap(self.shape,self.wcs)).reshape(2,Ny*Nx)
+        nobjs = sampled.reshape(-1).astype(np.int)
+        cat = np.repeat(pixmap,nobjs,-1).astype(np.float64)
+        jitter = np.random.uniform(-0.5,0.5,size=cat.shape) if add_jitter else 0.
+        cat += jitter
+        decs,ras = np.rad2deg(enmap.pix2sky(self.shape,self.wcs,cat))
+        return ras,decs,alms,retmap
 
 def load_fits(fits_file,column_names,hdu_num=1,Nmax=None):
     hdu = fits.open(fits_file)
@@ -27,7 +102,13 @@ def select_region(ra_col,dec_col,other_cols,ra_min,ra_max,dec_min,dec_max):
     """Given ra,decs in ra_col,dec_col and a list of other lists with the
     same size as ra_col and dec_col, return newly selected ras,decs + other
     columns bounded by specified minimum and maximum ra and dec.
+
+    Wraps around 180d.
     """
+    from astropy.coordinates import Angle
+    import astropy.units as u
+
+    ra_col = Angle(ra_col * u.deg).wrap_at('180d').degree
     ret_cols = []
     for other_col in other_cols:
         ret_cols.append(other_col[np.logical_and(np.logical_and(np.logical_and(ra_col>ra_min,ra_col<ra_max),dec_col>dec_min),dec_col<dec_max)])
@@ -60,7 +141,7 @@ class CatMapper(object):
 
     """
 
-    def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial"):
+    def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial",mask=None):
 
         self.verbose = verbose
         if nside is not None:
@@ -83,8 +164,7 @@ class CatMapper(object):
             elif hp_coords in eq_coords:
                 ras_out = ras_deg
                 decs_out = decs_deg
-                lonlat = True
-                self.pixs = hp.ang2pix(nside,ras_out,decs_out,lonlat=lonlat)
+                self.pixs = hp.ang2pix(nside,ras_out,decs_out,lonlat=True)
                 
             else:
                 raise ValueError
@@ -105,7 +185,7 @@ class CatMapper(object):
         if not self.curved:
             self.counts = enmap.enmap(self.counts,self.wcs)
 
-        self.mask = np.ones(shape)
+        self.mask = np.ones(shape) if mask is None else mask
         self._counts()
 
     def get_map(self,weights=None):
@@ -113,7 +193,7 @@ class CatMapper(object):
         if self.curved:
             return np.histogram(self.pixs,bins=self.shape,weights=weights,range=[0,self.shape])[0].astype(np.float32)
         else:
-            Ny,Nx = self.shape
+            Ny,Nx = self.shape[-2:]
             return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
 
     def _counts(self):
@@ -132,6 +212,8 @@ class CatMapper(object):
     def get_delta(self):
         delta = (self.counts/self.nmean-1.)
         if not self.curved:
+            parea = maps.psizemap(delta.shape, self.wcs)*((180.*60./np.pi)**2.)
+            delta = ((delta+1.)*self.nmean/self.ngal_per_arcminsq/parea)-1.
             delta = enmap.enmap(delta,self.wcs)
         return delta
     

@@ -1,8 +1,6 @@
 from __future__ import print_function
-import camb
 import warnings
 from math import pi
-from camb import model, initialpower
 import numpy as np
 
 from scipy.interpolate import interp1d
@@ -37,17 +35,29 @@ defaultConstants = {'TCMB': 2.7255
                     ,'n_cib': 1.2
                     ,'A_tsz': 5.6
                     ,'ell0sec': 3000.
+
 }
 
-
-defaultCosmology = {'omch2': 0.12470
-                    ,'ombh2': 0.02230
-                    ,'H0': 67.0
-                    ,'ns': 0.96
+# Planck TT,TE,EE+lowP 2015 cosmology but with updated tau and minimal neutrino mass
+defaultCosmology = {'omch2': 0.1198
+                    ,'ombh2': 0.02225
+                    ,'H0': 67.3
+                    ,'ns': 0.9645
                     ,'As': 2.2e-9
                     ,'mnu': 0.06
                     ,'w0': -1.0
                     ,'tau':0.06
+                    ,'nnu':3.046
+                    ,'wa': 0.
+                    ,'Ysig': 0.127
+                    ,'gammaYsig': 0.
+                    ,'betaYsig': 0.
+                    ,'Y_star': 2.42e-10
+                    ,'alpha_ym': 1.79
+                    ,'b_ym': 0.8
+                    ,'beta_ym': 0.0
+                    ,'b_wl': 1.
+                    ,'gamma_ym': 0.0
 }
 
 
@@ -56,9 +66,16 @@ class Cosmology(object):
     A wrapper around CAMB that tries to pre-calculate as much as possible
     Intended to be inherited by other classes like LimberCosmology and 
     ClusterCosmology
-    '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True,skipPower=True,pkgrid_override=None,kmax=10.,skip_growth=True,nonlinear=True,zmax=10.,low_acc=False,z_growth=None):
 
+    Many member functions were copied/adapted from Cosmicpy:
+    http://cosmicpy.github.io/
+    '''
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,fill_zero=True,dimensionless=True,verbose=True,skipPower=True,pkgrid_override=None,kmax=10.,skip_growth=True,nonlinear=True,zmax=10.,low_acc=False,z_growth=None,camb_var=None):
+        import camb
+        from camb import model
+        
+
+        self.camb_var = camb_var
         self.dimensionless = dimensionless
         cosmo = paramDict
         self.paramDict = paramDict
@@ -68,40 +85,51 @@ class Cosmology(object):
 
 
         self.zmax = zmax
-
         self.c['TCMBmuK'] = self.c['TCMB'] * 1.0e6
-            
-        self.H0 = cosmo['H0']
-        self.h = self.H0/100.
         try:
-            self.omch2 = cosmo['omch2']
-            self.om = (cosmo['omch2']+cosmo['ombh2'])/self.h**2.
+            self.nnu = cosmo['nnu']
         except:
-            self.omch2 = (cosmo['om']-cosmo['ob'])*self.H0*self.H0/100./100.
-            self.om = cosmo['om']
-            
-        try:
-            self.ombh2 = cosmo['ombh2']
-            self.ob = cosmo['ombh2']/self.h**2.
-        except:
-            self.ombh2 = cosmo['ob']*self.H0*self.H0/100./100.
-            self.ob = cosmo['ob']
-
-
+            self.nnu = defaultCosmology['nnu']
+        self.omch2 = cosmo['omch2']
+        self.ombh2 = cosmo['ombh2']
+        if 'om' in cosmo.keys() or 'ob' in cosmo.keys(): raise NotImplementedError
         try:
             self.tau = cosmo['tau']
         except:
             self.tau = defaultCosmology['tau']
             warnings.warn("No tau specified; assuming default of "+str(self.tau))
-            
-            
-        self.mnu = cosmo['mnu']
-        self.w0 = cosmo['w0']
+        try:
+            self.mnu = cosmo['mnu']
+        except:
+            self.mnu = defaultCosmology['mnu']
+            warnings.warn("No mnu specified; assuming default of "+str(self.mnu))
+        try:
+            self.w0 = cosmo['w0']
+        except:
+            self.w0 = -1
+        try:
+            self.wa = cosmo['wa']
+        except:
+            self.wa = 0.
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
-        self.pars.set_cosmology(H0=self.H0, ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau)
+        try:
+            self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
+        except:
+            assert np.abs(self.wa)<1e-3, "Non-zero wa requires PPF, which requires devel version of pycamb to be installed."
+            print("WARNING: Could not use PPF dark energy model with pycamb. Falling back to non-PPF. Please install the devel branch of pycamb.")
+            self.pars.set_dark_energy(w=self.w0)
+        
+        try:
+            theta = cosmo['theta100']/100.
+            H0 = None
+            print("WARNING: Using theta100 parameterization. H0 ignored.")
+        except:
+            H0 = cosmo['H0']
+            theta = None
+        self.pars.set_cosmology(H0=H0, cosmomc_theta=theta,ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
         self.pars.Reion.Reionization = 0
-        self.pars.set_dark_energy(w=self.w0)
+                  
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
         self.nonlinear = nonlinear
@@ -112,9 +140,18 @@ class Cosmology(object):
         
 
         self.results= camb.get_background(self.pars)
-        self.omnuh2 = self.pars.omegan * ((self.H0 / 100.0) ** 2.)
-        self.chistar = self.results.conformal_time(0)- model.tau_maxvis.value
-        self.zstar = self.results.redshift_at_comoving_radial_distance(self.chistar)
+
+        self.H0 = self.results.hubble_parameter(0.)
+        assert self.H0>40. and self.H0<100.
+        self.h = self.H0/100.
+        
+        self.omnuh2 = self.pars.omnuh2
+
+
+        # Now fixing zstar to Planck best fit!
+        self.zstar = 1089.
+        self.chistar = self.results.comoving_radial_distance(self.zstar)
+        
         
 
         # self.rho_crit0 = 3. / (8. * pi) * (self.h*100 * 1.e5)**2. / c['G_CGS'] * c['MPC2CM'] / c['MSUN_CGS']
@@ -127,22 +164,34 @@ class Cosmology(object):
             from scipy.interpolate import interp1d
             self.clttfunc = interp1d(ells,cltts,bounds_error=False,fill_value=0.)
 
-        elif not(skipCls):
+        if not(low_acc):
+            self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
+        else:
+            self.pars.set_accuracy(AccuracyBoost=1.0, lSampleBoost=1.0, lAccuracyBoost=1.0)
+            
+        if nonlinear:
+            self.pars.NonLinear = model.NonLinear_both
+        else:
+            self.pars.NonLinear = model.NonLinear_none
+        if not(skipCls) and (clTTFixFile is None):
             if verbose: print("Generating theory Cls...")
             if not(low_acc):
-                self.pars.set_accuracy(AccuracyBoost=2.0, lSampleBoost=4.0, lAccuracyBoost=4.0)
-                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3, max_eta_k=2*(lmax+500))
+                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=3 if nonlinear else 0, max_eta_k=2*(lmax+500))
+            else:
+                self.pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=1 if nonlinear else 0, max_eta_k=2*(lmax+500))
+            if nonlinear:
+                self.pars.NonLinear = model.NonLinear_both
+            else:
+                self.pars.NonLinear = model.NonLinear_none
             theory = loadTheorySpectraFromPycambResults(self.results,self.pars,lmax,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lmax,pickling=pickling,fill_zero=fill_zero,get_dimensionless=dimensionless,verbose=verbose,prefix="_low_acc_"+str(low_acc))
             self.clttfunc = lambda ell: theory.lCl('TT',ell)
             self.theory = theory
 
-            # ells = np.arange(2,lmax,1)
-            # cltts = self.clttfunc(ells)
-            # np.savetxt("data/cltt_lensed_Feb18.txt",np.vstack((ells,cltts)).transpose())
-
             
         self.kmax = kmax
-        if not(skipPower): self._initPower(pkgrid_override)
+        if not(skipPower):
+            self.results.calc_transfers(self.pars)
+            self._initPower(pkgrid_override)
 
         self.deltac = 1.42
         self.Omega_m = (self.ombh2+self.omch2)/self.h**2.  # DOESN'T INCLUDE NEUTRINOS
@@ -202,18 +251,36 @@ class Cosmology(object):
         if not(skip_growth): self._init_growth_rate()
 
     def growth_scale_dependent(self,ks,z,comp):
-        growthfn = self.results.get_redshift_evolution(ks, z, [comp])  #Extract the linear growth function from CAMB.
-        #growthfn0 = self.results.get_redshift_evolution(ks, 0, [comp])  
- 
-        gcomp = growthfn #/growthfn0
+        # f(k) exact
+        growthfn = self.results.get_redshift_evolution(ks, z, [comp])
+        gcomp = growthfn
         return gcomp
 
+    def growth_scale_independent(self,z,zmax=None,numzs=100000):
+        # f = dlnD/dlna
+        if zmax is None: zmax = z + 0.1
+        a = np.linspace(self.z2a(zmax),1,numzs)
+        Ds = self.D_growth(a) 
+        fapprox = np.gradient(np.log(Ds),np.log(a))
+        az = self.z2a(z)
+        return interp1d(a,fapprox)(az)
+
+    def growth_approximate(self,z):
+        # Approximate growth rate f calculation from Dodelson Eq 9.67
+        hfactor = self.H0**2./self.results.hubble_parameter(z)**2.
+        omegam = (self.pars.omegab+self.pars.omegac+self.pars.omegan) * ((1.+z)**3.) *hfactor
+        omegav = self.pars.omegav * hfactor
+        fapprox = omegam**0.6 + omegav*(1.+omegam/2.)/70.
+        return fapprox
+    
 
         
     def _initPower(self,pkgrid_override=None):
+        import camb
         print("initializing power...")
         if pkgrid_override is None:
-            self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zmax)
+            self.pars.Transfer.accurate_massive_neutrinos = True
+            self.PK = camb.get_matter_power_interpolator(self.pars, nonlinear=self.nonlinear,hubble_units=False, k_hunit=False, kmax=self.kmax, zmax=self.zmax,var1=self.camb_var,var2=self.camb_var)
         else:
             class Ptemp:
                 def __init__(self,pkgrid):
@@ -228,7 +295,7 @@ class Cosmology(object):
     def _init_growth_rate(self):
         self.Ds = []
         for a in self.atab:
-            self.Ds.append( self.growth(a) )
+            self.Ds.append( self.D_growth(a) )
         self.Ds = np.array(self.Ds)
         self.fs = np.gradient(self.Ds,np.diff(self.atab)[0]) * self.atab/self.Ds
         self.Dfunc = interp1d(self.atab,self.Ds)
@@ -275,93 +342,117 @@ class Cosmology(object):
         return ne0_SI
 
     
-        
-    def transfer(self, k, type='eisenhu_osc'):
-        w_m = self.omch2 + self.ombh2 #self.Omega_m * self.h**2
-        w_b = self.ombh2 #self.Omega_b * self.h**2
-        fb = self.ombh2 / (self.omch2+self.ombh2) # self.Omega_b / self.Omega_m
-        fc = self.omch2 / (self.omch2+self.ombh2) # self.ombh2 #(self.Omega_m - self.Omega_b) / self.Omega_m
-        alpha_gamma = 1.-0.328*np.log(431.*w_m)*w_b/w_m + \
-            0.38*np.log(22.3*w_m)*(fb)**2
-        gamma_eff = self.Omega_m*self.h * \
-            (alpha_gamma + (1.-alpha_gamma)/(1.+(0.43*k*self.sh_d)**4))
+    #cdm transfer functions. normalized to be 1 at large scales.
+    def transfer(self, k, type='camb'):
+        if (type == 'camb'):
+            transferdata = self.results.get_matter_transfer_data()
+            Tk_camb_matter = transferdata.transfer_z('delta_cdm', z_index=0)
+            Tk_camb_matter = Tk_camb_matter/Tk_camb_matter[0] 
+            Tk_camb_matter_k = transferdata.q/self.h
+            #interpolate to required sampling
+            interpolation = interp1d(Tk_camb_matter_k,Tk_camb_matter,bounds_error=False,fill_value=0.)
+            return interpolation(k)
 
-        res = np.zeros_like(k)
+        if (type == 'eisenhu')or(type == 'eisenhu_osc'):
+            w_m = self.omch2 + self.ombh2 #self.Omega_m * self.h**2
+            w_b = self.ombh2 #self.Omega_b * self.h**2
+            fb = self.ombh2 / (self.omch2+self.ombh2) # self.Omega_b / self.Omega_m
+            fc = self.omch2 / (self.omch2+self.ombh2) # self.ombh2 #(self.Omega_m - self.Omega_b) / self.Omega_m
+            alpha_gamma = 1.-0.328*np.log(431.*w_m)*w_b/w_m + \
+                0.38*np.log(22.3*w_m)*(fb)**2
+            gamma_eff = self.Omega_m*self.h * \
+                (alpha_gamma + (1.-alpha_gamma)/(1.+(0.43*k*self.sh_d)**4))
 
-        if(type == 'eisenhu'):
+            res = np.zeros_like(k)
 
-            q = k * pow(self.tcmb/2.7, 2)/gamma_eff
+            if(type == 'eisenhu'):
 
-            # EH98 (29) #
-            L = np.log(2.*np.exp(1.0) + 1.8*q)
-            C = 14.2 + 731.0/(1.0 + 62.5*q)
-            res = L/(L + C*q*q)
+                q = k * pow(self.tcmb/2.7, 2)/gamma_eff
 
-        elif(type == 'eisenhu_osc'):
-            # Cold dark matter transfer function
+                # EH98 (29) #
+                L = np.log(2.*np.exp(1.0) + 1.8*q)
+                C = 14.2 + 731.0/(1.0 + 62.5*q)
+                res = L/(L + C*q*q)
 
-            # EH98 (11, 12)
-            a1 = pow(46.9*w_m, 0.670) * (1.0 + pow(32.1*w_m, -0.532))
-            a2 = pow(12.0*w_m, 0.424) * (1.0 + pow(45.0*w_m, -0.582))
-            alpha_c = pow(a1, -fb) * pow(a2, -fb**3)
-            b1 = 0.944 / (1.0 + pow(458.0*w_m, -0.708))
-            b2 = pow(0.395*w_m, -0.0266)
-            beta_c = 1.0 + b1*(pow(fc, b2) - 1.0)
-            beta_c = 1.0 / beta_c
+            elif(type == 'eisenhu_osc'):
+                # Cold dark matter transfer function
 
-            # EH98 (19). [k] = h/Mpc
-            def T_tilde(k1, alpha, beta):
-                # EH98 (10); [q] = 1 BUT [k] = h/Mpc
-                q = k1 / (13.41 * self._k_eq)
-                L = np.log(np.exp(1.0) + 1.8 * beta * q)
-                C = 14.2 / alpha + 386.0 / (1.0 + 69.9 * pow(q, 1.08))
-                T0 = L/(L + C*q*q)
-                return T0
+                # EH98 (11, 12)
+                a1 = pow(46.9*w_m, 0.670) * (1.0 + pow(32.1*w_m, -0.532))
+                a2 = pow(12.0*w_m, 0.424) * (1.0 + pow(45.0*w_m, -0.582))
+                alpha_c = pow(a1, -fb) * pow(a2, -fb**3)
+                b1 = 0.944 / (1.0 + pow(458.0*w_m, -0.708))
+                b2 = pow(0.395*w_m, -0.0266)
+                beta_c = 1.0 + b1*(pow(fc, b2) - 1.0)
+                beta_c = 1.0 / beta_c
 
-            # EH98 (17, 18)
-            f = 1.0 / (1.0 + (k * self.sh_d / 5.4)**4)
-            Tc = f * T_tilde(k, 1.0, beta_c) + \
-                (1.0 - f) * T_tilde(k, alpha_c, beta_c)
+                # EH98 (19). [k] = h/Mpc
+                def T_tilde(k1, alpha, beta):
+                    # EH98 (10); [q] = 1 BUT [k] = h/Mpc
+                    q = k1 / (13.41 * self._k_eq)
+                    L = np.log(np.exp(1.0) + 1.8 * beta * q)
+                    C = 14.2 / alpha + 386.0 / (1.0 + 69.9 * pow(q, 1.08))
+                    T0 = L/(L + C*q*q)
+                    return T0
 
-            # Baryon transfer function
-            # EH98 (19, 14, 21)
-            y = (1.0 + self._z_eq) / (1.0 + self._z_d)
-            x = np.sqrt(1.0 + y)
-            G_EH98 = y * (-6.0 * x +
-                          (2.0 + 3.0*y) * np.log((x + 1.0) / (x - 1.0)))
-            alpha_b = 2.07 * self._k_eq * self.sh_d * \
-                pow(1.0 + self._R_d, -0.75) * G_EH98
+                # EH98 (17, 18)
+                f = 1.0 / (1.0 + (k * self.sh_d / 5.4)**4)
+                Tc = f * T_tilde(k, 1.0, beta_c) + \
+                    (1.0 - f) * T_tilde(k, alpha_c, beta_c)
 
-            beta_node = 8.41 * pow(w_m, 0.435)
-            tilde_s = self.sh_d / pow(1.0 + (beta_node /
-                                             (k * self.sh_d))**3, 1.0/3.0)
+                # Baryon transfer function
+                # EH98 (19, 14, 21)
+                y = (1.0 + self._z_eq) / (1.0 + self._z_d)
+                x = np.sqrt(1.0 + y)
+                G_EH98 = y * (-6.0 * x +
+                              (2.0 + 3.0*y) * np.log((x + 1.0) / (x - 1.0)))
+                alpha_b = 2.07 * self._k_eq * self.sh_d * \
+                    pow(1.0 + self._R_d, -0.75) * G_EH98
 
-            beta_b = 0.5 + fb + (3.0 - 2.0 * fb) * np.sqrt((17.2 * w_m)**2 + 1.0)
+                beta_node = 8.41 * pow(w_m, 0.435)
+                tilde_s = self.sh_d / pow(1.0 + (beta_node /
+                                                 (k * self.sh_d))**3, 1.0/3.0)
 
-            # [tilde_s] = Mpc/h
-            Tb = (T_tilde(k, 1.0, 1.0) / (1.0 + (k * self.sh_d / 5.2)**2) +
-                  alpha_b / (1.0 + (beta_b/(k * self.sh_d))**3) *
-                  np.exp(-pow(k / self._k_silk, 1.4))) * np.sinc(k*tilde_s/np.pi)
+                beta_b = 0.5 + fb + (3.0 - 2.0 * fb) * np.sqrt((17.2 * w_m)**2 + 1.0)
 
-            # Total transfer function
-            res = fb * Tb + fc * Tc
-        return res
+                # [tilde_s] = Mpc/h
+                Tb = (T_tilde(k, 1.0, 1.0) / (1.0 + (k * self.sh_d / 5.2)**2) +
+                      alpha_b / (1.0 + (beta_b/(k * self.sh_d))**3) *
+                      np.exp(-pow(k / self._k_silk, 1.4))) * np.sinc(k*tilde_s/np.pi)
 
-    def growth(self, a):
+                # Total transfer function
+                res = fb * Tb + fc * Tc
+            return res
 
-        if self._da_interp is None:
-            def D_derivs(y, x):
-                q = (2.0 - 0.5 * (self.Omega_m_a(x) +
-                                  (1.0 + 3.0 * self.w(x))
-                                  * self.Omega_de_a(x)))/x
-                r = 1.5*self.Omega_m_a(x)/x/x
-                return [y[1], -q * y[1] + r * y[0]]
-            y0 = [self._amin, 1]
+    def D_growth(self, a, type="camb_z0norm"):
+        # D(a)
+        if (type=="camb_z0norm")or(type=="camb_anorm"):
+            if (self._da_interp is None) or (self._da_interp_type == "cosmicpy"):
+                ks = np.logspace(np.log10(1e-5),np.log10(1.),num=100) 
+                zs = self.a2z(self.atab)
+                deltakz = self.results.get_redshift_evolution(ks, zs, ['delta_cdm']) #index: k,z,0
+                D_camb = deltakz[0,:,0]/deltakz[0,0,0]
+                self._da_interp = interp1d(self.atab, D_camb, kind='linear')
+                self._da_interp_type = "camb"
+            if (type=="camb_z0norm"):  #normed so that D(a=1)=1
+                return self._da_interp(a)/self._da_interp(1.0)
+            if (type=="camb_anorm"):  #normed so that D(a)=a in matter domination
+                return self._da_interp(a)/self._da_interp(1.0)*0.76
 
-            y = odeint(D_derivs, y0, self.atab)
-            self._da_interp = interp1d(self.atab, y[:, 0], kind='linear')
+        elif (type=="cosmicpy"): #also z0 norm
+            if (self._da_interp is None) or (self._da_interp_type == "camb"):
+                def D_derivs(y, x):
+                    q = (2.0 - 0.5 * (self.Omega_m_a(x) +
+                                      (1.0 + 3.0 * self.w(x))
+                                      * self.Omega_de_a(x)))/x
+                    r = 1.5*self.Omega_m_a(x)/x/x
+                    return [y[1], -q * y[1] + r * y[0]]
+                y0 = [self._amin, 1]
 
-        return self._da_interp(a)/self._da_interp(1.0)
+                y = odeint(D_derivs, y0, self.atab)
+                self._da_interp = interp1d(self.atab, y[:, 0], kind='linear')
+                self._da_interp_type = "cosmicpy"
+            return self._da_interp(a)/self._da_interp(1.0)
         
     def Omega_m_a(self, a):
         return self.Omega_m * pow(a, -3) / self.Esqr(a)
@@ -384,14 +475,8 @@ class Cosmology(object):
     def z2a(self,z):
         return 1.0/(1.0 + z)
 
-    def getGrowthApprox(self,z):
-        # Approximate growth rate calculation from Dodelson Eq 9.67
-        hfactor = self.H0**2./self.results.hubble_parameter(z)**2.
-        omegam = (self.pars.omegab+self.pars.omegac+self.pars.omegan) * ((1.+z)**3.) *hfactor
-        omegav = self.pars.omegav * hfactor
-        fapprox = omegam**0.6 + omegav*(1.+omegam/2.)/70.
-        return fapprox
-
+    def a2z(self,a):
+        return (1.0/a)-1.0
     
 
 
@@ -414,8 +499,8 @@ class LimberCosmology(Cosmology):
 
     pkgrid_override can be a RectBivariateSpline object such that camb.PK.P(z,k,grid=True) returns the same as pkgrid_override(k,z)
     '''
-    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=1000,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False,skip_growth=True,dimensionless=True):
-        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=skipPower,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc,skip_growth=skip_growth,dimensionless=dimensionless)
+    def __init__(self,paramDict=defaultCosmology,constDict=defaultConstants,lmax=2000,clTTFixFile=None,skipCls=False,pickling=False,numz=1000,kmax=42.47,nonlinear=True,fill_zero=True,skipPower=False,pkgrid_override=None,zmax=1100.,low_acc=False,skip_growth=True,dimensionless=True,camb_var=None):
+        Cosmology.__init__(self,paramDict,constDict,lmax=lmax,clTTFixFile=clTTFixFile,skipCls=skipCls,pickling=pickling,fill_zero=fill_zero,pkgrid_override=pkgrid_override,skipPower=skipPower,kmax=kmax,nonlinear=nonlinear,zmax=zmax,low_acc=low_acc,skip_growth=skip_growth,dimensionless=dimensionless,camb_var=camb_var)
 
 
         self.kmax = kmax
@@ -618,16 +703,18 @@ def unpack_cmb_theory(theory,ells,lensed=False):
 
     return cltt, clee, clte, clbb
 
-def enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=True,orphics_dimensionless=True,TCMB=2.7255e6):
+def enmap_power_from_orphics_theory(theory,lmax=None,ells=None,lensed=False,dimensionless=True,orphics_dimensionless=True,TCMB=2.7255e6):
     if orphics_dimensionless and dimensionless: tmul = 1.
     if orphics_dimensionless and not(dimensionless): tmul = TCMB**2.
     if not(orphics_dimensionless) and not(dimensionless): tmul = 1.
     if not(orphics_dimensionless) and dimensionless: tmul = 1./TCMB**2.
     
-    
-    fine_ells = np.arange(0,lmax,1)
-    cltt, clee, clte, clbb = unpack_cmb_theory(theory,fine_ells,lensed=lensed)
-    ps = np.zeros((3,3,fine_ells.size))
+    oned = False
+    if ells is None:
+        ells = np.arange(0,lmax,1)
+    if ells.ndim==1: oned = True
+    cltt, clee, clte, clbb = unpack_cmb_theory(theory,ells,lensed=lensed)
+    ps = np.zeros((3,3,ells.size)) if oned else np.zeros((3,3,ells.shape[0],ells.shape[1]))
     ps[0,0] = cltt
     ps[1,1] = clee
     ps[0,1] = clte
@@ -726,7 +813,8 @@ class TheorySpectra:
 
     def __init__(self):
 
-
+        self.always_unlensed = False
+        self.always_lensed = True
         self._uCl={}
         self._lCl={}
         self._gCl = {}
@@ -777,13 +865,6 @@ class TheorySpectra:
             fillval = 0.            
             f = interp1d(ell[ell<lpad],Cl[ell<lpad],bounds_error=False,fill_value=fillval)
                     
-        # if not(fill_zero):
-        #     fillval = Cl[ell<lpad][-1]
-        # else:
-        #     fillval = 0.
-            
-        # f=interp1d(ell[ell<lpad],Cl[ell<lpad],kind=interporder,bounds_error=False,fill_value=fillval)
-        
         if lensed:
             self._lCl[XYType]=f
         else:
@@ -814,18 +895,16 @@ class TheorySpectra:
                 raise
 
     def uCl(self,XYType,ell):
+        if self.always_lensed:
+            assert not(self.always_unlensed)
+            return self.lCl(XYType,ell)
         return self._Cl(XYType,ell,lensed=False)
     def lCl(self,XYType,ell):
+        if self.always_unlensed:
+            assert not(self.always_lensed)
+            return self.uCl(XYType,ell)
         return self._Cl(XYType,ell,lensed=True)
     
-    def __getstate__(self):
-        # Clkk2d is not pickled yet!!!
-        return self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY
-
-
-
-    def __setstate__(self, state):
-        self.verbose, self.lxMap,self.lyMap,self.modLMap,self.thetaMap,self.lx,self.ly, self.lxHatMap, self.lyHatMap,self.uClNow2d, self.uClFid2d, self.lClFid2d, self.noiseXX2d, self.noiseYY2d, self.fMaskXX, self.fMaskYY, self.lmax_T, self.lmax_P, self.defaultMaskT, self.defaultMaskP, self.bigell, self.gradCut,self.Nlkk,self.pixScaleX,self.pixScaleY = state
 
 
 def validateMapType(mapXYType):
@@ -834,9 +913,9 @@ def validateMapType(mapXYType):
       " letter combination of T, E and B. e.g TT or TE."+bcolors.ENDC
 
 
-def default_theory():
+def default_theory(lpad=9000):
     cambRoot = os.path.dirname(__file__)+"/../data/Aug6_highAcc_CDM"
-    return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
+    return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lpad,get_dimensionless=False)
     
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
     '''
@@ -1229,3 +1308,255 @@ def power_from_theory(ells,theory,lensed=True,pol=False):
         ps[0,1] = cfunc('TE',ells)
         ps[1,0] = cfunc('TE',ells)
     return ps
+
+
+
+def fk_comparison(param,z,val1,val2,oparams=None):
+
+    params = defaultCosmology
+    params[param] = val1
+
+    if oparams is not None:
+        for key in oparams.keys():
+            params[key] = oparams[key]
+
+    cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True)
+    ks = np.logspace(np.log10(1e-4),np.log10(0.3),500)
+    comp = 'growth'
+
+    gfunc = lambda cci: cci.results.get_redshift_evolution(ks, z, [comp])
+    g1 = gfunc(cc)
+    
+    g1approx2 = cc.growth_scale_independent(z)
+    params = defaultCosmology
+    params[param] = val2
+    if oparams is not None:
+        for key in oparams.keys():
+            params[key] = oparams[key]
+
+    
+    cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True)
+    g2 = gfunc(cc)
+    
+    g2approx2 = cc.growth_scale_independent(z)
+    from orphics import io
+    pl = io.Plotter(xlabel='k',ylabel='$f(k)$',xscale='log')
+    pl.add(ks,g1.ravel(),label=param+'='+str(val1),color="C0")
+    pl.add(ks,g2.ravel(),label=param+'='+str(val2),color="C1")
+    pl.hline(y=g1approx2,color="C0")
+    pl.hline(y=g2approx2,color="C1")
+    pl.legend(loc = 'upper right')
+    pl.done()
+
+def pk_comparison(param,z,val1,val2,oparams=None):
+
+    params = defaultCosmology
+    params[param] = val1
+
+    if oparams is not None:
+        for key in oparams.keys():
+            params[key] = oparams[key]
+
+    cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True,skipPower=False)
+    ks = np.logspace(np.log10(1e-4),np.log10(0.3),500)
+
+    pk1 = cc.PK.P(z, ks, grid=False)
+    
+    params = defaultCosmology
+    params[param] = val2
+    if oparams is not None:
+        for key in oparams.keys():
+            params[key] = oparams[key]
+
+    
+    cc = Cosmology(params,skipCls=True,zmax=z+1,kmax=10,low_acc=True,skipPower=False)
+    pk2 = cc.PK.P(z, ks, grid=False)
+
+    
+    from orphics import io
+    pl = io.Plotter(xlabel='k',ylabel='$P(k)$',xscale='log',yscale='log')
+    pl.add(ks,pk1.ravel(),label=param+'='+str(val1),color="C0")
+    pl.add(ks,pk2.ravel(),label=param+'='+str(val2),color="C1")
+    pl.legend(loc = 'upper right')
+    pl.done()
+    
+    pl = io.Plotter(xlabel='k',ylabel='$\Delta P(k) / P$',xscale='log')
+    pl.add(ks,(pk2.ravel()-pk1.ravel())/pk2.ravel(),label=param+'='+str(val1),color="C0")
+    pl.legend(loc = 'upper right')
+    pl.done()
+
+
+
+
+def class_cls(lmax,params=None,cosmo=None,zmin=None,zmax=None,bias=None,dndz_file=None):
+    from classy import Class
+    smean = (zmin+zmax)/2.
+    shalfwidth = (zmax-zmin)/2.
+    print(smean,shalfwidth)
+
+    # Define your cosmology (what is not specified will be set to CLASS default parameters)
+    oparams = {
+        'output': 'tCl lCl dCl',
+        'l_max_scalars': lmax,
+        'lensing': 'yes',
+        'A_s': 2.3e-9,
+        'n_s': 0.9624, 
+        'h': 0.6711,
+        'omega_b': 0.022068,
+        'omega_cdm': 0.12029,
+        'selection':'tophat',
+        'selection_mean':'%f'%smean,
+        'selection_width': '%f'%shalfwidth,
+        'selection_bias':'%f'%bias,
+        'number count contributions' : 'density, rsd, lensing, gr',
+        'l_max_lss':lmax,'l_max_scalars':lmax}
+
+    if dndz_file is not None: oparams['dNdz_selection'] = '%s'%dndz_file
+    if params is not None:
+        for key in params.keys():
+            oparams[key] = params[key]
+
+    if cosmo is None:
+        cosmo = Class()
+        cosmo.set(oparams)
+        cosmo.compute()
+
+    cls = cosmo.density_cl(lmax)
+    cls2 = cosmo.lensed_cl(lmax)
+
+    clpg = cls['pd'][0]
+    clgg = cls['dd'][0]
+    clpp = cls2['pp']
+    ells = cls['ell']
+    assert np.all(np.isclose(ells,cls2['ell']))
+
+    retcls = {}
+    retcls['kg'] = clpg * ells * (ells+1.)/2.
+    retcls['kk'] = clpp * (ells * (ells+1.)/2.)**2.
+    retcls['gg'] = clgg
+    retcls['ells'] = ells
+
+    return retcls,cosmo,params
+    
+
+
+
+class ClassCosmology(object):
+
+    def __init__(self,params,pol=True,gal=True):
+
+        oparams = {
+            'output': 'tCl lCl',
+            'l_max_scalars': lmax,
+            'lensing': 'yes',
+            'A_s': 2.3e-9,
+            'n_s': 0.9624, 
+            'h': 0.6711,
+            'omega_b': 0.022068,
+            'omega_cdm': 0.12029,
+            'selection':'tophat',
+            'selection_mean':'%f'%smean,
+            'selection_width': '%f'%shalfwidth,
+            'selection_bias':'%f'%bias,
+            'number count contributions' : 'density, rsd, lensing, gr',
+            'dNdz_selection':'%s'%dndz_file,
+            'l_max_lss':lmax,'l_max_scalars':lmax}
+
+
+def kmode_derivatives(ks,mus,param_list,fid_dict,step_dict,\
+                      scale_growth=True,rsd=False,linear=False,low_acc=True):
+    pass
+    
+def kmode_fisher(ks,mus,param_list,dPgg,dPgv,dPvv,fPgg,fPgv,fPvv,Ngg,Nvv, \
+                 verbose=False):
+    """
+    Fisher matrix for fields g(k,mu) and v(k,mu).
+    Returns F[g+v] and F[g]
+    dPgg, dPgv, dPvv are dictionaries of derivatives.
+    fPgg, fPgv, fPvv are fiducial powers.
+    """
+    from orphics.stats import FisherMatrix
+    # Populate Fisher matrix
+    num_params = len(param_list)
+    param_combs = itertools.combinations_with_replacement(param_list,2)
+    Fisher = np.zeros((num_params,num_params))
+    FisherG = np.zeros((num_params,num_params))
+    for param1,param2 in param_combs:
+        i = param_list.index(param1)
+        j = param_list.index(param2)
+        if verbose: print("Calculating Fisher for ",param1,param2)
+        integral = 0.
+        integralG = 0.
+        dCov1 = np.array([[dPgg[param1],dPgv[param1]],
+                       [dPgv[param1],dPvv[param1]]])
+        dCov2 = np.array([[dPgg[param2],dPgv[param2]],
+                       [dPgv[param2],dPvv[param2]]])
+        Cov = np.array([[Pgg_fid+Ngg,Pgv_fid],
+                       [Pgv_fid,Pvv_fid+Nvv]])
+        # Integrate over mu and k
+        for mu_id,mu in enumerate(mus[:-1]):                                                                                                     
+            dmu = mus[mu_id+1]-mus[mu_id]
+            for k_id,k in enumerate(ks[:-1]):
+                dk = ks[k_id+1]-ks[k_id]
+                dC1 = dCov1[:,:,mu_id,k_id]
+                dC2 = dCov2[:,:,mu_id,k_id]
+                Cinv = np.linalg.inv(Cov[:,:,mu_id,k_id])
+                CinvG = 1./Cov[0,0,mu_id,k_id]
+                trace = np.trace(np.dot(np.dot(dC1,Cinv),np.dot(dC2,Cinv)))
+                traceG = dC1[0,0]*dC2[0,0]*CinvG**2.
+                pref = (k**2.)*dk*V/(2.*np.pi)**2./2.*dmu
+                integral += pref*trace
+                integralG += pref*traceG
+        Fisher[i,j] = integral
+        if j!=i: Fisher[j,i] = integral
+        FisherG[i,j] = integralG
+        if j!=i: FisherG[j,i] = integralG
+    return stats.FisherMatrix(Fisher,param_list), \
+        stats.FisherMatrix(FisherG,param_list)
+
+def Pgg_Pvv_Pgv(ks,z,bg_scale=None,scale_growth=True,camb_kmax=10., \
+                low_acc=True,camb_var="delta_nonu",nonlinear=True):
+    """
+    All power spectra
+    params is a dictionary of cosmology and other parameters
+    bg_scale -- scale-dependent b(k) if any
+    """
+    # Load default params
+    fparams = defaultCosmology
+    # Override with params in passed dict
+    for param in params.keys():
+        fparams[param] = params[param]
+    # Hide output
+    with io.nostdout():
+        # Load cosmology object
+        cc = cosmology.Cosmology(fparams,skipCls=True,skipPower=False, \
+                                 skip_growth=False,zmax=z+1.,kmax=camb_kmax, \
+                                 low_acc=low_acc,camb_var=camb_var, \
+                                 nonlinear=nonlinear)
+    # Load galaxy bias
+    if bg_scale is None: bg = params['bg']
+    # Growth rate
+    f = cc.growth_scale_dependent(ks,z,'growth').ravel() if scale_growth \
+        else cc.growth_scale_independent(z)
+    # b^2 factor with anisotropy if rsd is True
+    bgeff = bg+f*fmu**2.
+    prefgg = bgeff**2.
+    # the isotropic matter-matter power
+    pm = cc.PK.P(z, ks, grid=False).ravel()
+    # reshaped to (mu,k)
+    pmu = np.resize(pm,(mus.size,ks.size))
+    # anisotropic galaxy power
+    retvalgg = prefgg * pmu * Wphoto**2.
+    # z -> a
+    ascale = cc.z2a(z)
+    # H(z)
+    Hz = cc.results.h_of_z(z)
+    # (faH/k)
+    fahk = f*ascale*Hz/ks
+    # Pvv = (faH/k)^2 * Pmm
+    prefvv = fahk**2.
+    retvalvv = prefvv * pmu
+    # Pgv = bgeff*(faH/k)*Pmm
+    prefgv = fahk*bgeff*Wphoto
+    retvalgv = prefgv * pmu
+    return retvalgg,retvalgv,retvalvv

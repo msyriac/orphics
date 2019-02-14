@@ -2,20 +2,191 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from enlib import enmap
+from pixell import enmap, utils
+try:
+    from pixell import lensing as enlensing
+except:
+    print("WARNING: Couldn't load pixell lensing. Some features will be unavailable.")
 
 from scipy.integrate import simps
 from scipy.interpolate import splrep,splev
 
 from scipy.fftpack import fftshift,ifftshift,fftfreq
 from scipy.interpolate import interp1d
-from enlib.fft import fft,ifft
+from pixell.fft import fft,ifft
 
 from orphics.stats import bin2D
 
 import time
-import cPickle as pickle
+from six.moves import cPickle as pickle
 
+from orphics import stats
+
+def validate_geometry(shape,wcs,verbose=False):
+    area = enmap.area(shape,wcs)*(180./np.pi)**2.
+    if verbose: print("Geometry area : ", area, " sq.deg.")
+    if area>41252.:
+        print("WARNING: Geometry has area larger than full-sky.")
+        print(shape,wcs)
+    if area<(1./60./60.):
+        print("WARNING: Geometry has area less than 1 arcmin^2.")
+        print(shape,wcs)
+    res = np.rad2deg(maps.resolution(shape,wcs))
+    if verbose: print("Geometry pixel width : ", res*60., " arcmin.")
+    if res>30.0:
+        print("WARNING: Geometry has pixel larger than 30 degrees.")
+        print(shape,wcs)
+    if res<(1./60./60.):
+        print("WARNING: Geometry has pixel smaller than 1 arcsecond.")
+        print(shape,wcs)
+
+
+
+
+def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin=None,overdensity=200.,critical=False,at_cluster_z=True):
+    # mass in msolar/h
+    # cc Cosmology object
+    modrmap = enmap.modrmap(shape,wcs)
+    binner = bin2D(modrmap,bin_edges_arcmin*np.pi/180./60.)
+    k = nfw_kappa(mass,modrmap,cc,zL=z,concentration=conc,overdensity=overdensity,critical=critical,atClusterZ=at_cluster_z)
+    kmask = maps.mask_kspace(shape,wcs,lmin=lmin,lmax=lmax)
+    kf = maps.filter_map(k,kmask)
+    cents,k1d = binner.bin(kf)
+    return cents,k1d
+
+def fit_nfw_profile(profile_data,profile_cov,masses,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin=None,
+                    overdensity=200.,critical=False,at_cluster_z=True,
+                    mass_guess=2e14,sigma_guess=2e13):
+    """
+    Returns
+    lnlikes - actual lnlike as function of masses
+    like_fit - gaussian fit as function of masses
+    fit_mass - fit mass
+    mass_err - fit mass err
+    """
+    from orphics.stats import fit_gauss
+    cinv = np.linalg.inv(profile_cov)
+    lnlikes = []
+    for mass in masses:
+        cents,profile_theory = binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin,overdensity,critical,at_cluster_z)
+        diff = profile_data - profile_theory
+        lnlike = -0.5 * np.dot(np.dot(diff,cinv),diff)
+        lnlikes.append(lnlike)
+    fit_mass,mass_err,_,_ = fit_gauss(masses,np.exp(lnlikes),mu_guess=mass_guess,sigma_guess=sigma_guess)
+    gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
+    like_fit = gaussian(masses,fit_mass,mass_err)
+    return np.array(lnlikes),np.array(like_fit),fit_mass,mass_err
+
+def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
+    """Given a cutout kappa map centered on a cluster and a redshift,
+    returns a mass estimate and variance of the estimate by applying a matched filter.
+
+    Imagine that reliable richness estimates and redshifts exist for each cluster.
+    We split the sample into n richness bins.
+    We go through each bin. This bin has a mean richness and a mean redshift. We convert this to a fiducial mean mass and mean concentration.
+    We choose a template with this mean mass and mean concentration.
+    We do a reconstruction on each cluster for each array. We now have a 2D kappa measurement. We apply MF to this with the template.
+    We get a relative amplitude for each cluster, which we convert to a mass for each cluster.
+
+    We want a mean mass versus mean richness relationship.
+
+
+    Step 1
+    Loop through each cluster. 
+    Cut out patches from each array split-coadd and split.
+    Estimate noise spectrum from splits for each array.
+    Use noise spectra to get optimal coadd of all arrays and splits of coadds.
+    Use coadd for reconstruction, with coadd noise from splits in weights.
+    For gradient, use Planck.
+    Save reconstructions and 2d kappa noise to disk.
+    Repeat above for 100x random locations and save only mean to disk.
+    Postprocess by loading each reconstruction, subtract meanfield, crop out region where taper**2 < 1 with some threshold.
+    Verify above by performing on simulations to check that cluster profile is recovered.
+
+    Step 2
+    For each richness bin, use fiducial mass and concentration and mean redshift to choose template.
+    For each cluster in each richness bin, apply MF and get masses. Find mean mass in bin. Iterate above on mass until converged.
+    This provides a mean mass, concentration for each richness bin.
+
+
+    
+    
+    """
+    shape,wcs = kappa_recon.shape,kappa_recon.wcs
+    mf = maps.MatchedFilter(shape,wcs,template,kappa_noise_2d)
+    mf.apply(kappa_recon,kmask=kmask)
+
+def alpha_from_kappa(kappa,posmap=None):
+    phi,_ = kappa_to_phi(kappa,kappa.modlmap(),return_fphi=True)
+    grad_phi = enmap.grad(phi)
+    if posmap is None: posmap = enmap.posmap(kappa.shape,kappa.wcs)
+    pos = posmap + grad_phi
+    alpha_pix = enmap.sky2pix(kappa.shape,kappa.wcs,pos, safe=False)
+    return alpha_pix
+    
+
+
+class FlatLensingSims(object):
+    def __init__(self,shape,wcs,theory,beam_arcmin,noise_uk_arcmin,noise_e_uk_arcmin=None,noise_b_uk_arcmin=None,pol=False,fixed_lens_kappa=None):
+        # assumes theory in uK^2
+        from orphics import cosmology
+        if len(shape)<3 and pol: shape = (3,)+shape
+        if noise_e_uk_arcmin is None: noise_e_uk_arcmin = np.sqrt(2.)*noise_uk_arcmin
+        if noise_b_uk_arcmin is None: noise_b_uk_arcmin = noise_e_uk_arcmin
+        self.modlmap = enmap.modlmap(shape,wcs)
+        Ny,Nx = shape[-2:]
+        lmax = self.modlmap.max()
+        ells = np.arange(0,lmax,1)
+        ps_cmb = cosmology.power_from_theory(ells,theory,lensed=False,pol=pol)
+        self.mgen = maps.MapGen(shape,wcs,ps_cmb)
+        if fixed_lens_kappa is not None:
+            self._fixed = True
+            self.kappa = fixed_lens_kappa
+            self.alpha = alpha_from_kappa(self.kappa)
+        else:
+            self._fixed = False
+            ps_kk = theory.gCl('kk',self.modlmap).reshape((1,1,Ny,Nx))
+            self.kgen = maps.MapGen(shape[-2:],wcs,ps_kk)
+            self.posmap = enmap.posmap(shape[-2:],wcs)
+        self.kbeam = maps.gauss_beam(self.modlmap,beam_arcmin)
+        ncomp = 3 if pol else 1
+        ps_noise = np.zeros((ncomp,ncomp,Ny,Nx))
+        ps_noise[0,0] = (noise_uk_arcmin*np.pi/180./60.)**2.
+        if pol:
+            ps_noise[1,1] = (noise_e_uk_arcmin*np.pi/180./60.)**2.
+            ps_noise[2,2] = (noise_b_uk_arcmin*np.pi/180./60.)**2.
+        self.ngen = maps.MapGen(shape,wcs,ps_noise)
+        self.ps_noise = ps_noise
+        self.ps_kk = ps_kk
+
+    def get_unlensed(self,seed=None):
+        return self.mgen.get_map(seed=seed)
+    def get_kappa(self,seed=None):
+        return self.kgen.get_map(seed=seed)
+    def get_sim(self,seed_cmb=None,seed_kappa=None,seed_noise=None,lens_order=5,return_intermediate=False,skip_lensing=False,cfrac=None):
+        unlensed = self.get_unlensed(seed_cmb)
+        if skip_lensing:
+            lensed = unlensed
+            kappa = enmap.samewcs(lensed.copy()[0]*0,lensed)
+        else:
+            if not(self._fixed):
+                kappa = self.get_kappa(seed_kappa)
+                self.kappa = kappa
+                self.alpha = alpha_from_kappa(kappa,posmap=self.posmap)
+            else:
+                kappa = None
+                assert seed_kappa is None
+            lensed = enlensing.displace_map(unlensed, self.alpha, order=lens_order)
+        beamed = maps.filter_map(lensed,self.kbeam)
+        noise_map = self.ngen.get_map(seed=seed_noise)
+        
+        observed = beamed + noise_map
+        if return_intermediate:
+            return [ maps.get_central(x,cfrac) for x in [unlensed,kappa,lensed,beamed,noise_map,observed] ]
+        else:
+            return maps.get_central(observed,cfrac)
+        
+        
 
 def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,comm=None):
     """Given the pix-pix covariance matrix for the unlensed CMB,
@@ -26,11 +197,11 @@ def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,
     kbeam -- (Ny,Nx) array of 2d beam wavenumbers
 
     """
-    from enlib import lensing as enlensing
+    from pixell import lensing as enlensing
 
-    assert ucov.ndim==4
-    ncomp = ucov.shape[0]
-    assert ncomp==ucov.shape[1]
+    assert iucov.ndim==4
+    ncomp = iucov.shape[0]
+    assert ncomp==iucov.shape[1]
     assert 1 <= ncomp <= 3
     if len(shape)==2: shape = (1,)+shape
     n = shape[-2]
@@ -42,57 +213,30 @@ def lens_cov_pol(shape,wcs,iucov,alpha_pix,lens_order=5,kbeam=None,npixout=None,
 
     npix = ncomp*n**2
 
-    from orphics import stats,mpi
-    if comm is None: comm = mpi.MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    numcores = comm.Get_size()
-    num_each,each_tasks = mpi.mpi_distribute(npix,numcores)
-    my_tasks = each_tasks[rank]
+    if comm is None:
+        from orphics import mpi
+        comm = mpi.MPI.COMM_WORLD
 
-    if rank==0: Scov = np.zeros(ucov.shape,dtype=ucov.dtype)
-    
-    for i in my_tasks:
-        unlensed = enmap.enmap(ucov[i,:].copy().reshape(shape),wcs)
+    def efunc(vec):
+        unlensed = enmap.enmap(vec.reshape(shape),wcs)
         lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
-        send_dat = lensed.reshape(-1)
-        if rank==0:
-            Scov[i,:] = send_dat.copy()
-        else:
-            comm.Send(send_dat, dest=0, tag=i)
+        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam) # TODO: replace with convolution
+        # because for ~(60x60) arrays, it is probably much faster. >1 threads means worse performance
+        # with FFTs for these array sizes.
+        return np.asarray(lensed).reshape(-1)
 
-    if rank==0:
-        i = len(my_tasks)
-        data_vessel = np.empty(send_dat.shape, dtype=ucov.dtype)
-        for core in range(1,numcores):
-            for j in range(len(num_each[core])):
-                i += 1
-                self.comm.Recv(data_vessel, source=core, tag=i)
-                Scov[i,:] = data_vessel.copy()
-
-
-    comm.Barrier()
-
-    for i in my_tasks:
-        unlensed = enmap.enmap(Scov[:,i].copy().reshape(shape),wcs)
-        lensed = enlensing.displace_map(unlensed, alpha_pix, order=lens_order)
-        if kbeam is not None: lensed = maps.filter_map(lensed,kbeam)
-        send_dat = lensed.reshape(-1)
-        if rank==0:
-            Scov[:,i] = send_dat.copy()
-        else:
-            comm.Send(send_dat, dest=0, tag=i)
-
-    if rank==0:
-        i = len(my_tasks)
-        data_vessel = np.empty(send_dat.shape, dtype=Scov.dtype)
-        for core in range(1,numcores):
-            for j in range(len(num_each[core])):
-                i += 1
-                self.comm.Recv(data_vessel, source=core, tag=i)
-                Scov[:,i] = data_vessel.copy()
     
+    Scov = np.zeros(ucov.shape,dtype=ucov.dtype)
+    for i in range(comm.rank, npix, comm.size):
+        Scov[i,:] = efunc(ucov[i,:])
+    Scov2 = utils.allreduce(Scov, comm)
 
+    Scov = np.zeros(ucov.shape,dtype=ucov.dtype)
+    for i in range(comm.rank, npix, comm.size):
+        Scov[:,i] = efunc(Scov2[:,i])
+    Scov = utils.allreduce(Scov, comm)
+
+    
     Scov = Scov.reshape((ncomp,n*n,ncomp,n*n))
     if (npixout is not None) and (npixout!=n):
         Scov = Scov.reshape((ncomp,n,n,ncomp,n,n))
@@ -124,16 +268,11 @@ def lensing_noise(ells,ntt,nee,nbb,
                   lxcut_t=None,lycut_t=None,y_lxcut_t=None,y_lycut_t=None,
                   lxcut_e=None,lycut_e=None,y_lxcut_e=None,y_lycut_e=None,
                   lxcut_b=None,lycut_b=None,y_lxcut_b=None,y_lycut_b=None,
-                  width_deg=5.,px_res_arcmin=1.0):
+                  width_deg=5.,px_res_arcmin=1.0,shape=None,wcs=None,bigell=9000):
 
     from orphics import cosmology, stats
-    
-    shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
-    modlmap = enmap.modlmap(shape,wcs)
-    if theory is not None:
-        assert camb_theory_file is None
-    else:
-        theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
+
+    if theory is None: theory = cosmology.loadTheorySpectraFromCAMB(camb_theory_file_root,unlensedEqualsLensed=False,
                                                      useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=False)
 
             
@@ -148,17 +287,36 @@ def lensing_noise(ells,ntt,nee,nbb,
     if y_ellmax_e is None: y_ellmax_e=ellmax_e
     if y_ellmax_b is None: y_ellmax_b=ellmax_b
 
-    if ellmin_k is None: ellmin_k = min(ellmin_t,ellmin_e,ellmin_b,y_ellmin_t,y_ellmin_e,y_ellmin_b)
-    if ellmax_k is None: ellmax_k = max(ellmax_t,ellmax_e,ellmax_b,y_ellmax_t,y_ellmax_e,y_ellmax_b)
+    if ellmin_k is None: ellmin_k = bin_edges.min() #min(ellmin_t,ellmin_e,ellmin_b,y_ellmin_t,y_ellmin_e,y_ellmin_b)
+    if ellmax_k is None: ellmax_k = bin_edges.max() #max(ellmax_t,ellmax_e,ellmax_b,y_ellmax_t,y_ellmax_e,y_ellmax_b)
 
     pol = False if estimators==['TT'] else True
 
-    nTX = maps.interp(ells,ntt)(modlmap)
-    nTY = maps.interp(ells,y_ntt)(modlmap)
-    nEX = maps.interp(ells,nee)(modlmap)
-    nEY = maps.interp(ells,y_nee)(modlmap)
-    nBX = maps.interp(ells,nbb)(modlmap)
-    nBY = maps.interp(ells,y_nbb)(modlmap)
+    
+    if ells.ndim==2:
+        assert shape is None
+        assert wcs is None
+        modlmap = ells
+        shape = modlmap.shape
+        wcs = modlmap.wcs
+        validate_geometry(shape,wcs,verbose=True)
+        nTX = ntt
+        nTY = y_ntt
+        nEX = nee
+        nEY = y_nee
+        nBX = nbb
+        nBY = y_nbb
+
+    else:
+        if (shape is None) or (wcs is None):
+            shape,wcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=px_res_arcmin)
+        modlmap = enmap.modlmap(shape,wcs)
+        nTX = maps.interp(ells,ntt)(modlmap)
+        nTY = maps.interp(ells,y_ntt)(modlmap)
+        nEX = maps.interp(ells,nee)(modlmap)
+        nEY = maps.interp(ells,y_nee)(modlmap)
+        nBX = maps.interp(ells,nbb)(modlmap)
+        nBY = maps.interp(ells,y_nbb)(modlmap)
 
     kmask_TX = maps.mask_kspace(shape,wcs,lmin=ellmin_t,lmax=ellmax_t,lxcut=lxcut_t,lycut=lycut_t)
     kmask_TY = maps.mask_kspace(shape,wcs,lmin=y_ellmin_t,lmax=y_ellmax_t,lxcut=y_lxcut_t,lycut=y_lycut_t)
@@ -188,7 +346,7 @@ def lensing_noise(ells,ntt,nee,nbb,
                      loadPickledNormAndFilters=None,
                      savePickledNormAndFilters=None,
                      uEqualsL=unlensed_equals_lensed,
-                     bigell=9000,
+                     bigell=bigell,
                      mpi_comm=None,
                      lEqualsU=False)
 
@@ -201,7 +359,7 @@ def lensing_noise(ells,ntt,nee,nbb,
         nsum += np.nan_to_num(kmask_K/nlkk2d)
 
     nmv = np.nan_to_num(kmask_K/nsum)
-    nlkks['mv'] = stats.bin_in_annuli(nmv, modlmap, bin_edges)
+    nlkks['mv'] = stats.bin_in_annuli(nmv, modlmap, bin_edges)[1]
     
     return ls,nlkks,theory,qest
     
@@ -216,7 +374,7 @@ def lens_cov(shape,wcs,ucov,alpha_pix,lens_order=5,kbeam=None,bshape=None):
     kbeam -- (Ny,Nx) array of 2d beam wavenumbers
 
     """
-    from enlib import lensing as enlensing
+    from pixell import lensing as enlensing
 
     Scov = ucov.copy()
     
@@ -268,15 +426,18 @@ def beam_cov(ucov,kbeam):
     return Scov
 
 
-def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000):
+def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000,noise2d_B=None):
+    # if beam2d is None, assumes input maps are beam deconvolved and noise2d is beam deconvolved
+    # otherwise, it beam deconvolves itself
     if noise2d is None: noise2d = np.zeros(shape[-2:])
     if noise2d_P is None: noise2d_P = 2.*noise2d
+    if noise2d_B is None: noise2d_B = noise2d_P
     if beam2d is None: beam2d = np.ones(shape[-2:])
     return Estimator(shape,wcs,
                      theory,
                      theorySpectraForNorm=theory,
-                     noiseX2dTEB=[noise2d,noise2d_P,noise2d_P],
-                     noiseY2dTEB=[noise2d,noise2d_P,noise2d_P],
+                     noiseX2dTEB=[noise2d,noise2d_P,noise2d_B],
+                     noiseY2dTEB=[noise2d,noise2d_P,noise2d_B],
                      noiseX_is_total = False,
                      noiseY_is_total = False,
                      fmaskX2dTEB=[kmask,kmask_P,kmask_P],
@@ -493,6 +654,7 @@ class QuadNorm(object):
         if Y=='B': Y='E'
         gradClXY = X+Y
         if XY=='ET': gradClXY = 'TE'
+        if XY=='BE': gradClXY = 'EE'
 
         totnoise = self.noiseXX2d[X+X].copy() if self.noiseX_is_total else (self.lClFid2d[X+X].copy()*self.kBeamX**2.+self.noiseXX2d[X+X].copy())
         W = self.fmask_func(np.nan_to_num(self.uClFid2d[gradClXY].copy()/totnoise)*self.kBeamX,self.fMaskXX[X+X])
@@ -552,6 +714,13 @@ class QuadNorm(object):
         lmap = self.modLMap
         replaced = np.nan_to_num(self.getNlkk2d("TT",halo=True,l1Scale=self.fmask_func(ratio,self.fMaskXX["TT"]),l2Scale=self.fmask_func(ratio,self.fMaskYY["TT"]),setNl=False) / (2. * np.nan_to_num(1. / lmap/(lmap+1.))))
         unreplaced = self.Nlkk["TT"].copy()
+        return np.nan_to_num(unreplaced**2./replaced)
+
+    def super_dumb_N0_EEEE(self,data_power_2d_EE):
+        ratio = np.nan_to_num(data_power_2d_EE*self.WY("EE")/self.kBeamY)
+        lmap = self.modLMap
+        replaced = np.nan_to_num(self.getNlkk2d("EE",halo=True,l1Scale=self.fmask_func(ratio,self.fMaskXX["EE"]),l2Scale=self.fmask_func(ratio,self.fMaskYY["EE"]),setNl=False) / (2. * np.nan_to_num(1. / lmap/(lmap+1.))))
+        unreplaced = self.Nlkk["EE"].copy()
         return np.nan_to_num(unreplaced**2./replaced)
     
     def getNlkk2d(self,XY,halo=True,l1Scale=1.,l2Scale=1.,setNl=True):
@@ -705,6 +874,41 @@ class QuadNorm(object):
             for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
                 preF = ellsq*clunlenEEArrNow*WXY
                 preG = WY
+
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)*ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
+
+        elif XY == 'BE':
+
+
+            clunlenEEArrNow = self.uClNow2d['EE'].copy()
+            clunlenBBArrNow = self.uClNow2d['BB'].copy()
+
+
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+
+            lx = self.lxMap
+            ly = self.lyMap
+
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+
+            WXY = self.WXY('BE')*self.kBeamX
+            WY = self.WY('EE')*self.kBeamY
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = WXY
+                preG = ellsq*clunlenEEArrNow*WY
 
                 for termF,termG in zip(termsF,termsG):
                     allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)*ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
@@ -930,7 +1134,6 @@ class QuadNorm(object):
         # pl._ax.set_xlim(2,6000)
         # pl.done("nl.png")
         # sys.exit()
-
 
 
             
@@ -1458,6 +1661,7 @@ class Estimator(object):
             rank = 0
             numcores = 1
 
+        self.wcs = wcs
         if rank==0:
             self.N = QuadNorm(shape,wcs,gradCut=gradCut,verbose=verbose,kBeamX=self.kBeamX,kBeamY=self.kBeamY,bigell=bigell,fmask=self.fmaskK)
 
@@ -1471,7 +1675,8 @@ class Estimator(object):
                 self.phaseY = np.cos(2.*self.N.thetaMap)+1.j*np.sin(2.*self.N.thetaMap)
                 nList = ['TT','EE','BB']
                 cmbList = ['TT','TE','EE','BB']
-                estList = ['TT','TE','ET','EB','EE','TB']
+                #estList = ['TT','TE','ET','EB','EE','TB']
+                estList = ['TT','TE','ET','EB','EE','TB','BE']
 
             self.nList = nList
 
@@ -1617,11 +1822,26 @@ class Estimator(object):
         fMask = self.fmaskK
         arr[fMask<1.e-3] = 0.
         return arr
-        
+
+    def coadd_nlkk(self,ests):
+        ninvtot = 0.
+        for est in ests:
+            ninvtot += self.fmask_func(np.nan_to_num(1./self.N.Nlkk[est]))
+        return self.fmask_func(np.nan_to_num(1./ninvtot))
+    
+    def coadd_kappa(self,ests,returnFt=False):
+        ktot = 0.
+        for est in ests:
+            rkappa = self.get_kappa(est,returnFt=True)
+            ktot += self.fmask_func(np.nan_to_num(rkappa/self.N.Nlkk[est]))
+        kft = ktot*self.coadd_nlkk(ests)
+        if returnFt: return kft
+        return ifft(kft,axes=[-2,-1],normalize=True).real
+    
     def get_kappa(self,XY,returnFt=False):
 
         assert self._hasX and self._hasY
-        assert XY in ['TT','TE','ET','EB','TB','EE']
+        assert XY in ['TT','TE','ET','EB','TB','EE','BE']
         X,Y = XY
 
         WXY = self.N.WXY(XY)
@@ -1653,13 +1873,13 @@ class Estimator(object):
 
         assert not(np.any(np.isnan(rawKappa)))
         lmap = self.N.modLMap
-        
+
         kappaft = -self.fmask_func(AL*fft(rawKappa,axes=[-2,-1]))
         
         if returnFt:
             return kappaft
         
-        self.kappa = ifft(kappaft,axes=[-2,-1],normalize=True).real
+        self.kappa = enmap.enmap(ifft(kappaft,axes=[-2,-1],normalize=True).real,self.wcs)
         try:
             assert not(np.any(np.isnan(self.kappa)))
         except:
@@ -2044,5 +2264,536 @@ def kappa_nfw(M,c,R,theta,cc,z):
     comL = cc.results.comoving_radial_distance(z)*cc.h
     winAtLens = (comS-comL)/comS
     kappa = kappa_nfw_generic(theta,z,comL,np.abs(M),c,R,winAtLens)
-
     return sgn*kappa
+
+
+class SplitLensing(object):
+    def __init__(self,shape,wcs,qest,XY="TT"):
+        # PS calculator
+        self.fc = maps.FourierCalc(shape,wcs)
+        self.qest = qest
+        self.est = XY
+
+    def qpower(self,k1,k2):
+        # PS func
+        return self.fc.f2power(k1,k2)
+
+    def qfrag(self,a,b):
+        # kappa func (accepts fts, returns ft)
+        if self.est=='TT':
+            k1 = self.qest.kappa_from_map(self.est,T2DData=a.copy(),T2DDataY=b.copy(),alreadyFTed=True,returnFt=True)
+        elif self.est=='EE': # wrong!
+            k1 = self.qest.kappa_from_map(self.est,T2DData=a.copy(),E2DData=a.copy(),B2DData=a.copy(),
+                                          T2DDataY=b.copy(),E2DDataY=b.copy(),B2DDataY=b.copy(),alreadyFTed=True,returnFt=True)
+            
+        return k1
+
+    def cross_estimator(self,ksplits):
+        # 4pt from splits
+        splits = ksplits
+        splits = np.asanyarray(ksplits)
+        insplits = splits.shape[0]
+        nsplits = float(insplits)
+        s = np.mean(splits,axis=0)
+        k = self.qfrag(s,s)
+        kiisum = 0.
+        psum = 0.
+        psum2 = 0.
+        for i in range(insplits):
+            mi = splits[i]
+            ki = (self.qfrag(mi,s)+self.qfrag(s,mi))/2.
+            kii = self.qfrag(mi,mi)
+            kiisum += kii
+            kic = ki - (1./nsplits)*kii
+            psum += self.qpower(kic,kic)
+            for j in range(i+1,int(insplits)):
+                mj = splits[j]
+                kij = (self.qfrag(mi,mj)+self.qfrag(mj,mi))/2.
+                psum2 += self.qpower(kij,kij)
+        kc = k - (1./nsplits**2.)*kiisum
+        return (nsplits**4.*self.qpower(kc,kc)-4.*nsplits**2.*psum+4.*psum2)/nsplits/(nsplits-1.)/(nsplits-2.)/(nsplits-3.)
+
+    
+class QE(object):
+    def __init__(self,shape,wcs,cmb,xnoise,xbeam,ynoise=None,ybeam=None,ests=None,cmb_response=None):
+        modlmap = enmap.modlmap(shape,wcs)
+        self.modlmap = modlmap
+        self.shape = shape
+        self.wcs = wcs
+        kbeamx = self._process_beam(xbeam)
+        kbeamy = self._process_beam(ybeam) if ybeam is not None else kbeamx.copy()
+        
+
+    def _process_beam(self,beam):
+        beam = np.asarray(beam)
+        if beam.ndim==0:
+            kbeam = maps.gauss_beam(beam,modlmap)
+        elif beam.ndim==1:
+            ells = np.arange(0,beam.size)
+            kbeam = maps.interp(ells,maps.gauss_beam(beam,ells))(self.modlmap)
+        elif beam.ndim==2:
+            kbeam = beam
+            assert kbeam.shape==self.shape
+        return kbeam
+
+
+    def WXY(self,XY):
+        X,Y = XY
+        if Y=='B': Y='E'
+        gradClXY = X+Y
+        if XY=='ET': gradClXY = 'TE'
+        if XY=='BE': gradClXY = 'EE'
+        totnoise = self.noiseXX2d[X+X].copy() if self.noiseX_is_total else (self.lClFid2d[X+X].copy()+self.noiseXX2d[X+X].copy())
+        W = self.fmask_func(np.nan_to_num(self.uClFid2d[gradClXY].copy()/totnoise)*self.kBeamX,self.fMaskXX[X+X])
+        W[self.modLMap>self.gradCut]=0.
+        if X=='T':
+            W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        else:
+            W[np.where(self.modLMap >= self.lmax_P)] = 0.
+        return W
+        
+
+    def WY(self,YY):
+        assert YY[0]==YY[1]
+        totnoise = self.noiseYY2d[YY].copy() if self.noiseY_is_total else (self.lClFid2d[YY].copy()*self.kBeamY**2.+self.noiseYY2d[YY].copy())
+        W = self.fmask_func(np.nan_to_num(1./totnoise)*self.kBeamY,self.fMaskYY[YY]) #* self.modLMap  # !!!!!
+        W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        if YY[0]=='T':
+            W[np.where(self.modLMap >= self.lmax_T)] = 0.
+        else:
+            W[np.where(self.modLMap >= self.lmax_P)] = 0.
+        return W
+
+
+    def reconstruct_from_iqu(self,XYs,imapx,imapy=None,return_ft=True):
+        pass
+    
+    def reconstruct(self,XYs,kmapx=None,kmapy=None,imapx=None,imapy=None,return_ft=True):
+        pass
+        
+    def reconstruct_xy(self,XY,kmapx=None,kmapy=None,imapx=None,imapy=None,return_ft=True):
+        X,Y = XY
+        WXY = self.WXY(XY)
+        WY = self.WY(Y+Y)
+        lx = self.lxMap
+        ly = self.lyMap
+        if Y in ['E','B']:
+            phaseY = self.phaseY
+        else:
+            phaseY = 1.
+        phaseB = (int(Y=='B')*1.j)+(int(Y!='B'))
+        fMask = self.fmaskK
+        HighMapStar = ifft((self.kHigh[Y]*WY*phaseY*phaseB),axes=[-2,-1],normalize=True).conjugate()
+        kPx = fft(ifft(self.kGradx[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])
+        kPy = fft(ifft(self.kGrady[X]*WXY*phaseY,axes=[-2,-1],normalize=True)*HighMapStar,axes=[-2,-1])        
+        rawKappa = ifft((1.j*lx*kPx) + (1.j*ly*kPy),axes=[-2,-1],normalize=True).real
+        AL = np.nan_to_num(self.AL[XY])
+        assert not(np.any(np.isnan(rawKappa)))
+        lmap = self.N.modLMap
+        kappaft = -self.fmask_func(AL*fft(rawKappa,axes=[-2,-1]))
+        if return_ft:
+            return kappaft
+        else:
+            kappa = ifft(kappaft,axes=[-2,-1],normalize=True).real
+            return kappa,kappaft
+    
+    def norm(self,XY):
+        kbeamx = self.kbeamx
+        kbeamy = self.kbeamy
+        allTerms = []
+        if XY=='TT':
+            clunlenTTArrNow = self.uClNow2d['TT'].copy()
+            WXY = self.WXY('TT')*kbeamx*l1Scale
+            WY = self.WY('TT')*kbeamy*l2Scale
+            preG = WY
+            rfact = 2.**0.25
+            for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                preF = ell1*ell2*clunlenTTArrNow*WXY
+                preFX = ell1*WXY
+                preGX = ell2*clunlenTTArrNow*WY
+                calc = ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True)
+                                     +ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True),axes=[-2,-1])
+                allTerms += [calc]
+        elif XY == 'EE':
+            clunlenEEArrNow = self.uClNow2d['EE'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            sinf = sin2phi(lxhat,lyhat)
+            sinsqf = sinf**2.
+            cosf = cos2phi(lxhat,lyhat)
+            cossqf = cosf**2.
+            WXY = self.WXY('EE')*kbeamx
+            WY = self.WY('EE')*kbeamy
+            rfact = 2.**0.25
+            for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
+                    preF = trigfact*ell1*ell2*clunlenEEArrNow*WXY
+                    preG = trigfact*WY
+                    allTerms += [ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+                    preFX = trigfact*ell1*clunlenEEArrNow*WY
+                    preGX = trigfact*ell2*WXY
+                    allTerms += [ell1*ell2*fft(ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY == 'EB':
+            clunlenEEArrNow = self.uClNow2d['EE'].copy()
+            clunlenBBArrNow = self.uClNow2d['BB'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            WXY = self.WXY('EB')*kbeamx
+            WY = self.WY('BB')*kbeamy
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = ellsq*clunlenEEArrNow*WXY
+                preG = WY
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)
+                                           *ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY == 'BE':
+            clunlenEEArrNow = self.uClNow2d['EE'].copy()
+            clunlenBBArrNow = self.uClNow2d['BB'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            WXY = self.WXY('BE')*kbeamx
+            WY = self.WY('EE')*kbeamy
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = WXY
+                preG = ellsq*clunlenEEArrNow*WY
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)
+                                           *ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY=='ET':
+            clunlenTEArrNow = self.uClNow2d['TE'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+
+            lx = self.lxMap
+            ly = self.lyMap
+
+
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+
+            sinf = sin2phi(lxhat,lyhat)
+            sinsqf = sinf**2.
+            cosf = cos2phi(lxhat,lyhat)
+            cossqf = cosf**2.
+
+
+            WXY = self.WXY('ET')*kbeamx
+            WY = self.WY('TT')*kbeamy
+
+            rfact = 2.**0.25
+            for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                preF = ell1*ell2*clunlenTEArrNow*WXY
+                preG = WY
+                allTerms += [ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+                for trigfact in [cosf,sinf]:
+
+                    preFX = trigfact*ell1*clunlenTEArrNow*WY
+                    preGX = trigfact*ell2*WXY
+
+                    allTerms += [ell1*ell2*fft(ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY=='TE':
+            clunlenTEArrNow = self.uClNow2d['TE'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            sinf = sin2phi(lxhat,lyhat)
+            sinsqf = sinf**2.
+            cosf = cos2phi(lxhat,lyhat)
+            cossqf = cosf**2.
+            WXY = self.WXY('TE')*kbeamx
+            WY = self.WY('EE')*kbeamy
+            rfact = 2.**0.25
+            for ell1,ell2 in [(lx,lx),(ly,ly),(rfact*lx,rfact*ly)]:
+                for trigfact in [cossqf,sinsqf,np.sqrt(2.)*sinf*cosf]:
+                    preF = trigfact*ell1*ell2*clunlenTEArrNow*WXY
+                    preG = trigfact*WY
+                    allTerms += [ell1*ell2*fft(ifft(preF,axes=[-2,-1],normalize=True)*ifft(preG,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+                for trigfact in [cosf,sinf]:
+                    preFX = trigfact*ell1*clunlenTEArrNow*WY
+                    preGX = trigfact*ell2*WXY
+                    allTerms += [ell1*ell2*fft(ifft(preFX,axes=[-2,-1],normalize=True)*ifft(preGX,axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        elif XY == 'TB':
+            clunlenTEArrNow = self.uClNow2d['TE'].copy()
+            sin2phi = lambda lxhat,lyhat: (2.*lxhat*lyhat)
+            cos2phi = lambda lxhat,lyhat: (lyhat*lyhat-lxhat*lxhat)
+            lx = self.lxMap
+            ly = self.lyMap
+            termsF = []
+            termsF.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsF.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            termsG = []
+            termsG.append( lambda pre,lxhat,lyhat: pre * cos2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * sin2phi(lxhat,lyhat)**2. )
+            termsG.append( lambda pre,lxhat,lyhat: pre * (1.j*np.sqrt(2.)*sin2phi(lxhat,lyhat)*cos2phi(lxhat,lyhat)) )
+            lxhat = self.lxHatMap
+            lyhat = self.lyHatMap
+            WXY = self.WXY('TB')*kbeamx
+            WY = self.WY('BB')*kbeamy
+            for ellsq in [lx*lx,ly*ly,np.sqrt(2.)*lx*ly]:
+                preF = ellsq*clunlenTEArrNow*WXY
+                preG = WY
+                for termF,termG in zip(termsF,termsG):
+                    allTerms += [ellsq*fft(ifft(termF(preF,lxhat,lyhat),axes=[-2,-1],normalize=True)
+                                           *ifft(termG(preG,lxhat,lyhat),axes=[-2,-1],normalize=True),axes=[-2,-1])]
+        else:
+            print("ERROR: Unrecognized polComb")
+            sys.exit(1)    
+        ALinv = np.real(np.sum( allTerms, axis = 0))
+        alval = np.nan_to_num(1. / ALinv)
+        if self.fmask is not None: alval = self.fmask_func(alval,self.fmask)
+        l4 = (lmap**2.) * ((lmap + 1.)**2.)
+        NL = l4 *alval/ 4.
+        NL[np.where(np.logical_or(lmap >= self.bigell, lmap <2.))] = 0.
+        retval = np.nan_to_num(NL.real * self.pixScaleX*self.pixScaleY  )
+        if setNl:
+            self.Nlkk[XY] = retval.copy()
+        return retval * 2. * np.nan_to_num(1. / lmap/(lmap+1.))
+
+"""
+=================
+Functions for lensing power spectrum estimation
+
+These are quite general (independent of pixelization), FFT/SHT region, array, etc.
+
+One abstracts out the following:
+
+qfunc(XY,x,y)
+which for estimator XY e.g. "TT"
+x,y accepts fourier transformed beam deconvolved low pass filtered inpainted purified T, E or B maps.
+It should probably belong to some prepared object which knows about filters etc.
+
+sobj
+This is the tricky object. It has to have the following function:
+get_prepared_kmap(X,seed)
+X can be "T", "E", or "B"
+The way seed is used is very important. It should have the following logic.
+seed = (icov,set,i)
+If i==0, it shouldn't matter what icov or set are, it always returns the corresponding "data" kmap.
+Otherwise i should range from 1 to nsims.
+This assumes there are icov x nset x nsims sims.
+set=0 has nsims
+set=1 has nsims
+set=2 has nsims
+set=3 has nsims
+set 2 and 3 should have common phi between corresponding sims, used in MCN1
+
+e.g. implementation:
+if set==0 or set==1:
+    cmb_seed = (icov,set,i)+(0,)
+    kappa_seed = (icov,set,i)+(1,)
+    noise_seed = (icov,set,i)+(2,)
+elif set==2 or set==3:
+    cmb_seed = (icov,set,i)+(0,)
+    kappa_seed = (icov,2,i)+(1,)
+    noise_seed = (icov,set,i)+(2,)
+
+=================
+"""
+    
+def rdn0(icov,alpha,beta,qfunc,sobj,comm):
+    """
+    RDN0 for alpha=XY cross beta=AB
+    qfunc(XY,x,y) returns QE XY reconstruction minus mean-field in fourier space
+    sobj.get_prepared_kmap("T",(0,0,1)
+
+    e.g. rdn0(0,"TT","TE",qest.get_kappa,sobj,100,comm)
+    """
+    nsims = sobj.nsims
+    eX,eY = alpha
+    eA,eB = beta
+    qa = lambda x,y: qfunc(alpha,x,y)
+    qb = lambda x,y: qfunc(beta,x,y)
+    power = lambda x,y: x*y.conj()
+    # Data
+    X = sobj.get_prepared_kmap(eX,(0,0,0))
+    Y = sobj.get_prepared_kmap(eY,(0,0,0))
+    A = sobj.get_prepared_kmap(eA,(0,0,0))
+    B = sobj.get_prepared_kmap(eB,(0,0,0))
+    # Sims
+    rdn0 = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
+        Xs  = sobj.get_prepared_kmap(eX,(icov,0,i))
+        Ys  = sobj.get_prepared_kmap(eY,(icov,0,i))
+        As  = sobj.get_prepared_kmap(eA,(icov,0,i))
+        Bs  = sobj.get_prepared_kmap(eB,(icov,0,i))
+        Ysp = sobj.get_prepared_kmap(eY,(icov,1,i))
+        Asp = sobj.get_prepared_kmap(eA,(icov,1,i))
+        Bsp = sobj.get_prepared_kmap(eB,(icov,1,i))
+        rdn0 += power(qa(X,Ys),qb(A,Bs)) + power(qa(Xs,Y),qb(A,Bs)) \
+            + power(qa(Xs,Y),qb(As,B)) + power(qa(X,Ys),qb(As,B)) \
+            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+    totrdn0 = utils.allreduce(rdn0,comm) 
+    return totrdn0/nsims
+
+def mcn1(icov,alpha,beta,qfunc,sobj,comm):
+    """
+    MCN1 for alpha=XY cross beta=AB
+    qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
+    """
+    nsims = sobj.nsims
+    eX,eY = alpha
+    eA,eB = beta
+    qa = lambda x,y: qfunc(alpha,x,y)
+    qb = lambda x,y: qfunc(beta,x,y)
+    power = lambda x,y: x*y.conj()
+    mcn1 = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
+        Xsk   = sobj.get_prepared_kmap(eX,(icov,2,i))
+        Yskp  = sobj.get_prepared_kmap(eY,(icov,3,i))
+        Ask   = sobj.get_prepared_kmap(eA,(icov,2,i))
+        Bskp  = sobj.get_prepared_kmap(eB,(icov,3,i))
+        Askp  = sobj.get_prepared_kmap(eA,(icov,3,i))
+        Bsk   = sobj.get_prepared_kmap(eB,(icov,2,i))
+        Xs    = sobj.get_prepared_kmap(eX,(icov,0,i))
+        Ysp   = sobj.get_prepared_kmap(eY,(icov,1,i))
+        As    = sobj.get_prepared_kmap(eA,(icov,0,i))
+        Bsp   = sobj.get_prepared_kmap(eB,(icov,1,i))
+        Asp   = sobj.get_prepared_kmap(eA,(icov,1,i))
+        Bs    = sobj.get_prepared_kmap(eB,(icov,0,i))
+        mcn1 += power(qa(Xsk,Yskp),qb(Ask,Bskp)) + power(qa(Xsk,Yskp),qb(Askp,Bsk)) \
+            - power(qa(Xs,Ysp),qb(As,Bsp)) - power(qa(Xs,Ysp),qb(Asp,Bs))
+    return mcn1/nsims
+
+
+def mcmf(icov,alpha,qfunc,sobj,comm):
+    """
+    MCMF for alpha=XY
+    qfunc(x,y) returns QE reconstruction minus mean-field in fourier space
+    """
+    nsims = sobj.nsims
+    eX,eY = alpha
+    qe = lambda x,y: qfunc(alpha,x,y)
+    mf = 0.
+    ntot = 0.
+    for i in range(comm.rank+1, nsims+1, comm.size):        
+        for j in range(2):
+            kx   = sobj.get_prepared_kmap(eX,(icov,j,i))
+            ky   = sobj.get_prepared_kmap(eY,(icov,j,i))
+            mf += qe(kx,ky)
+            ntot += 1.
+    mftot = utils.allreduce(mf,comm) 
+    totnot = utils.allreduce(ntot,comm) 
+    return mftot/totntot
+        
+
+
+class L1Integral(object):
+    """
+    Calculates I(L) = \int d^2l_1 f(l1,l2)
+    on a grid.
+    L is assumed to lie along the positive x-axis.
+    This is ok for most integrals which are isotropic in L-space.
+    The integrand has shape (num_Ls,Ny,Nx)
+    """
+    def __init__(self,Ls,degrees=None,pixarcmin=None,shape=None,wcs=None,pol=True):
+        if (shape is None) or (wcs is None):
+            if degrees is None: degrees = 10.
+            if pixarcmin is None: pixarcmin = 2.0
+            shape,wcs = maps.rgeo(degrees,pixarcmin)
+        self.shape = shape
+        self.wcs = wcs
+
+        assert Ls.ndim==1
+        Ls = Ls[:,None,None]
+        ly,lx = enmap.lmap(shape,wcs)
+        self.l1x = lx.copy()
+        self.l1y = ly.copy()
+        l1y = ly[None,...]
+        l1x = lx[None,...]
+        l1 = enmap.modlmap(shape,wcs)[None,...]
+        l2y = -l1y
+        l2x = Ls - l1x
+        l2 = np.sqrt(l2x**2.+l2y**2.)
+        self.Ldl1 = Ls*l1x
+        self.Ldl2 = Ls*l2x
+        self.l1 = l1
+        self.l2 = l2
+
+        print(self.Ldl1.shape,self.Ldl2.shape,self.l1.shape,self.l2.shape,self.l1x.shape,self.l1y.shape)
+            
+        if pol:
+            from orphics import symcoupling as sc
+            sl1x,sl1y,sl2x,sl2y,sl1,sl2 = sc.get_ells()
+            scost2t12,ssint2t12 = sc.substitute_trig(sl1x,sl1y,sl2x,sl2y,sl1,sl2)
+            feed_dict = {'l1x':l1x,'l1y':l1y,'l2x':l2x,'l2y':l2y,'l1':l1,'l2':l2}
+            cost2t12 = sc.evaluate(scost2t12,feed_dict)
+            sint2t12 = sc.evaluate(ssint2t12,feed_dict)
+            self.cost2t12 = cost2t12
+            self.sint2t12 = sint2t12
+
+            
+    def integrate(self,integrand):
+        integral = np.trapz(y=integrand,x=self.l1x[0,:],axis=-1)
+        integral = np.trapz(y=integral,x=self.l1y[:,0],axis=-1)
+        return integral
+
+        
+
+
+
+# class JointRecon(object):
+
+#     def __init__(self,shape,wcs):
+#         self. = {}
+#         self.estimators = {}
+#         pass
+#     def add_map(self,name,kmask,ptype="T",noise_beam_deconvolved=None,total_noise_beam_deconvolved=None):
+#         pass
+#     def load_map(self,name,imap=None,kmap=None):
+#         pass
+#     def build_estimator(self,tag,xname,yname,cross_noise=None):
+#         pass
+#     def cov(self,tag1,tag2):
+#         pass
+#     def get_cov_matrix(self,tags):
+#         pass
+    
+
+
+# jr = JointRecon(shape,wcs)
+# jr.add_map("Ts",tmask,"T",noise)
+# jr.add_map("Tc",tmask,"T",noise)
+# jr.add_map("Es",tmask,"E",noise)
+# jr.add_map("Bs",tmask,"E",noise)
+# jr.build_estimator("TcTs","Tc","Ts",cross_noise_constrained_standard)
+# jr.build_estimator("TsTc","Ts","Tc",cross_noise_constrained_standard)
+# jr.build_estimator("TsEs","Ts","Es",ClTE)
+# jr.build_estimator("EsTs","Es","Ts",ClTE)
+# jr.build_estimator("EsBs","Es","Bs",0)
+# jr.build_estimator("EsEs","Es","Es",0)
+# jr.build_estimator("TsBs","Ts","Ts",0)
+# ncov = jr.get_cov_matrix(["TpTa","TaTp"])
+
+

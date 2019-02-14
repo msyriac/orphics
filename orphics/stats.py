@@ -1,10 +1,11 @@
 from __future__ import print_function
 import numpy as np
-import time
+import time, warnings
 import itertools
 import scipy
 from scipy.stats import binned_statistic as binnedstat,chi2
 from scipy.optimize import curve_fit
+import itertools
 
 try:
     from pandas import DataFrame
@@ -28,22 +29,23 @@ def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh,plot_file=None):
 
 
     
-def fit_linear_model(x,y,ycov,funcs,dofs=None):
+def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True):
     """
     Given measurements with known uncertainties, this function fits those to a linear model:
     y = a0*funcs[0](x) + a1*funcs[1](x) + ...
     and returns the best fit coefficients a0,a1,... and their uncertainties as a covariance matrix
     """
+    s = solve if deproject else np.linalg.solve
     C = ycov
-    y = y.reshape((y.size,1))
+    y = y[:,None] 
     A = np.zeros((y.size,len(funcs)))
     for i,func in enumerate(funcs):
         A[:,i] = func(x)
-    cov = np.linalg.inv(np.dot(A.T,np.linalg.solve(C,A)))
-    b = np.dot(A.T,np.linalg.solve(C,y))
+    cov = np.linalg.inv(np.dot(A.T,solve(C,A)))
+    b = np.dot(A.T,solve(C,y))
     X = np.dot(cov,b)
     YAX = y - np.dot(A,X)
-    chisquare = np.dot(YAX.T,np.linalg.solve(C,YAX))
+    chisquare = np.dot(YAX.T,solve(C,YAX))
     dofs = len(x)-len(funcs)-1 if dofs is None else dofs
     pte = 1 - chi2.cdf(chisquare, dofs)    
     return X,cov,chisquare/dofs,pte
@@ -52,14 +54,21 @@ def fit_gauss(x,y,mu_guess=None,sigma_guess=None):
     ynorm = np.trapz(y,x)
     ynormalized = y/ynorm
     gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
-    popt,pcov = curve_fit(gaussian,x,ynormalized,p0=[mu_guess,sigma_guess])
+    popt,pcov = curve_fit(gaussian,x,ynormalized,p0=[mu_guess,sigma_guess])#,bounds=([-np.inf,0],[np.inf,np.inf]))
     fit_mean = popt[0]
     fit_sigma = popt[1]
-    return fit_mean,fit_sigma,ynorm,ynormalized
+    return fit_mean,np.abs(fit_sigma),ynorm,ynormalized
 
     
 class Solver(object):
+    """
+    Calculate Cinv . x
+    """
     def __init__(self,C,u=None):
+        """
+        C is an (NxN) covariance matrix
+        u is an (Nxk) template matrix for rank-k deprojection
+        """
         N = C.shape[0]
         if u is None: u = np.ones((N,1))
         Cinvu = np.linalg.solve(C,u)
@@ -89,7 +98,38 @@ def check_fisher_sanity(fmat,param_list):
     assert Ny==len(param_list)
     assert len(param_list)==len(set(param_list))
 
+def write_fisher(filename,fmat,delim=','):
+    np.savetxt(filename,fmat,header=(delim).join(fmat.params),delimiter=delim)
 
+
+def read_fisher_dataframe(csv_file):
+    df = pd.read_csv(csv_file,index_col=0)
+    params = list(df.columns)
+    return FisherMatrix(fmat = df.values,param_list = params)
+
+def read_fisher_pickle(pkl_file):
+    import cPickle as pickle
+    params,fmat = pickle.load(open(pkl_file,'rb'))
+    return FisherMatrix(fmat = fmat,param_list = params)#,skip_inv=True)
+
+def read_fisher(csv_file,delimiter=','):
+    fmat = np.loadtxt(csv_file,delimiter=delimiter)
+    with open(csv_file) as f:
+        fline = f.readline()
+    fline = fline.replace("#","")
+    columns = fline.strip().split(delimiter)
+    assert len(set(columns)) == len(columns)
+    return FisherMatrix(fmat = fmat,param_list = columns)#,skip_inv=True)
+
+def rename_fisher(fmat,pmapping):
+    old_params = fmat.params
+    new_params = list(old_params)
+    for key in pmapping.keys():
+        if key not in old_params: continue
+        i = old_params.index(key)
+        new_params[i] = pmapping[key]
+    return FisherMatrix(fmat=fmat.values,param_list=new_params)#,skip_inv=True)
+    
 class FisherMatrix(DataFrame):
     """
     A Fisher Matrix object that subclasses pandas.DataFrame.
@@ -144,7 +184,7 @@ class FisherMatrix(DataFrame):
     """
 
     
-    def __init__(self,fmat,param_list,delete_params=None,prior_dict=None,skip_inv=False):
+    def __init__(self,fmat,param_list,delete_params=None,prior_dict=None):#,skip_inv=False):
         """
         fmat            -- (n,n) shape numpy array containing initial Fisher matrix for n parameters
         param_list      -- n-element list specifying diagonal order of fmat
@@ -161,6 +201,11 @@ class FisherMatrix(DataFrame):
 	
         check_fisher_sanity(fmat,param_list)
         pd.DataFrame.__init__(self,fmat.copy(),columns=param_list,index=param_list)
+        try:
+            a = self.params
+            raise ValueError # self.params should not already exist
+        except:
+            pass
         self.params = param_list
             
         cols = self.columns.tolist()
@@ -174,27 +219,15 @@ class FisherMatrix(DataFrame):
             for prior in prior_dict.keys():
                 self.add_prior(prior,prior_dict[prior])
 
-        self._changed = True
-        if not(skip_inv):
-            self._update()
-
             
     def copy(self, order='K'):
-	"""
-	>> Fnew = F.copy()
-	will create an independent Fnew that is not a view of the original.
-	"""
-        self._update()
-	f = FisherMatrix(pd.DataFrame.copy(self), list(self.params),skip_inv=True)
-        f._finv = self._finv
-        f._changed = False
+        """
+        >> Fnew = F.copy()
+        will create an independent Fnew that is not a view of the original.
+        """
+        f = FisherMatrix(pd.DataFrame.copy(self), list(self.params))
         return f
 
-    def _update(self):
-        if self._changed:
-            self._finv = np.linalg.inv(self.as_matrix())
-            self._changed = False
-        
     def __radd__(self,other):
         return self._add(other,radd=True)
 
@@ -202,50 +235,175 @@ class FisherMatrix(DataFrame):
         return self._add(other,radd=False)
 
     def _add(self,other,radd=False):
+        if other is None: return self
         if radd:
             new_fpd = pd.DataFrame.radd(self,other.copy(),fill_value=0)
         else:
             new_fpd = pd.DataFrame.add(self,other.copy(),fill_value=0)
-        return FisherMatrix(np.nan_to_num(new_fpd.as_matrix()),new_fpd.columns.tolist())
+        return FisherMatrix(np.nan_to_num(new_fpd.values),new_fpd.columns.tolist())
 
     def add_prior(self,param,prior):
-	"""
-	Adds 1-sigma value 'prior' to the parameter name specified by 'param'
-	"""
+        """
+        Adds 1-sigma value 'prior' to the parameter name specified by 'param'
+        """
         self[param][param] += 1./prior**2.
-        self._changed = True
         
     def sigmas(self):
-	"""
-	Returns marginalized 1-sigma uncertainties on each parameter in the Fisher matrix.
-	"""
-        self._update()
-        errs = np.diagonal(self._finv)**(0.5)
+        """
+        Returns marginalized 1-sigma uncertainties on each parameter in the Fisher matrix.
+        """
+        # self._update()
+        finv = np.linalg.inv(self.values)
+        errs = np.diagonal(finv)**(0.5)
         return dict(zip(self.params,errs))
     
     def delete(self,params):
-	"""
-	Given a list of parameter names 'params', deletes these from the Fisher matrix.
-	"""
+        """
+        Given a list of parameter names 'params', deletes these from the Fisher matrix.
+        """
         self.drop(labels=params,axis=0,inplace=True)
         self.drop(labels=params,axis=1,inplace=True)
         self.params = self.columns.tolist()
         assert set(self.index.tolist())==set(self.params)
-        self._changed = True
+
+    def reordered(self,params):
+        # Return a reordered version of self
+        return self[params].T[params]
 
     def marge_var_2param(self,param1,param2):
-	"""
-	Returns the sub-matrix corresponding to two parameters param1 and param2.
-	Useful for contour plots.
-	"""
-        self._update()
+        """
+        Returns the sub-matrix corresponding to two parameters param1 and param2.
+        Useful for contour plots.
+        """
+        # self._update()
+        finv = np.linalg.inv(self.values)
         i = self.params.index(param1)
         j = self.params.index(param2)
-        chi211 = self._finv[i,i]
-        chi222 = self._finv[j,j]
-        chi212 = self._finv[i,j]
+        chi211 = finv[i,i]
+        chi222 = finv[j,j]
+        chi212 = finv[i,j]
         
         return np.array([[chi211,chi212],[chi212,chi222]])
+
+
+def alpha_from_confidence(c):
+    """Returns the number of sigmas that corresponds to enclosure of c % of the
+    probability density in a 2D gaussian.
+
+    e.g. alpha_from_confidence(0.683) = 1.52
+    """
+    return np.sqrt(2.*np.log((1./(1.-c))))
+    
+def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,show_1d=False,
+                latex_dict=None,colors=itertools.repeat(None),lss=itertools.repeat(None),
+                thk=2,center_marker=True,save_file=None,loc='upper right',labelsize=14,ticksize=2,lw=3,**kwargs):
+    """Make a triangle/corner plot from Fisher matrices.
+    Does not support multiple confidence levels. (Redundant under Gaussian approximation of Fisher)
+
+    fishers -- list of stats.FisherMatrix objects
+    labels -- labels corresponding to each Fisher matrix in fishers
+    params -- By default (if None) uses all params in every Fisher matrix. If not None, uses only this list of params.
+    fid_dict -- dictionary mapping parameter names to fiducial values to center ellipses on
+    latex_dict -- dictionary mapping parameter names to LaTeX strings for axes labels. Defaults to parameter names.
+    confidence_level -- fraction of probability density enclosed by ellipse
+    colors -- list of colors corresponding to fishers
+    lss -- list of line styles corresponding to fishers
+    """
+
+    from orphics import io
+    import matplotlib
+    import matplotlib.pyplot as plt
+    if params is None:
+        ps = [f.params for f in fishers]
+        jparams = list(set([p for sub_ps in ps for p in sub_ps]))
+    else:
+        jparams = params
+    numpars = len(jparams)
+    alpha = alpha_from_confidence(confidence_level)
+    xx = np.array(np.arange(360) / 180. * np.pi)
+    circl = np.array([np.cos(xx),np.sin(xx)])
+    
+    fig=plt.figure(figsize=(2*(numpars+1),2*(numpars+1)),**kwargs) if show_1d else plt.figure(figsize=(2*numpars,2*numpars),**kwargs)
+    startp = 0 if show_1d else 1
+
+    if show_1d:
+        sigmas = []
+        for fish in fishers:
+            sigmas.append(fish.sigmas())
+    else:
+        sigmas = itertools.repeat(None)
+        
+    
+    for i in range(0,numpars):
+        for j in range(i+startp,numpars):
+            count = 1+(j)*(numpars) + (i+1) -1 if show_1d else 1+(j-1)*(numpars-1) + i
+            paramX = jparams[i]
+            paramY = jparams[j]
+            ax = fig.add_subplot(numpars,numpars,count) if show_1d else fig.add_subplot(numpars-1,numpars-1,count)
+
+            if i>0:
+                ax.yaxis.set_visible(False)
+            if j!=(numpars-1):
+                ax.xaxis.set_visible(False)
+            
+            try:
+                xval = fid_dict[paramX]
+            except:
+                xval = 0.
+            try:
+                yval = fid_dict[paramY]
+            except:
+                yval = 0.
+            try:
+                paramlabely = '$%s$' % latex_dict[paramY]
+            except:
+                paramlabely = '$%s$' % paramY
+            try:
+                paramlabelx = '$%s$' % latex_dict[paramX]
+            except:
+                paramlabelx = '$%s$' % paramX
+            if center_marker:
+                if i==j:
+                    ax.axvline(x=xval,ls="--",color='k',alpha=0.5)
+                else:
+                    ax.plot(xval,yval,'xk',mew=thk)
+
+            for fish,ls,col,lab,sig in zip(fishers,lss,colors,labels,sigmas):
+
+                if i==j:
+                    try:
+                        s = sig[paramX]
+                    except:
+                        continue
+                    nsigma = 5
+                    xs = np.linspace(xval-nsigma*s,xval+nsigma*s,1000)
+                    from scipy.stats import norm
+                    g = norm.pdf(xs,loc=xval,scale=s)
+                    ax.plot(xs,g/g.max())
+                    continue
+                
+                
+                try:
+                    chisq = fish.marge_var_2param(paramX,paramY)
+                except:
+                    ax.plot([xval],[yval],linewidth=0,color=col,ls=ls,label=lab,alpha=0) # just to iterate the colors and ls
+                    continue
+                Lmat = np.linalg.cholesky(chisq)
+                ansout = np.dot(alpha*Lmat,circl)
+                ax.plot(ansout[0,:]+xval,ansout[1,:]+yval,linewidth=lw,color=col,ls=ls,label=lab)
+            if (i==0):
+                ax.set_ylabel(paramlabely, fontsize=labelsize,weight='bold')
+            if (j == (numpars-1)):
+                ax.set_xlabel(paramlabelx, fontsize=labelsize,weight='bold')
+    
+    handles, labels = ax.get_legend_handles_labels()
+    legend = fig.legend(handles, labels,prop={'size':labelsize},numpoints=1,frameon = 0,loc=loc, bbox_to_anchor = (-0.1,-0.1,1,1),bbox_transform = plt.gcf().transFigure,**kwargs)
+
+    if save_file is None:
+        plt.show()
+    else:
+        plt.savefig(save_file, bbox_inches='tight',format='png')
+        print(io.bcolors.OKGREEN+"Saved plot to", save_file+io.bcolors.ENDC)
         
 
 class OQE(object):
@@ -329,6 +487,54 @@ class OQE(object):
         # return scipy.linalg.pinv2(cov)
 
 
+
+class OQESlim(object):
+    def __init__(self,fid_cov,dcov_dict,fid_params_dict,templates=None):
+
+        self.params = dcov_dict.keys()
+        self.fids = fid_params_dict
+        Nparams = len(self.params)
+        self.biases = {}
+        self.ps = {}
+        for param in self.params:
+            solution = solve(fid_cov,dcov_dict[param],u=templates)
+            self.ps[param] = solution.copy()
+            self.biases[param] = np.trace(self.ps[param])
+
+        self.Fisher = np.zeros((Nparams,Nparams))
+        param_combs = itertools.combinations_with_replacement(self.params,2)
+        for param1,param2 in param_combs:
+            i = self.params.index(param1)
+            j = self.params.index(param2)
+            self.Fisher[i,j] = 0.5 * np.trace(np.dot(self.ps[param1],self.ps[param2]))
+            if j!=i: self.Fisher[j,i] = self.Fisher[i,j]
+
+        self.Finv = np.linalg.inv(self.Fisher)
+        self.marg_errors = np.diagonal(self.Finv)**(1./2.)
+
+        self.s = Solver(fid_cov,u=templates)
+        self.solver = lambda x: self.s.solve(x)
+
+    def sigma(self):
+        return dict(zip(self.params,self.marg_errors.tolist()))
+
+    def estimate(self,data):
+        vec = []
+        for param in self.params:
+            cinvdat = self.solver(data)
+            fcore = np.dot(np.dot(data.T,self.ps[param]),cinvdat)
+            bsubbed = fcore - self.biases[param]
+            assert bsubbed.size == 1
+            vec.append(bsubbed)
+        vec = np.asarray(vec)
+        ans = 0.5 * np.dot(self.Finv,vec)
+        ans = dict(zip(self.params,ans.tolist()))
+        res = {}
+        for param in self.params:
+            res[param] = self.fids[param] + ans[param]
+        return res
+
+        
 class CinvUpdater(object):
 
     def __init__(self,cinvs,logdets,profile):
@@ -430,6 +636,8 @@ class Stats(object):
         Append the 1d vector to a statistic named "label".
         Create a new one if it doesn't already exist.
         """
+
+        vector = np.asarray(vector)
         
         if not(label in list(self.vectors.keys())):
             self.vectors[label] = []
@@ -578,17 +786,23 @@ class bin1D:
         
         self.bin_edges = bin_edges
         self.numbins = len(bin_edges)-1
+        self.cents = (self.bin_edges[:-1]+self.bin_edges[1:])/2.
 
+        self.bin_edges_min = self.bin_edges.min()
+        self.bin_edges_max = self.bin_edges.max()
 
-    def binned(self,x,y):
-
+    def binned(self,ix,iy):
+        x = ix.copy()
+        y = iy.copy()
+        # this just prevents an annoying warning (which is otherwise informative) everytime
+        # all the values outside the bin_edges are nans
+        y[x<self.bin_edges_min] = 0
+        y[x>self.bin_edges_max] = 0
 
         # pretty sure this treats nans in y correctly, but should double-check!
         bin_means = binnedstat(x,y,bins=self.bin_edges,statistic=np.nanmean)[0]
-
-
         
-        return (self.bin_edges[:-1]+self.bin_edges[1:])/2.,bin_means
+        return self.cents,bin_means
 
         
     

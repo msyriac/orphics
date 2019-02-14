@@ -3,14 +3,22 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import os,sys,logging,time
-from orphics import mpi
 import contextlib
 import itertools
+import traceback
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
 except:
     dout_dir = "./"
+
+class latex:
+    ell = "$\\ell$"
+    L = "$L$"
+    dl = "$D_{\\ell}$"
+    cl = "$C_{\\ell}$"
+    cL = "$C_{L}$"
+    ratcl = "$\Delta C_{\\ell}/C_{\\ell}$"
 
 class DummyFile(object):
     def write(self, x): pass
@@ -23,6 +31,23 @@ def nostdout():
     sys.stdout = save_stdout
 
 
+@contextlib.contextmanager
+def no_context():
+    yield None
+
+## PARSING
+
+def but_her_emails(string=None,filename=None):
+    """Extract email addresses from a string
+    or file."""
+    import re
+    if string is None:
+        with open("emails.txt",'r') as myfile:
+            string=myfile.read().replace('\n', '')
+    match = re.findall(r'[\w\.-]+@[\w\.-]+', string)
+    return match
+
+    
 ## LOGGING
 
 class LoggerWriter:
@@ -59,6 +84,14 @@ def get_logger(logname)        :
     
 ### FILE I/O
 
+def config_from_yaml(filename):
+    import yaml
+    with open(filename) as f:
+        config = yaml.safe_load(f)
+    return config
+
+
+
 def dict_from_section(config,section_name):
     try:
         del config._sections[section_name]['__name__']
@@ -68,7 +101,10 @@ def dict_from_section(config,section_name):
 
 
     
-def mkdir(dirpath,comm=mpi.MPI.COMM_WORLD):
+def mkdir(dirpath,comm=None):
+    if comm is None:
+        from orphics import mpi
+        comm = mpi.MPI.COMM_WORLD
     exists = os.path.exists(dirpath)
     comm.Barrier()
     if comm.Get_rank()==0: 
@@ -131,10 +167,21 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
+def hplot(img,savename=None,verbose=True,grid=False,**kwargs):
+    from pixell import enplot
+    plots = enplot.get_plots(img,grid=grid,**kwargs)
+    if savename is None:
+        enplot.show(plots)
+        return
+    enplot.write(savename,plots)
+    if verbose: cprint("Saved plot to "+ savename,color="g")
+
 def blend(fg_file,bg_file,alpha,save_file=None,verbose=True):
     from PIL import Image
-    foreground = Image.open(fg_file)
+    foreground = Image.open(fg_file) #.convert('RGB')
     background = Image.open(bg_file)
+    print(foreground.mode)
+    print(background.mode)
     blended = Image.blend(foreground, background, alpha=alpha)
     if save_file is not None:
         blended.save(save_file)
@@ -153,33 +200,42 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
     return ret
         
 
-def mollview(hp_map,filename=None,cmin=None,cmax=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
+def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
     '''
     mollview plot for healpix wrapper
     '''
     import healpy as hp
+    if lim is None:
+        cmin = cmax = None
+    elif type(lim) is list or type(lim) is tuple:
+        cmin,cmax = lim
+    else:
+        cmin =-lim
+        cmax = lim
     retimg = hp.mollview(hp_map,min=cmin,max=cmax,coord=coord,return_projected_map=return_projected_map,**kwargs)
     if filename is not None:
         plt.savefig(filename)
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=24,high_res=False,flip=True,down=None,crange=None,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap="planck",arc_width=None,xlabel="",ylabel="",**kwargs):
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
-        high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,**kwargs)
+        high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,cmap=cmap,**kwargs)
     else:
-        pl = Plotter(ftsize=ftsize,xlabel="",ylabel="")
-        pl.plot2d(array,**kwargs)
+        extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
+        pl = Plotter(ftsize=ftsize,xlabel=xlabel,ylabel=ylabel)
+        pl.plot2d(array,extent=extent,**kwargs)
         pl.done(filename,verbose=verbose)
 
 
-def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None):
+
+def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None,cmap="planck"):
     if not(overwrite):
         if os.path.isfile(filename): return
     try:
-        from enlib import enmap, enplot
+        from pixell import enmap, enplot
     except:
         traceback.print_exc()
         cprint("Could not produce plot "+filename+". High resolution plotting requires enlib, which couldn't be imported. Continuing without plotting.",color='fail')
@@ -190,7 +246,7 @@ def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,
         downmap = enmap.downgrade(enmap.enmap(array)[None], down)
     else:
         downmap = enmap.enmap(array)[None]
-    img = enplot.draw_map_field(downmap,enplot.parse_args("-vvvg moo"),crange=crange)
+    img = enplot.draw_map_field(downmap,enplot.parse_args("-c "+cmap+" -vvvg moo"),crange=crange)
     #img = enplot.draw_map_field(downmap,enplot.parse_args("--grid 1"),crange=crange)
     if filename is None:
         img.show()
@@ -204,8 +260,12 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,xlabel=None,ylabel=None,xscale="linear",yscale="linear",ftsize=24,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,**kwargs):
-
+    def __init__(self,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
+        self.scalefn = scalefn
+        if xyscale is not None:
+            scalemap = {'log':'log','lin':'linear'}
+            xscale = scalemap[xyscale[:3]]
+            yscale = scalemap[xyscale[3:]]
         matplotlib.rc('axes', linewidth=thk)
         matplotlib.rc('axes', labelcolor='k')
         self.thk = thk
@@ -234,35 +294,43 @@ class Plotter(object):
         self._ax.set_yscale(yscale, nonposy='clip')
 
 
-        if labsize is None: labsize=ftsize
+        if labsize is None: labsize=ftsize-2
         plt.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)#,size=labsize)
         plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
+        self.do_legend = False
 
 
-    def legend(self,loc='upper left',labsize=10,numpoints=1,**kwargs):
-
+    def legend(self,loc='best',labsize=12,numpoints=1,**kwargs):
+        self.do_legend = False
         handles, labels = self._ax.get_legend_handles_labels()
         legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=numpoints,frameon = 1,**kwargs)
 
         return legend
            
-    def add(self,x,y,**kwargs):
-
-        return self._ax.plot(x,y,**kwargs)
+    def add(self,x,y,label=None,lw=2,linewidth=None,**kwargs):
+        if linewidth is not(None): lw = linewidth
+        if label is not None: self.do_legend = True
+        scaler = self.scalefn(x)
+        yc = y*scaler
+        return self._ax.plot(x,yc,label=label,linewidth=lw,**kwargs)
 
 
     def hist(self,data,**kwargs):
         return self._ax.hist(data,**kwargs)
     
         
-    def add_err(self,x,y,yerr,ls='none',band=False,alpha=0.5,**kwargs):
+    def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",elinewidth=2,markersize=4,label=None,mulx=1.,addx=0.,**kwargs):
+        scaler = self.scalefn(x)
+        yc = y*scaler
+        yerrc = yerr*scaler
         if band:
-            self._ax.plot(x,y,ls=ls,**kwargs)
-            self._ax.fill_between(x, y-yerr, y+yerr, alpha=alpha)
+            self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,**kwargs)
+            self._ax.fill_between(x*mulx+addx, yc-yerrc, y+yerrc, alpha=alpha)
         else:
-            self._ax.errorbar(x,y,yerr=yerr,ls=ls,**kwargs)
+            self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)
+        if label is not None: self.do_legend = True
 
-    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=18,extent=None,ticksize=12,**kwargs):
+    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,**kwargs):
         '''
         For an array passed in as [j,i]
         Displays j along y and i along x , so (y,x)
@@ -273,9 +341,9 @@ class Plotter(object):
         Ny=data.shape[1]
         arr=data[clip:Nx-clip,clip:Ny-clip]
 
-        if type(lim) is list:
+        if type(lim) is list or type(lim) is tuple:
             limmin,limmax = lim
-        elif lim==None:
+        elif lim is None:
             limmin=None
             limmax = None
         else:
@@ -306,6 +374,7 @@ class Plotter(object):
         self._ax.axvline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
 
     def done(self,filename=None,verbose=True,**kwargs):
+        if self.do_legend: self.legend()
 
         if filename is not None:
             plt.savefig(filename,bbox_inches='tight',**kwargs)
@@ -540,3 +609,32 @@ class FisherPlots(object):
         plt.savefig(saveFile, bbox_inches='tight',format='png')
         print(bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
     
+
+
+def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.repeat(None),lss=itertools.repeat(None),labels=itertools.repeat(None),levels=[2.],xlims=None,ylims=None,loc='center',alphas=None,save_file=None,fig=None,ax=None,**kwargs):
+    if alphas is None: alphas = [1]*len(chi2ds)
+    if fig is None: fig = plt.figure(**kwargs)
+    if ax is None: ax = fig.add_subplot(1,1,1)
+    xx = np.array(np.arange(360) / 180. * np.pi)
+    circl = np.array([np.cos(xx),np.sin(xx)])
+
+    for chi2d,col,ls,lab,alpha in zip(chi2ds,cols,lss,labels,alphas):
+        Lmat = np.linalg.cholesky(chi2d)
+        ansout = np.dot(1.52*Lmat,circl)
+        ax.plot(ansout[0,:]+xval, ansout[1,:]+yval,linewidth=thk,color=col,ls=ls,label=lab,alpha=alpha)
+
+
+    ax.set_ylabel(paramlabely,fontsize=24,weight='bold')
+    ax.set_xlabel(paramlabelx,fontsize=24,weight='bold')
+
+    if xlims is not None: ax.set_xlim(*xlims)
+    if ylims is not None: ax.set_ylim(*ylims)
+
+
+    labsize = 12
+    handles, labels = ax.get_legend_handles_labels()
+    legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
+    if save_file is not None:
+        plt.savefig(save_file, bbox_inches='tight',format='png')
+        print(bcolors.OKGREEN+"Saved plot to", save_file+bcolors.ENDC)
+    return fig,ax
