@@ -148,6 +148,7 @@ class FlatLensingSims(object):
             ps_kk = theory.gCl('kk',self.modlmap).reshape((1,1,Ny,Nx))
             self.kgen = maps.MapGen(shape[-2:],wcs,ps_kk)
             self.posmap = enmap.posmap(shape[-2:],wcs)
+            self.ps_kk = ps_kk
         self.kbeam = maps.gauss_beam(self.modlmap,beam_arcmin)
         ncomp = 3 if pol else 1
         ps_noise = np.zeros((ncomp,ncomp,Ny,Nx))
@@ -157,7 +158,6 @@ class FlatLensingSims(object):
             ps_noise[2,2] = (noise_b_uk_arcmin*np.pi/180./60.)**2.
         self.ngen = maps.MapGen(shape,wcs,ps_noise)
         self.ps_noise = ps_noise
-        self.ps_kk = ps_kk
 
     def get_unlensed(self,seed=None):
         return self.mgen.get_map(seed=seed)

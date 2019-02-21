@@ -814,7 +814,7 @@ class TheorySpectra:
     def __init__(self):
 
         self.always_unlensed = False
-        self.always_lensed = True
+        self.always_lensed = False
         self._uCl={}
         self._lCl={}
         self._gCl = {}

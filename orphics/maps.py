@@ -1246,7 +1246,7 @@ def split_calc(isplits,jsplits,icoadd,jcoadd,fourier_calc=None,alt=True):
         totcross = 0.
         for i in range(insplits):
             for j in range(jnsplits):
-                if i==j: continue
+                if i==j: continue # FIXME: REALLY?! What about for independent experiments?
                 totcross += fc.f2power(isplits[i],jsplits[j])
                 ncrosses += 1.
         crosses = totcross / ncrosses
