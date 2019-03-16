@@ -627,7 +627,7 @@ class LimberCosmology(Cosmology):
         
         self._generateWindow(tag,bias,magbias,numzIntegral)
         
-    def addNz(self,tag,zedges,nz,bias=None,magbias=None,numzIntegral=300,ignore_exists=False):
+    def addNz(self,tag,zs,nz,bias=None,magbias=None,numzIntegral=300,ignore_exists=False):
 
         '''
         Assumes equally spaced bins
@@ -639,13 +639,11 @@ class LimberCosmology(Cosmology):
         assert tag!="cmb", "cmb is a tag reserved for cosmic microwave background. Use a different tag."
         
             
-        dzs = (zedges[1:]-zedges[:-1])
-        norm = np.dot(dzs,nz)
-        zmids = (zedges[1:]+zedges[:-1])/2.
+        norm = np.trapz(nz,zs)
         self.kernels[tag] = {}
-        self.kernels[tag]['dndz'] = interp1d(zmids,nz/norm,bounds_error=False,fill_value=0.)
-        self.kernels[tag]['zmin'] = zedges.min()
-        self.kernels[tag]['zmax'] = zedges.max()
+        self.kernels[tag]['dndz'] = interp1d(zs,nz/norm,bounds_error=False,fill_value=0.)
+        self.kernels[tag]['zmin'] = zs.min()
+        self.kernels[tag]['zmax'] = zs.max()
 
         self._generateWindow(tag,bias,magbias,numzIntegral)
 
@@ -1018,17 +1016,17 @@ class LensForecast:
         self.Nls = {}
         
 
-    def loadKK(self,ellsCls,Cls,ellsNls,Nls):
+    def loadKK(self,ellsCls,Cls,ellsNls,Nls,lpad=30000):
         self.Nls['kk'] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
-        self.theory.loadGenericCls(ellsCls,Cls,'kk')
+        self.theory.loadGenericCls(ellsCls,Cls,'kk',lpad=lpad)
     
         self._haveKK = True
         
 
-    def loadGG(self,ellsCls,Cls,ngal):
+    def loadGG(self,ellsCls,Cls,ngal,lpad=30000):
         self.ngalForeground = ngal
         self.Nls['gg'] = lambda x: x*0.+1./(self.ngalForeground*1.18e7)
-        self.theory.loadGenericCls(ellsCls,Cls,'gg')
+        self.theory.loadGenericCls(ellsCls,Cls,'gg',lpad=lpad)
     
         self._haveGG = True
         

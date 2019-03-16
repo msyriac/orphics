@@ -9,6 +9,19 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 
+def rms_from_ivar(ivar,parea=None,cylindrical=True):
+    """
+    Return rms noise for each pixel in a map in physical units
+    (uK-arcmin) given a map of the inverse variance per pixel.
+    Optionally, provide a map of the pixel area.
+    """
+    if parea is None:
+        shape,wcs = ivar.shape, ivar.wcs
+        parea = psizemap(shape,wcs) if cylindrical else enmap.pixsizemap(shape,wcs)
+    return np.sqrt((1./ivar)*parea)*180*60./np.pi
+
+    
+
 def psizemap(shape,wcs):
     """
     Return map of pixel areas in radians for a cylindrical map.

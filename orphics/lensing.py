@@ -116,12 +116,16 @@ def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
     mf = maps.MatchedFilter(shape,wcs,template,kappa_noise_2d)
     mf.apply(kappa_recon,kmask=kmask)
 
-def alpha_from_kappa(kappa,posmap=None):
-    phi,_ = kappa_to_phi(kappa,kappa.modlmap(),return_fphi=True)
+def alpha_from_kappa(kappa=None,posmap=None,phi=None):
+    if phi is None:
+        phi,_ = kappa_to_phi(kappa,kappa.modlmap(),return_fphi=True)
+        shape,wcs = phi.shape,phi.wcs
+    else:
+        shape,wcs = phi.shape,phi.wcs
     grad_phi = enmap.grad(phi)
-    if posmap is None: posmap = enmap.posmap(kappa.shape,kappa.wcs)
+    if posmap is None: posmap = enmap.posmap(shape,wcs)
     pos = posmap + grad_phi
-    alpha_pix = enmap.sky2pix(kappa.shape,kappa.wcs,pos, safe=False)
+    alpha_pix = enmap.sky2pix(shape,wcs,pos, safe=False)
     return alpha_pix
     
 
@@ -2758,42 +2762,4 @@ class L1Integral(object):
         integral = np.trapz(y=integrand,x=self.l1x[0,:],axis=-1)
         integral = np.trapz(y=integral,x=self.l1y[:,0],axis=-1)
         return integral
-
-        
-
-
-
-# class JointRecon(object):
-
-#     def __init__(self,shape,wcs):
-#         self. = {}
-#         self.estimators = {}
-#         pass
-#     def add_map(self,name,kmask,ptype="T",noise_beam_deconvolved=None,total_noise_beam_deconvolved=None):
-#         pass
-#     def load_map(self,name,imap=None,kmap=None):
-#         pass
-#     def build_estimator(self,tag,xname,yname,cross_noise=None):
-#         pass
-#     def cov(self,tag1,tag2):
-#         pass
-#     def get_cov_matrix(self,tags):
-#         pass
-    
-
-
-# jr = JointRecon(shape,wcs)
-# jr.add_map("Ts",tmask,"T",noise)
-# jr.add_map("Tc",tmask,"T",noise)
-# jr.add_map("Es",tmask,"E",noise)
-# jr.add_map("Bs",tmask,"E",noise)
-# jr.build_estimator("TcTs","Tc","Ts",cross_noise_constrained_standard)
-# jr.build_estimator("TsTc","Ts","Tc",cross_noise_constrained_standard)
-# jr.build_estimator("TsEs","Ts","Es",ClTE)
-# jr.build_estimator("EsTs","Es","Ts",ClTE)
-# jr.build_estimator("EsBs","Es","Bs",0)
-# jr.build_estimator("EsEs","Es","Es",0)
-# jr.build_estimator("TsBs","Ts","Ts",0)
-# ncov = jr.get_cov_matrix(["TpTa","TaTp"])
-
 
