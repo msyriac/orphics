@@ -14,6 +14,7 @@ except:
 import time, re, os
 from scipy.integrate import odeint
 
+
 defaultConstants = {'TCMB': 2.7255
                     ,'G_CGS': 6.67259e-08
                     ,'MSUN_CGS': 1.98900e+33
@@ -1558,3 +1559,35 @@ def Pgg_Pvv_Pgv(ks,z,bg_scale=None,scale_growth=True,camb_kmax=10., \
     prefgv = fahk*bgeff*Wphoto
     retvalgv = prefgv * pmu
     return retvalgg,retvalgv,retvalvv
+
+
+def s8_from_as(As,
+               w0 = -1,
+               wa = 0,
+               mnu = 0.,
+               nnu = 3.046,
+               tau = 0.06,
+               num_massive_neutrinos = 3,
+               omegab = 0.049,
+               omegac = 0.261,
+               h      = 0.68,
+               ns     = 0.965
+               ):
+    
+    omch2 = omegac * h**2.
+    ombh2 = omegab * h**2.
+    H0 = h*100.
+    pars = camb.CAMBparams()
+    pars.set_dark_energy(w=w0,wa=wa)
+    pars.set_cosmology(H0=H0,ombh2=ombh2, omch2=omch2, mnu=mnu, tau=tau,nnu=nnu,num_massive_neutrinos=num_massive_neutrinos)
+    pars.InitPower.set_params(ns=ns,As=As)
+    pars.WantTransfer = True
+    results= camb.get_background(pars)
+    results.calc_power_spectra(pars)
+    s8 = results.get_sigma8()
+    return s8
+
+
+def As_from_s8(sigma8 = 0.81,bounds=[1.9e-9,2.5e-9],**kwargs):
+    from orphics.algorithms import vectorized_bisection_search
+    return vectorized_bisection_search(np.array(sigma8)[None],lambda x: np.array(s8_from_as(x,**kwargs)),bounds,monotonicity='increasing',rtol=1e-5,verbose=True,hang_check_num_iter=20)[0]
