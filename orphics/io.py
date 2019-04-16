@@ -1,11 +1,15 @@
 from __future__ import print_function
 import matplotlib
+import matplotlib as mpl
+from cycler import cycler
+mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 import matplotlib.pyplot as plt
 import numpy as np
 import os,sys,logging,time
 import contextlib
 import itertools
 import traceback
+from pixell import enmap
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
@@ -167,6 +171,12 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
+def fplot(img,savename=None,verbose=True,**kwargs):
+    hplot(enmap.samewcs(np.fft.fftshift(np.log10(img)),img),savename=savename,verbose=verbose,**kwargs)
+
+def mplot(img,savename=None,verbose=True,**kwargs):
+    plot_img(enmap.samewcs(np.fft.fftshift(np.log10(img)),img),filename=savename,verbose=verbose,**kwargs)
+    
 def hplot(img,savename=None,verbose=True,grid=False,**kwargs):
     from pixell import enplot
     plots = enplot.get_plots(img,grid=grid,**kwargs)

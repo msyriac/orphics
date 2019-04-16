@@ -14,6 +14,7 @@ except:
 import time, re, os
 from scipy.integrate import odeint
 
+
 defaultConstants = {'TCMB': 2.7255
                     ,'G_CGS': 6.67259e-08
                     ,'MSUN_CGS': 1.98900e+33
@@ -627,7 +628,7 @@ class LimberCosmology(Cosmology):
         
         self._generateWindow(tag,bias,magbias,numzIntegral)
         
-    def addNz(self,tag,zedges,nz,bias=None,magbias=None,numzIntegral=300,ignore_exists=False):
+    def addNz(self,tag,zs,nz,bias=None,magbias=None,numzIntegral=300,ignore_exists=False):
 
         '''
         Assumes equally spaced bins
@@ -639,13 +640,11 @@ class LimberCosmology(Cosmology):
         assert tag!="cmb", "cmb is a tag reserved for cosmic microwave background. Use a different tag."
         
             
-        dzs = (zedges[1:]-zedges[:-1])
-        norm = np.dot(dzs,nz)
-        zmids = (zedges[1:]+zedges[:-1])/2.
+        norm = np.trapz(nz,zs)
         self.kernels[tag] = {}
-        self.kernels[tag]['dndz'] = interp1d(zmids,nz/norm,bounds_error=False,fill_value=0.)
-        self.kernels[tag]['zmin'] = zedges.min()
-        self.kernels[tag]['zmax'] = zedges.max()
+        self.kernels[tag]['dndz'] = interp1d(zs,nz/norm,bounds_error=False,fill_value=0.)
+        self.kernels[tag]['zmin'] = zs.min()
+        self.kernels[tag]['zmax'] = zs.max()
 
         self._generateWindow(tag,bias,magbias,numzIntegral)
 
@@ -814,7 +813,7 @@ class TheorySpectra:
     def __init__(self):
 
         self.always_unlensed = False
-        self.always_lensed = True
+        self.always_lensed = False
         self._uCl={}
         self._lCl={}
         self._gCl = {}
@@ -1018,17 +1017,17 @@ class LensForecast:
         self.Nls = {}
         
 
-    def loadKK(self,ellsCls,Cls,ellsNls,Nls):
+    def loadKK(self,ellsCls,Cls,ellsNls,Nls,lpad=30000):
         self.Nls['kk'] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
-        self.theory.loadGenericCls(ellsCls,Cls,'kk')
+        self.theory.loadGenericCls(ellsCls,Cls,'kk',lpad=lpad)
     
         self._haveKK = True
         
 
-    def loadGG(self,ellsCls,Cls,ngal):
+    def loadGG(self,ellsCls,Cls,ngal,lpad=30000):
         self.ngalForeground = ngal
         self.Nls['gg'] = lambda x: x*0.+1./(self.ngalForeground*1.18e7)
-        self.theory.loadGenericCls(ellsCls,Cls,'gg')
+        self.theory.loadGenericCls(ellsCls,Cls,'gg',lpad=lpad)
     
         self._haveGG = True
         
@@ -1560,3 +1559,35 @@ def Pgg_Pvv_Pgv(ks,z,bg_scale=None,scale_growth=True,camb_kmax=10., \
     prefgv = fahk*bgeff*Wphoto
     retvalgv = prefgv * pmu
     return retvalgg,retvalgv,retvalvv
+
+
+def s8_from_as(As,
+               w0 = -1,
+               wa = 0,
+               mnu = 0.,
+               nnu = 3.046,
+               tau = 0.06,
+               num_massive_neutrinos = 3,
+               omegab = 0.049,
+               omegac = 0.261,
+               h      = 0.68,
+               ns     = 0.965
+               ):
+    
+    omch2 = omegac * h**2.
+    ombh2 = omegab * h**2.
+    H0 = h*100.
+    pars = camb.CAMBparams()
+    pars.set_dark_energy(w=w0,wa=wa)
+    pars.set_cosmology(H0=H0,ombh2=ombh2, omch2=omch2, mnu=mnu, tau=tau,nnu=nnu,num_massive_neutrinos=num_massive_neutrinos)
+    pars.InitPower.set_params(ns=ns,As=As)
+    pars.WantTransfer = True
+    results= camb.get_background(pars)
+    results.calc_power_spectra(pars)
+    s8 = results.get_sigma8()
+    return s8
+
+
+def As_from_s8(sigma8 = 0.81,bounds=[1.9e-9,2.5e-9],**kwargs):
+    from orphics.algorithms import vectorized_bisection_search
+    return vectorized_bisection_search(np.array(sigma8)[None],lambda x: np.array(s8_from_as(x,**kwargs)),bounds,monotonicity='increasing',rtol=1e-5,verbose=True,hang_check_num_iter=20)[0]
