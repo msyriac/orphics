@@ -8,6 +8,7 @@ from orphics import io,cosmology,stats
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
+import healpy as hp
 
 def rms_from_ivar(ivar,parea=None,cylindrical=True):
     """
@@ -2821,5 +2822,31 @@ class PolLensSplit(object):
             observed.append( beamed+noise )
         observed = enmap.enmap(np.stack(observed),self.wcs)
         return observed
+
+def change_alm_lmax(alms, lmax):
+    ilmax  = hp.Alm.getlmax(alms.shape[-1])
+    olmax  = lmax
+
+    oshape     = list(alms.shape)
+    oshape[-1] = hp.Alm.getsize(omax)
+    oshape     = tuple(oshape)
+
+    alms_out   = np.zeros(oshape, dtype = np.complex128)
+    flmax      = min(ilmax, olmax)
+
+    for m in range(flmax+1):
+        lminc = m
+        lmaxc = flmax
+
+        idx_isidx = hp.Alm.getidx(ilmax, lminc, m)
+        idx_ieidx = hp.Alm.getidx(ilmax, lmaxc, m)
+        idx_osidx = hp.Alm.getidx(olmax, lminc, m)
+        idx_oeidx = hp.Alm.getidx(olmax, lmaxc, m)
+
+        alms_out[..., idx_osidx:idx_oeidx+1] = alms[..., idx_isidx:idx_ieidx+1].copy()
+    return alms_out
+
+
+
 
 
