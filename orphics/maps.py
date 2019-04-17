@@ -8,7 +8,7 @@ from orphics import io,cosmology,stats
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
-from healpix import hp
+import healpy as hp
 
 def rms_from_ivar(ivar,parea=None,cylindrical=True):
     """
