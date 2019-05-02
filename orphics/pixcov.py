@@ -1,6 +1,6 @@
 from __future__ import print_function
 import numpy as np
-from enlib import enmap,bench,utils
+from pixell import enmap,utils
 
 """
 Utilities that manipulate pixel-pixel covariance
@@ -95,7 +95,40 @@ def fcov_to_rcorr(shape,wcs,p2d,N):
 
 # Inpainting routines
 
-def make_geometry(shape,wcs,hole_radius,cmb2d_TEB=None,n2d_IQU=None,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None,tot_pow2d=None,store_pcov=False):
+def pcov_from_ivar(n,dec,ra,ivar,cmb_theory_fn,beam_fn,iau=False):
+    """
+    Get a pixel covariance matrix for a stamp around a given location
+    from the white noise inverse variance map and theory and beam
+    functions.
+    """
+    assert ivar.ndim==2
+    py,px = ivar.sky2pix((dec,ra))
+    py = int(py)
+    px = int(px)
+    sy = py - n//2
+    sx = px - n//2
+    ey = sy + n
+    ex = sx + n
+    sliced = 1./ivar[sy:ey,sx:ex]
+    sliced[~np.isfinite(sliced)] = 1./ivar[ivar>0].max() # this is wrong! but needed to prevent singular matrices?!
+    ncov = np.diag(sliced.reshape(-1))
+    ncov_IQU = np.zeros((3,3,n*n,n*n))
+    ncov_IQU[0,0] = ncov.copy()
+    ncov_IQU[1,1] = ncov.copy() * 2.
+    ncov_IQU[2,2] = ncov.copy() * 2.
+    modlmap = sliced.modlmap()
+    cmb2d_TEB = np.zeros((3,3,n,n))
+    theory = cmb_theory_fn
+    cmb2d_TEB[0,0] = theory('TT',modlmap)
+    cmb2d_TEB[1,1] = theory('EE',modlmap)
+    cmb2d_TEB[2,2] = theory('BB',modlmap)
+    cmb2d_TEB[0,1] = theory('TE',modlmap)
+    cmb2d_TEB[1,0] = theory('TE',modlmap)
+    beam2d = beam_fn(modlmap)
+    tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
+    return tcov + ncov_IQU
+
+def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=None,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None,tot_pow2d=None,store_pcov=False,pcov=None):
 
     """
     Make covariances for brute force maxlike inpainting of CMB maps.
@@ -120,19 +153,21 @@ def make_geometry(shape,wcs,hole_radius,cmb2d_TEB=None,n2d_IQU=None,context_widt
     if res is None: res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
     if n is None: n = int(context_width/res)
 
+    # Get the pix-pix covariance on the stamp geometry given CMB theory, beam and 2D noise on the big map
+    if pcov is None:
+        if tot_pow2d is not None:
+                pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
+        else:
+                pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
+
+
     # Do we have polarization?
-    n2d = n2d_IQU
-    ncomp = n2d.shape[0]
+    ncomp = pcov.shape[0]
     assert ncomp==1 or ncomp==2 or ncomp==3
 
     # Select the hole (m1) and context(m2) across all components
     m1,m2 = get_geometry_regions(ncomp,n,res,hole_radius)
 
-    # Get the pix-pix covariance on the stamp geometry given CMB theory, beam and 2D noise on the big map
-    if tot_pow2d is not None:
-            pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
-    else:
-            pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
     # --- Make sure that the pcov is in the right order vector(I,Q,U) ---
     # It is currently in (ncomp,ncomp,n,n) order
     # We transpose it to (ncomp,n,ncomp,n) order
@@ -250,32 +285,29 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
 
     omap = imap.copy()
     pixs = imap.sky2pix(np.deg2rad(coords_deg),corner=False)
-    print(pixs.shape)
     fround = lambda x : int(np.round(x))
     pad = 1
 
     skipped = 0
-    last_tag = ''
     for i in range(Nobj):
 
         # Get geometry for this object
         geotag = geometry_tags[i]
-        if last_tag != geotag:
-            geometry = geometry_dicts[geotag]
-            cov_root = geometry['covsqrt']
-            mean_mul = geometry['meanmul']
-            Npix = geometry['n']
-            m1 = geometry['m1']  # hole
-            m2 = geometry['m2']  # context
-            ncomp = geometry['ncomp']
+        geometry = geometry_dicts[geotag]
+        cov_root = geometry['covsqrt']
+        mean_mul = geometry['meanmul']
+        Npix = geometry['n']
+        m1 = geometry['m1']  # hole
+        m2 = geometry['m2']  # context
+        ncomp = geometry['ncomp']
 
-            if ncomp==1 or ncomp==3:
-                polslice = np.s_[:ncomp,...]
-            elif ncomp==2:
-                #polslice = np.s_[1:,...]
-                raise NotImplementedError
-            else:
-                raise ValueError
+        if ncomp==1 or ncomp==3:
+            polslice = np.s_[:ncomp,...]
+        elif ncomp==2:
+            #polslice = np.s_[1:,...]
+            raise NotImplementedError
+        else:
+            raise ValueError
 
         # Slice out stamp
         iy,ix = pixs[:,i]
@@ -304,7 +336,7 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
         rstamp = paste(stamp,m1,sim)
         stamp[:,:,:] = rstamp[:,:,:]
 
-    if verbose: print("Objects skipped due to edges ", skipped , " / ",i)
+    if verbose: print("Objects skipped due to edges ", skipped , " / ",Nobj)
     return omap
 
 
