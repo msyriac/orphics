@@ -430,7 +430,7 @@ def beam_cov(ucov,kbeam):
     return Scov
 
 
-def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000,noise2d_B=None):
+def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kmask_P=None,kmask_K=None,pol=False,grad_cut=None,unlensed_equals_lensed=False,bigell=9000,noise2d_B=None,noiseX_is_total=False,noiseY_is_total=False):
     # if beam2d is None, assumes input maps are beam deconvolved and noise2d is beam deconvolved
     # otherwise, it beam deconvolves itself
     if noise2d is None: noise2d = np.zeros(shape[-2:])
@@ -442,8 +442,8 @@ def qest(shape,wcs,theory,noise2d=None,beam2d=None,kmask=None,noise2d_P=None,kma
                      theorySpectraForNorm=theory,
                      noiseX2dTEB=[noise2d,noise2d_P,noise2d_B],
                      noiseY2dTEB=[noise2d,noise2d_P,noise2d_B],
-                     noiseX_is_total = False,
-                     noiseY_is_total = False,
+                     noiseX_is_total = noiseX_is_total,
+                     noiseY_is_total = noiseY_is_total,
                      fmaskX2dTEB=[kmask,kmask_P,kmask_P],
                      fmaskY2dTEB=[kmask,kmask_P,kmask_P],
                      fmaskKappa=kmask_K,

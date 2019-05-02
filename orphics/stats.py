@@ -849,11 +849,12 @@ def get_stats(binned_vectors):
     else:
 
         # ???
-        d = np.diag(ret['cov'])
-        stddev = np.sqrt(d)
-        ret['corr'] = ret['cov'] / stddev[:, None]
-        ret['corr'] = ret['cov'] / stddev[None, :]
-        np.clip(ret['corr'], -1, 1, out=ret['corr'])
+        # d = np.diag(ret['cov'])
+        # stddev = np.sqrt(d)
+        # ret['corr'] = ret['cov'] / stddev[:, None]
+        # ret['corr'] = ret['cov'] / stddev[None, :]
+        # np.clip(ret['corr'], -1, 1, out=ret['corr'])
+        ret['corr'] = cov2corr(ret['cov'])
     
 
         

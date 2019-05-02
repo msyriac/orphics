@@ -388,12 +388,12 @@ class Plotter(object):
         if self.do_legend: self.legend()
 
         if filename is not None:
-            plt.savefig(filename,bbox_inches='tight',**kwargs)
+            self._fig.savefig(filename,bbox_inches='tight',**kwargs)
             if verbose: cprint("Saved plot to "+ filename,"g")
         else:
             plt.show()
 
-        plt.close()
+        plt.close(self._fig)
     
 
 
