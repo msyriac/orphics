@@ -2828,7 +2828,7 @@ def change_alm_lmax(alms, lmax):
     olmax  = lmax
 
     oshape     = list(alms.shape)
-    oshape[-1] = hp.Alm.getsize(omax)
+    oshape[-1] = hp.Alm.getsize(olmax)
     oshape     = tuple(oshape)
 
     alms_out   = np.zeros(oshape, dtype = np.complex128)

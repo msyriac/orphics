@@ -830,8 +830,8 @@ def get_stats(binned_vectors):
     '''
     # untested!
     
-    
     arr = np.asarray(binned_vectors)
+    
     N = arr.shape[0]  
     ret = {}
     ret['mean'] = np.nanmean(arr,axis=0)
@@ -849,12 +849,12 @@ def get_stats(binned_vectors):
     else:
 
         # ???
-        # d = np.diag(ret['cov'])
-        # stddev = np.sqrt(d)
-        # ret['corr'] = ret['cov'] / stddev[:, None]
-        # ret['corr'] = ret['cov'] / stddev[None, :]
-        # np.clip(ret['corr'], -1, 1, out=ret['corr'])
-        ret['corr'] = cov2corr(ret['cov'])
+        d = np.diag(ret['cov'])
+        stddev = np.sqrt(d)
+        ret['corr'] = ret['cov'] / stddev[:, None]
+        ret['corr'] = ret['cov'] / stddev[None, :]
+        np.clip(ret['corr'], -1, 1, out=ret['corr'])
+        #ret['corr'] = cov2corr(ret['cov'])
     
 
         
