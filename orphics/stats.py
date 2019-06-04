@@ -767,7 +767,7 @@ class bin2D(object):
             if err:
                 meanmap = self.modrmap.copy().reshape(-1) * 0
                 for i in range(self.centers.size): meanmap[self.digitized==i] = res[i]
-                std = np.bincount(self.digitized,((data2d-meanmap.reshape(self.modrmap.shape))**2.).reshape(-1))[1:-1]/(count-1)/count
+                std = np.sqrt(np.bincount(self.digitized,((data2d-meanmap.reshape(self.modrmap.shape))**2.).reshape(-1))[1:-1]/(count-1)/count)
         else:
             count = np.bincount(self.digitized,weights.reshape(-1))[1:-1]
             res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/count
