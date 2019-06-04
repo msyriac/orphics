@@ -130,7 +130,7 @@ class Cosmology(object):
             theta = None
         self.pars.set_cosmology(H0=H0, cosmomc_theta=theta,ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
         self.pars.Reion.Reionization = 0
-                  
+        self.pars.WantTransfer = 1
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
         self.nonlinear = nonlinear
