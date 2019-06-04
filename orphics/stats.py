@@ -758,14 +758,18 @@ class bin2D(object):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
         self.digitized = np.digitize(np.ndarray.flatten(modrmap), bin_edges,right=True)
         self.bin_edges = bin_edges
-    def bin(self,data2d,weights=None):
-        
+    def bin(self,data2d,weights=None,get_count=False):
         if weights is None:
-            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/np.bincount(self.digitized)[1:-1]
+            count = np.bincount(self.digitized)[1:-1]
+            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/count
         else:
             #weights = self.digitized*0.+weights
-            res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/np.bincount(self.digitized,weights.reshape(-1))[1:-1]
-        return self.centers,res
+            count = np.bincount(self.digitized,weights.reshape(-1))[1:-1]
+            res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/count
+        if get_count:
+            return self.centers,res,count
+        else:
+            return self.centers,res
 
 
 class bin1D:
