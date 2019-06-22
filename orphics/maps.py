@@ -35,11 +35,12 @@ def psizemap(shape,wcs):
     Nx = shape[-1]
     return enmap.ndmap(area[...,None].repeat(Nx,axis=-1),wcs)
     
-def white_noise(shape,wcs,noise_muK_arcmin):
+def white_noise(shape,wcs,noise_muK_arcmin,seed=None):
     """
     Generate a non-band-limited white noise map.
     """
     pmap = psizemap(shape,wcs)*((180.*60./np.pi)**2.)
+    if seed is not None: np.random.seed(seed)
     return (noise_muK_arcmin/np.sqrt(pmap))*np.random.standard_normal(shape)
 
 def get_ecc(img):
@@ -121,7 +122,8 @@ def crop_center(img,cropy,cropx=None):
     y,x = img.shape[-2:]
     startx = x//2-(cropx//2)
     starty = y//2-(cropy//2)
-    return img[...,starty:starty+cropy,startx:startx+cropx]
+    ret = img[...,starty:starty+cropy,startx:startx+cropx]
+    return ret
 
 def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None,mask=1):
     """Get the binned power spectrum of a map in one line of code.

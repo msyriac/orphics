@@ -756,15 +756,27 @@ def npspace(minim,maxim,num,scale="lin"):
 class bin2D(object):
     def __init__(self, modrmap, bin_edges):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
-        self.digitized = np.digitize(np.ndarray.flatten(modrmap), bin_edges,right=True)
+        self.digitized = np.digitize(modrmap.reshape(-1), bin_edges,right=True)
         self.bin_edges = bin_edges
-    def bin(self,data2d,weights=None):
-        
+        self.modrmap = modrmap
+
+    def bin(self,data2d,weights=None,err=False,get_count=False):
         if weights is None:
-            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/np.bincount(self.digitized)[1:-1]
+            count = np.bincount(self.digitized)[1:-1]
+            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/count
+            if err:
+                meanmap = self.modrmap.copy().reshape(-1) * 0
+                for i in range(self.centers.size): meanmap[self.digitized==i] = res[i]
+                std = np.sqrt(np.bincount(self.digitized,((data2d-meanmap.reshape(self.modrmap.shape))**2.).reshape(-1))[1:-1]/(count-1)/count)
         else:
-            #weights = self.digitized*0.+weights
-            res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/np.bincount(self.digitized,weights.reshape(-1))[1:-1]
+            count = np.bincount(self.digitized,weights.reshape(-1))[1:-1]
+            res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/count
+        if get_count:
+            assert not(err) # need to make more general
+            return self.centers,res,count
+        if err:
+            assert not(get_count)
+            return self.centers,res,std
         return self.centers,res
 
 
