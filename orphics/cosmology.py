@@ -1087,7 +1087,8 @@ class LensForecast:
         returns cov(Cl_XY,Cl_WZ),signalToNoise(Cl_XY)^2, signalToNoise(Cl_WZ)^2
         '''
         def ClTot(spec,ell1,ell2):
-            return self._bin_cls(spec,ell1,ell2,noise=True)
+            binned = self._bin_cls(spec,ell1,ell2,noise=True)
+            return binned
         
         X, Y = specTypeXY
         W, Z = specTypeWZ

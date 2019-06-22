@@ -158,7 +158,7 @@ def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=No
         if tot_pow2d is not None:
                 pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
         else:
-                pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
+                pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d_IQU,beam2d=beam2d,iau=iau)
 
 
     # Do we have polarization?
