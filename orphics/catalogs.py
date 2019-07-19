@@ -4,7 +4,7 @@ Utilities for dealing with galaxy catalogs, projecting catalogs into pixelated m
 
 
 import numpy as np
-from pixell import enmap,curvedsky
+from pixell import enmap
 import healpy as hp
 from astropy.io import fits
 from orphics import maps
@@ -46,6 +46,7 @@ class Pow2Cat(object):
         
     def get_map(self,seed=None):
         """Get correlated galaxy and kappa map """
+        from pixell import curvedsky
         alms = curvedsky.rand_alm_healpy(self.ps, lmax=self.lmax, seed=seed)
         ncomp = 1 if len(self.shape)==2 else self.shape[0]
         omap   = enmap.empty((ncomp,)+self.shape[-2:], self.wcs, dtype=np.float64)

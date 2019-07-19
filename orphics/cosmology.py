@@ -13,6 +13,7 @@ except:
 
 import time, re, os
 from scipy.integrate import odeint
+from orphics.io import bcolors
 
 
 defaultConstants = {'TCMB': 2.7255
