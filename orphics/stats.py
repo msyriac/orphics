@@ -41,11 +41,11 @@ def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True):
     A = np.zeros((y.size,len(funcs)))
     for i,func in enumerate(funcs):
         A[:,i] = func(x)
-    cov = np.linalg.inv(np.dot(A.T,solve(C,A)))
-    b = np.dot(A.T,solve(C,y))
+    cov = np.linalg.inv(np.dot(A.T,s(C,A)))
+    b = np.dot(A.T,s(C,y))
     X = np.dot(cov,b)
     YAX = y - np.dot(A,X)
-    chisquare = np.dot(YAX.T,solve(C,YAX))
+    chisquare = np.dot(YAX.T,s(C,YAX))
     dofs = len(x)-len(funcs)-1 if dofs is None else dofs
     pte = 1 - chi2.cdf(chisquare, dofs)    
     return X,cov,chisquare/dofs,pte
