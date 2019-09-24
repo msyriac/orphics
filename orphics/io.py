@@ -171,6 +171,13 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
+def power_crop(p2d,N,fname,ftrans=True,**kwargs):
+    from orphics import maps
+    pmap = maps.ftrans(p2d) if ftrans else p2d
+    Ny,Nx = p2d.shape
+    pimg = maps.crop_center(pmap,N,int(N*Nx/Ny))
+    plot_img(pimg,fname,aspect='auto',**kwargs)
+
 def fplot(img,savename=None,verbose=True,**kwargs):
     hplot(enmap.samewcs(np.fft.fftshift(np.log10(img)),img),savename=savename,verbose=verbose,**kwargs)
 

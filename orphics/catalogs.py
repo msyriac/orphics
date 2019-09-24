@@ -402,3 +402,17 @@ def optimize_splits(in_samples,in_splits):
     res = fmin(cost,in_splits[1:-1])
     out_splits = np.append(np.append(in_splits[0],res),in_splits[-1]).flatten()
     return out_splits
+
+
+def select_based_on_mask(ras,decs,mask,threshold=0.99):
+    """
+    Filters ra,dec based on whether it falls within a mask
+    """
+    coords = np.vstack((decs,ras))*np.pi/180.
+    pixs = enmap.sky2pix(mask.shape,mask.wcs,coords).astype(np.int)
+    # First select those that fall within geometry
+    sel = np.logical_and.reduce([pixs[0]>=0,pixs[1]>=0,pixs[0]<mask.shape[0],pixs[1]<mask.shape[1]])
+    pixs = pixs[:,sel]
+    coords = coords[:,sel]
+    scoords = np.rad2deg(coords[:,mask[pixs[0],pixs[1]]>threshold])
+    return scoords[1],scoords[0]

@@ -13,12 +13,12 @@ Use the below cleanup stuff only for intel-mpi!
 If you use it on openmpi, you will have no traceback for errors
 causing hours of endless confusion and frustration! - Sincerely, past frustrated Mat
 """
-# # From Sigurd's enlib.mpi:
-# # Uncaught exceptions don't cause mpi to abort. This can lead to thousands of
-# # wasted CPU hours
+# From Sigurd's enlib.mpi:
+# Uncaught exceptions don't cause mpi to abort. This can lead to thousands of
+# wasted CPU hours
 # def cleanup(type, value, traceback):
-# 	sys.__excepthook__(type, value, traceback)
-# 	MPI.COMM_WORLD.Abort(1)
+#     sys.__excepthook__(type, value, traceback)
+#     MPI.COMM_WORLD.Abort(1)
 # sys.excepthook = cleanup
 
 
@@ -54,9 +54,9 @@ except:
     MPI.COMM_WORLD = fakeMpiComm()
 
 
-def mpi_distribute(num_tasks,avail_cores):
+def mpi_distribute(num_tasks,avail_cores,allow_empty=False):
 
-    assert avail_cores<=num_tasks
+    if not(allow_empty): assert avail_cores<=num_tasks
     min_each, rem = divmod(num_tasks,avail_cores)
     num_each = np.array([min_each]*avail_cores) # first distribute equally
     if rem>0: num_each[-rem:] += 1  # add the remainder to the last set of cores (so that rank 0 never gets extra jobs)
@@ -64,15 +64,18 @@ def mpi_distribute(num_tasks,avail_cores):
     task_range = list(range(num_tasks)) # the full range of tasks
     cumul = np.cumsum(num_each).tolist() # the end indices for each task
     task_dist = [task_range[x:y] for x,y in zip([0]+cumul[:-1],cumul)] # a list containing the tasks for each core
+    assert sum(num_each)==num_tasks
+    assert len(num_each)==avail_cores
+    assert len(task_dist)==avail_cores
     return num_each,task_dist
     
 
 
-def distribute(njobs,verbose=True):
+def distribute(njobs,verbose=True,**kwargs):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     numcores = comm.Get_size()
-    num_each,each_tasks = mpi_distribute(njobs,numcores)
+    num_each,each_tasks = mpi_distribute(njobs,numcores,**kwargs)
     if rank==0: print ("At most ", max(num_each) , " tasks...")
     my_tasks = each_tasks[rank]
     return comm,rank,my_tasks
