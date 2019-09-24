@@ -79,6 +79,7 @@ def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
     that module independent. Ideally, it should be implemented in
     enlib.enmap.
     """
+    assert np.all(np.isfinite(cov))
     rot = np.zeros((3,3,cov.shape[-2],cov.shape[-1]))
     rot[0,0,:,:] = 1
     prot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=inverse, iau=iau)
@@ -2846,6 +2847,8 @@ def change_alm_lmax(alms, lmax):
         idx_oeidx = hp.Alm.getidx(olmax, lmaxc, m)
 
         alms_out[..., idx_osidx:idx_oeidx+1] = alms[..., idx_isidx:idx_ieidx+1].copy()
+
+
     return alms_out
 
 
