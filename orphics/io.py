@@ -171,6 +171,15 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
+def layered_contour(imap,imap_contour,contour_levels,contour_color,contour_width=1,mask=None,filename=None,**kwargs):
+    p1 = enplot.plot(imap,layers=True,mask=mask,**kwargs)
+    p2 = enplot.plot(imap_contour,layers=True,contours=contour_levels,contour_width=contour_width,mask=mask,contour_color=contour_color)
+    p1 += [a for a in p2 if "cont" in a.name]
+    img = enplot.merge_images([a.img for a in p1])
+    if filename is not None: enplot.write(filename, img)
+    return img
+
+
 def power_crop(p2d,N,fname,ftrans=True,**kwargs):
     from orphics import maps
     pmap = maps.ftrans(p2d) if ftrans else p2d
@@ -342,7 +351,7 @@ class Plotter(object):
         yc = y*scaler
         yerrc = yerr*scaler
         if band:
-            self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,**kwargs)
+            self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,markersize=markersize,**kwargs)
             self._ax.fill_between(x*mulx+addx, yc-yerrc, y+yerrc, alpha=alpha)
         else:
             self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)
