@@ -1593,3 +1593,43 @@ def s8_from_as(As,
 def As_from_s8(sigma8 = 0.81,bounds=[1.9e-9,2.5e-9],**kwargs):
     from orphics.algorithms import vectorized_bisection_search
     return vectorized_bisection_search(np.array(sigma8)[None],lambda x: np.array(s8_from_as(x,**kwargs)),bounds,monotonicity='increasing',rtol=1e-5,verbose=True,hang_check_num_iter=20)[0]
+
+def save_glens_cls_from_ini(ini_file,out_name,glmax=8000):
+    import camb
+    pars = camb.read_ini(ini_file)
+    results = camb.get_results(pars)
+    spec = results.get_cmb_power_spectra(pars)
+    gcls = results.get_lensed_gradient_cls(lmax=glmax, CMB_unit='muK', raw_cl=True)
+    for key in spec.keys():
+        np.savetxt("%s_%s.txt" % (out_name,key),spec[key])
+    np.savetxt("%s_%s.txt" % (out_name,"gradient"),gcls)
+
+
+def load_theory_from_glens(out_name,total=False,lpad=9000,fill_zero=False):
+
+    gcls = np.loadtxt("%s_%s.txt" % (out_name,"gradient"))
+    if total:
+        lcls = np.loadtxt("%s_%s.txt" % (out_name,'total'))
+    else:
+        lcls = np.loadtxt("%s_%s.txt" % (out_name,'lensed_scalar'))
+        
+    lells = np.arange(2,len(lcls[2:,0])+2,1)
+    gells = np.arange(2,len(gcls[2:,0])+2,1)
+    theory = TheorySpectra()
+    for i,pol in enumerate(['TT','EE','BB','TE']):
+        cls =lcls[2:,i]
+
+        cls *= 2.*np.pi/lells/(lells+1.)
+        theory.loadCls(lells,cls,pol,lensed=True,interporder="linear",lpad=lpad,fill_zero=fill_zero)
+
+        
+        theory.loadCls(gells,gcls[2:,i] if pol!='TE' else gcls[2:,4],pol,lensed=False,interporder="linear",lpad=lpad,fill_zero=fill_zero)
+
+
+    clphi = np.loadtxt("%s_%s.txt" % (out_name,'lens_potential'),unpack=True,usecols=0)[2:]
+    clkk = clphi* (2.*np.pi/4.)
+    ells = np.arange(2,len(clkk)+2,1)
+    theory.loadGenericCls(ells,clkk,"kk",lpad=lpad,fill_zero=fill_zero)
+    theory.dimensionless = False
+    return theory
+    
