@@ -14,6 +14,7 @@ except:
 import time, re, os
 from scipy.integrate import odeint
 from orphics.io import bcolors
+import camb
 
 
 defaultConstants = {'TCMB': 2.7255
@@ -1579,7 +1580,6 @@ def s8_from_as(As,
                h      = 0.68,
                ns     = 0.965
                ):
-    
     omch2 = omegac * h**2.
     ombh2 = omegab * h**2.
     H0 = h*100.
@@ -1594,9 +1594,9 @@ def s8_from_as(As,
     return s8
 
 
-def As_from_s8(sigma8 = 0.81,bounds=[1.9e-9,2.5e-9],**kwargs):
+def As_from_s8(sigma8 = 0.81,bounds=[1.9e-9,2.5e-9],rtol=1e-3,**kwargs):
     from orphics.algorithms import vectorized_bisection_search
-    return vectorized_bisection_search(np.array(sigma8)[None],lambda x: np.array(s8_from_as(x,**kwargs)),bounds,monotonicity='increasing',rtol=1e-5,verbose=True,hang_check_num_iter=20)[0]
+    return vectorized_bisection_search(np.array(sigma8)[None],lambda x: np.array(s8_from_as(x,**kwargs)),bounds,monotonicity='increasing',rtol=rtol,verbose=True,hang_check_num_iter=20)[0]
 
 def save_glens_cls_from_ini(ini_file,out_name,glmax=8000):
     import camb
