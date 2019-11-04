@@ -416,3 +416,33 @@ def select_based_on_mask(ras,decs,mask,threshold=0.99):
     coords = coords[:,sel]
     scoords = np.rad2deg(coords[:,mask[pixs[0],pixs[1]]>threshold])
     return scoords[1],scoords[0]
+
+
+def convert_hilton_catalog_to_enplot_annotate_file(annot_fname,hilton_fits,radius=10,width=4,color='red',mask=None,threshold=0.99):
+    convert_fits_catalog_to_enplot_annotate_file(annot_fname,hilton_fits,ra_name='RAdeg',
+                                                 dec_name='DECdeg',radius=radius,width=width,
+                                                 color=color,mask=mask,threshold=threshold)
+
+def convert_fits_catalog_to_enplot_annotate_file(annot_fname,fits_fname,ra_name='RA',
+                                                 dec_name='DEC',radius=10,width=4,
+                                                 color='red',mask=None,threshold=0.99):
+    cols = load_fits(fits_fname,[ra_name,dec_name])
+    ras = cols[ra_name]
+    decs = cols[dec_name]
+    convert_catalog_to_enplot_annotate_file(annot_fname,ras,
+                                            decs,radius=radius,width=width,
+                                            color=color,mask=mask,threshold=threshold)
+
+def convert_catalog_to_enplot_annotate_file(annot_fname,ras,
+                                            decs,radius=10,width=4,
+                                            color='red',mask=None,threshold=0.99):
+    if mask is not None: ras,decs = select_based_on_mask(ras,decs,mask,threshold=threshold)
+    enplot_annotate(annot_fname,ras,decs,radius,width,color)
+    
+def enplot_annotate(fname,ras,decs,radius,width,color):
+    with open(fname,'w') as f:
+        for i,(ra,dec) in enumerate(zip(ras,decs)):
+            r = radius[i] if isinstance(radius,list) else radius
+            w = width[i] if isinstance(width,list) else width
+            c = color[i] if isinstance(color,list) else color
+            f.write("c %.4f %.4f 0 0 %d %d %s \n" % (dec,ra,r,w,c))

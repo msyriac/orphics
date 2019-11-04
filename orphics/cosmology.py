@@ -116,7 +116,11 @@ class Cosmology(object):
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
         try:
-            self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
+            if 'cs2' in cosmo.keys():
+                print(cosmo['cs2'])
+                self.pars.set_dark_energy(w=self.w0,dark_energy_model='fluid',cs2=cosmo['cs2'])
+            else:
+                self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
         except:
             assert np.abs(self.wa)<1e-3, "Non-zero wa requires PPF, which requires devel version of pycamb to be installed."
             print("WARNING: Could not use PPF dark energy model with pycamb. Falling back to non-PPF. Please install the devel branch of pycamb.")
@@ -1596,7 +1600,11 @@ def As_from_s8(sigma8 = 0.81,bounds=[1.9e-9,2.5e-9],**kwargs):
 
 def save_glens_cls_from_ini(ini_file,out_name,glmax=8000):
     import camb
+    from camb import model
     pars = camb.read_ini(ini_file)
+    pars.NonLinear = model.NonLinear_both
+    pars.set_accuracy(AccuracyBoost=3.0, lSampleBoost=1.0, lAccuracyBoost=3.0)
+    pars.set_for_lmax(lmax=10000, lens_potential_accuracy=1, max_eta_k=20000)
     results = camb.get_results(pars)
     spec = results.get_cmb_power_spectra(pars)
     gcls = results.get_lensed_gradient_cls(lmax=glmax, CMB_unit='muK', raw_cl=True)
@@ -1605,7 +1613,7 @@ def save_glens_cls_from_ini(ini_file,out_name,glmax=8000):
     np.savetxt("%s_%s.txt" % (out_name,"gradient"),gcls)
 
 
-def load_theory_from_glens(out_name,total=False,lpad=9000,fill_zero=False):
+def load_theory_from_glens(out_name,total=False,lpad=9000,TCMB=2.7255e6):
 
     gcls = np.loadtxt("%s_%s.txt" % (out_name,"gradient"))
     if total:
@@ -1617,19 +1625,20 @@ def load_theory_from_glens(out_name,total=False,lpad=9000,fill_zero=False):
     gells = np.arange(2,len(gcls[2:,0])+2,1)
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
-        cls =lcls[2:,i]
+        cls =lcls[2:,i]*TCMB**2.
 
         cls *= 2.*np.pi/lells/(lells+1.)
-        theory.loadCls(lells,cls,pol,lensed=True,interporder="linear",lpad=lpad,fill_zero=fill_zero)
+        print(cls)
+        theory.loadCls(lells,cls,pol,lensed=True,interporder="linear",lpad=lpad)
 
         
-        theory.loadCls(gells,gcls[2:,i] if pol!='TE' else gcls[2:,4],pol,lensed=False,interporder="linear",lpad=lpad,fill_zero=fill_zero)
+        theory.loadCls(gells,gcls[2:,i] if pol!='TE' else gcls[2:,4],pol,lensed=False,interporder="linear",lpad=lpad)
 
 
     clphi = np.loadtxt("%s_%s.txt" % (out_name,'lens_potential'),unpack=True,usecols=0)[2:]
     clkk = clphi* (2.*np.pi/4.)
     ells = np.arange(2,len(clkk)+2,1)
-    theory.loadGenericCls(ells,clkk,"kk",lpad=lpad,fill_zero=fill_zero)
+    theory.loadGenericCls(ells,clkk,"kk",lpad=lpad)
     theory.dimensionless = False
     return theory
     
