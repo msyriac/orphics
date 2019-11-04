@@ -35,3 +35,5 @@ def vectorized_bisection_search(x,inv_func,ybounds,monotonicity,rtol=1e-4,verbos
             warned = True
     if verbose: print("Bisection search converged in ", i, " iterations.")
     return ynow
+
+
