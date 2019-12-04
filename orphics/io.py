@@ -116,6 +116,16 @@ def mkdir(dirpath,comm=None):
             os.makedirs(dirpath)
     return exists
 
+def prepare_dir(savedir,overwrite,comm=None,msg=None):
+    if msg is None: msg = "This version already exists on disk. Please use a different version identifier."
+    if not(overwrite):
+        assert not(os.path.exists(savedir)), msg
+    try: mkdir(savedir,comm)
+    except:
+        if overwrite: pass
+        else: raise
+
+
 def save_cols(filename,tuple_of_vectors,**kwargs):
     tuple_of_vectors = np.asarray(tuple_of_vectors)
     save_mat = np.vstack(tuple_of_vectors).T
@@ -287,7 +297,45 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
+    def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
+        if scheme is not None:
+            if scheme=='Dell':
+                xlabel = '$\\ell$' if xlabel is None else xlabel
+                ylabel = '$D_{\\ell}$' if ylabel is None else ylabel
+                xyscale = 'linlog' if xyscale is None else xyscale
+                scalefn = lambda x: x**2./2./np.pi
+            elif scheme=='Cell':
+                xlabel = '$\\ell$' if xlabel is None else xlabel
+                ylabel = '$C_{\\ell}$' if ylabel is None else ylabel
+                xyscale = 'linlog' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            elif scheme=='CL':
+                xlabel = '$L$' if xlabel is None else xlabel
+                ylabel = '$C_{L}$' if ylabel is None else ylabel
+                xyscale = 'linlog' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            elif scheme=='LCL':
+                xlabel = '$L$' if xlabel is None else xlabel
+                ylabel = '$LC_{L}$' if ylabel is None else ylabel
+                xyscale = 'linlin' if xyscale is None else xyscale
+                scalefn = lambda x: x
+            elif scheme=='rCell':
+                xlabel = '$\\ell$' if xlabel is None else xlabel
+                ylabel = '$\\Delta C_{\\ell} / C_{\\ell}$' if ylabel is None else ylabel
+                xyscale = 'linlin' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            elif scheme=='dCell':
+                xlabel = '$\\ell$' if xlabel is None else xlabel
+                ylabel = '$\\Delta C_{\\ell}$' if ylabel is None else ylabel
+                xyscale = 'linlin' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            elif scheme=='rCL':
+                xlabel = '$L$' if xlabel is None else xlabel
+                ylabel = '$\\Delta C_{L} / C_{L}$' if ylabel is None else ylabel
+                xyscale = 'linlin' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            else:
+                raise ValueError
         self.scalefn = scalefn
         if xyscale is not None:
             scalemap = {'log':'log','lin':'linear'}

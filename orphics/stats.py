@@ -582,17 +582,50 @@ def sm_update(Ainv, u, v=None):
     ans = Ainv - (np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / det_update)
     return ans, det_update
 
-def cov2corr(cov):
-    # slow and stupid!
-    
+def cov2corr_legacy(cov):
+    # slow and stupid! see cov2corr
     d = np.diag(cov)
     stddev = np.sqrt(d)
     corr = cov.copy()*0.
     for i in range(cov.shape[0]):
         for j in range(cov.shape[0]):
             corr[i,j] = cov[i,j]/stddev[i]/stddev[j]
-
     return corr
+
+def cov2corr(mat):
+    diags = np.diagonal(mat).T
+    xdiags = diags[:,None,...]
+    ydiags = diags[None,:,...]
+    corr = mat/np.sqrt(xdiags*ydiags)
+    return corr
+    
+def correlated_hybrid_matrix(data_covmat,theory_covmat=None,theory_corr=None,cap=True,cap_off=0.99):
+    """
+    Given a diagonal matrix data_covmat,
+    and a theory matrix theory_covmat or its correlation matrix theory_corr,
+    produce a hybrid non-diagonal matrix that has the same diagonals as the data matrix
+    but has correlation coefficient given by theory.
+    """
+    if theory_corr is None:
+        assert theory_covmat is not None
+        theory_corr = cov2corr(theory_covmat)
+    r = theory_corr
+
+    def _cap(imat,cval,csel):
+        imat[imat>1] = 1
+        imat[imat<-1] = -1
+        imat[csel][imat[csel]>cval] = cval
+        imat[csel][imat[csel]>-cval] = -cval
+
+    d = data_covmat.copy()
+    sel = np.where(~np.eye(d.shape[0],dtype=bool))
+    d[sel] = 1
+    dcorr = 1./cov2corr(d)
+    if cap: _cap(r,cap_off,sel)
+    fcorr = dcorr * r
+    d[sel] = fcorr[sel]
+    return d
+
 
 class Stats(object):
     """
@@ -803,7 +836,7 @@ class bin1D:
         self.bin_edges_min = self.bin_edges.min()
         self.bin_edges_max = self.bin_edges.max()
 
-    def binned(self,ix,iy):
+    def bin(self,ix,iy):
         x = ix.copy()
         y = iy.copy()
         # this just prevents an annoying warning (which is otherwise informative) everytime
