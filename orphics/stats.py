@@ -41,11 +41,11 @@ def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True):
     A = np.zeros((y.size,len(funcs)))
     for i,func in enumerate(funcs):
         A[:,i] = func(x)
-    cov = np.linalg.inv(np.dot(A.T,solve(C,A)))
-    b = np.dot(A.T,solve(C,y))
+    cov = np.linalg.inv(np.dot(A.T,s(C,A)))
+    b = np.dot(A.T,s(C,y))
     X = np.dot(cov,b)
     YAX = y - np.dot(A,X)
-    chisquare = np.dot(YAX.T,solve(C,YAX))
+    chisquare = np.dot(YAX.T,s(C,YAX))
     dofs = len(x)-len(funcs)-1 if dofs is None else dofs
     pte = 1 - chi2.cdf(chisquare, dofs)    
     return X,cov,chisquare/dofs,pte
@@ -582,17 +582,50 @@ def sm_update(Ainv, u, v=None):
     ans = Ainv - (np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / det_update)
     return ans, det_update
 
-def cov2corr(cov):
-    # slow and stupid!
-    
+def cov2corr_legacy(cov):
+    # slow and stupid! see cov2corr
     d = np.diag(cov)
     stddev = np.sqrt(d)
     corr = cov.copy()*0.
     for i in range(cov.shape[0]):
         for j in range(cov.shape[0]):
             corr[i,j] = cov[i,j]/stddev[i]/stddev[j]
-
     return corr
+
+def cov2corr(mat):
+    diags = np.diagonal(mat).T
+    xdiags = diags[:,None,...]
+    ydiags = diags[None,:,...]
+    corr = mat/np.sqrt(xdiags*ydiags)
+    return corr
+    
+def correlated_hybrid_matrix(data_covmat,theory_covmat=None,theory_corr=None,cap=True,cap_off=0.99):
+    """
+    Given a diagonal matrix data_covmat,
+    and a theory matrix theory_covmat or its correlation matrix theory_corr,
+    produce a hybrid non-diagonal matrix that has the same diagonals as the data matrix
+    but has correlation coefficient given by theory.
+    """
+    if theory_corr is None:
+        assert theory_covmat is not None
+        theory_corr = cov2corr(theory_covmat)
+    r = theory_corr
+
+    def _cap(imat,cval,csel):
+        imat[imat>1] = 1
+        imat[imat<-1] = -1
+        imat[csel][imat[csel]>cval] = cval
+        imat[csel][imat[csel]>-cval] = -cval
+
+    d = data_covmat.copy()
+    sel = np.where(~np.eye(d.shape[0],dtype=bool))
+    d[sel] = 1
+    dcorr = 1./cov2corr(d)
+    if cap: _cap(r,cap_off,sel)
+    fcorr = dcorr * r
+    d[sel] = fcorr[sel]
+    return d
+
 
 class Stats(object):
     """
@@ -756,15 +789,27 @@ def npspace(minim,maxim,num,scale="lin"):
 class bin2D(object):
     def __init__(self, modrmap, bin_edges):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
-        self.digitized = np.digitize(np.ndarray.flatten(modrmap), bin_edges,right=True)
+        self.digitized = np.digitize(modrmap.reshape(-1), bin_edges,right=True)
         self.bin_edges = bin_edges
-    def bin(self,data2d,weights=None):
-        
+        self.modrmap = modrmap
+
+    def bin(self,data2d,weights=None,err=False,get_count=False):
         if weights is None:
-            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/np.bincount(self.digitized)[1:-1]
+            count = np.bincount(self.digitized)[1:-1]
+            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/count
+            if err:
+                meanmap = self.modrmap.copy().reshape(-1) * 0
+                for i in range(self.centers.size): meanmap[self.digitized==i] = res[i]
+                std = np.sqrt(np.bincount(self.digitized,((data2d-meanmap.reshape(self.modrmap.shape))**2.).reshape(-1))[1:-1]/(count-1)/count)
         else:
-            #weights = self.digitized*0.+weights
-            res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/np.bincount(self.digitized,weights.reshape(-1))[1:-1]
+            count = np.bincount(self.digitized,weights.reshape(-1))[1:-1]
+            res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/count
+        if get_count:
+            assert not(err) # need to make more general
+            return self.centers,res,count
+        if err:
+            assert not(get_count)
+            return self.centers,res,std
         return self.centers,res
 
 
@@ -791,7 +836,7 @@ class bin1D:
         self.bin_edges_min = self.bin_edges.min()
         self.bin_edges_max = self.bin_edges.max()
 
-    def binned(self,ix,iy):
+    def bin(self,ix,iy):
         x = ix.copy()
         y = iy.copy()
         # this just prevents an annoying warning (which is otherwise informative) everytime

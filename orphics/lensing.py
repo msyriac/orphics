@@ -3,6 +3,7 @@ import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
 from pixell import enmap, utils
+from scipy.special import factorial
 try:
     from pixell import lensing as enlensing
 except:
@@ -116,6 +117,55 @@ def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
     mf = maps.MatchedFilter(shape,wcs,template,kappa_noise_2d)
     mf.apply(kappa_recon,kmask=kmask)
 
+
+def flat_taylens(phi,imap,taylor_order = 5):
+    """
+    Lens a map imap with lensing potential phi
+    using the Taylens algorithm up to taylor_order.
+
+    The original routine is from Thibaut Louis.
+    It has been modified here to work with pixell.
+    """
+    f = lambda x: enmap.fft(x,normalize='phys')
+    invf = lambda x: enmap.ifft(x,normalize='phys')
+    def binomial(n,k):
+        "Compute n factorial by a direct multiplicative method"
+        if k > n-k: k = n-k  # Use symmetry of Pascal's triangle
+        accum = 1
+        for i in range(1,k+1):
+            accum *= (n - (k - i))
+            accum /= i
+        return accum
+    kmap = f(phi)
+    Ny,Nx = phi.shape
+    ly,lx = enmap.laxes(phi.shape,phi.wcs)
+
+    ly_array,lx_array = phi.lmap()
+    alphaX=np.real(invf(1j*lx_array*kmap))
+    alphaY=np.real(invf(1j*ly_array*kmap))
+    iy,ix = np.mgrid[0:Ny,0:Nx]
+    py,px = enmap.pixshape(phi.shape,phi.wcs)
+    alphaX0 = np.array(np.round(alphaX/ px),dtype='int64')
+    alphaY0 = np.array(np.round(alphaY/ py),dtype='int64')
+
+    delta_alphaX=alphaX-alphaX0*px
+    delta_alphaY=alphaY-alphaY0*py
+
+    lensed_T_Map = imap.copy()
+    cont = imap.copy()
+    lensed_T_Map = imap[(iy+alphaY0)%Ny, (ix+alphaX0)%Nx]
+    kmap=f(imap)
+
+    for n in range(1,taylor_order):
+        cont[:]=0
+        for k in range(n+1):
+            fac=1j**n*binomial(n,k)*lx_array**(n-k)*ly_array**k/(factorial(n))
+            T_add=np.real(invf(fac*kmap))[(iy+alphaY0)%Ny, (ix+alphaX0)%Nx]*delta_alphaX**(n-k)*delta_alphaY**k  
+            lensed_T_Map[:] += T_add
+            cont[:] += T_add
+    return lensed_T_Map
+
+
 def alpha_from_kappa(kappa=None,posmap=None,phi=None):
     if phi is None:
         phi,_ = kappa_to_phi(kappa,kappa.modlmap(),return_fphi=True)
@@ -163,6 +213,10 @@ class FlatLensingSims(object):
         self.ngen = maps.MapGen(shape,wcs,ps_noise)
         self.ps_noise = ps_noise
 
+    def update_kappa(self,kappa):
+        self.kappa = kappa
+        self.alpha = alpha_from_kappa(self.kappa)
+        
     def get_unlensed(self,seed=None):
         return self.mgen.get_map(seed=seed)
     def get_kappa(self,seed=None):
@@ -185,6 +239,7 @@ class FlatLensingSims(object):
         noise_map = self.ngen.get_map(seed=seed_noise)
         
         observed = beamed + noise_map
+        
         if return_intermediate:
             return [ maps.get_central(x,cfrac) for x in [unlensed,kappa,lensed,beamed,noise_map,observed] ]
         else:

@@ -95,6 +95,38 @@ def fcov_to_rcorr(shape,wcs,p2d,N):
 
 # Inpainting routines
 
+def ncov_from_ivar(ivar):
+    n = ivar.shape[0]
+    assert n==ivar.shape[1]
+    var = 1./ivar
+    var[~np.isfinite(var)] = 1./ivar[ivar>0].max() # this is wrong! but needed to prevent singular matrices?!
+    ncov = np.diag(var.reshape(-1))
+    ncov_IQU = np.zeros((3,3,n*n,n*n))
+    ncov_IQU[0,0] = ncov.copy()
+    ncov_IQU[1,1] = ncov.copy() * 2.
+    ncov_IQU[2,2] = ncov.copy() * 2.
+    return ncov_IQU
+
+def scov_from_theory(modlmap,cmb_theory_fn,beam_fn,iau=False):
+    """
+    Get a pixel covariance matrix for a stamp around a given location
+    from the white noise inverse variance map and theory and beam
+    functions.
+    """
+    n = modlmap.shape[0]
+    assert n==modlmap.shape[1]
+    cmb2d_TEB = np.zeros((3,3,n,n))
+    theory = cmb_theory_fn
+    cmb2d_TEB[0,0] = theory('TT',modlmap)
+    cmb2d_TEB[1,1] = theory('EE',modlmap)
+    cmb2d_TEB[2,2] = theory('BB',modlmap)
+    cmb2d_TEB[0,1] = theory('TE',modlmap)
+    cmb2d_TEB[1,0] = theory('TE',modlmap)
+    beam2d = beam_fn(modlmap)
+    tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,modlmap.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
+    return tcov
+
+
 def pcov_from_ivar(n,dec,ra,ivar,cmb_theory_fn,beam_fn,iau=False):
     """
     Get a pixel covariance matrix for a stamp around a given location
@@ -158,7 +190,7 @@ def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=No
         if tot_pow2d is not None:
                 pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
         else:
-                pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d,beam2d=beam2d,iau=iau)
+                pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d_IQU,beam2d=beam2d,iau=iau)
 
 
     # Do we have polarization?

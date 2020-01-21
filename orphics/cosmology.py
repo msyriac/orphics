@@ -13,6 +13,8 @@ except:
 
 import time, re, os
 from scipy.integrate import odeint
+from orphics.io import bcolors
+import camb
 
 
 defaultConstants = {'TCMB': 2.7255
@@ -115,7 +117,11 @@ class Cosmology(object):
         self.pars = camb.CAMBparams()
         self.pars.Reion.Reionization = 0
         try:
-            self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
+            if 'cs2' in cosmo.keys():
+                print(cosmo['cs2'])
+                self.pars.set_dark_energy(w=self.w0,dark_energy_model='fluid',cs2=cosmo['cs2'])
+            else:
+                self.pars.set_dark_energy(w=self.w0,wa=self.wa,dark_energy_model='ppf')
         except:
             assert np.abs(self.wa)<1e-3, "Non-zero wa requires PPF, which requires devel version of pycamb to be installed."
             print("WARNING: Could not use PPF dark energy model with pycamb. Falling back to non-PPF. Please install the devel branch of pycamb.")
@@ -130,7 +136,7 @@ class Cosmology(object):
             theta = None
         self.pars.set_cosmology(H0=H0, cosmomc_theta=theta,ombh2=self.ombh2, omch2=self.omch2, mnu=self.mnu, tau=self.tau,nnu=self.nnu,num_massive_neutrinos=3)
         self.pars.Reion.Reionization = 0
-                  
+        self.pars.WantTransfer = 1
         self.pars.InitPower.set_params(ns=cosmo['ns'],As=cosmo['As'])
 
         self.nonlinear = nonlinear
@@ -913,7 +919,7 @@ def validateMapType(mapXYType):
 
 
 def default_theory(lpad=9000):
-    cambRoot = os.path.dirname(__file__)+"/../data/Aug6_highAcc_CDM"
+    cambRoot = os.path.dirname(__file__)+"/../data/cosmo2017_10K_acc3"
     return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lpad,get_dimensionless=False)
     
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
@@ -1087,7 +1093,8 @@ class LensForecast:
         returns cov(Cl_XY,Cl_WZ),signalToNoise(Cl_XY)^2, signalToNoise(Cl_WZ)^2
         '''
         def ClTot(spec,ell1,ell2):
-            return self._bin_cls(spec,ell1,ell2,noise=True)
+            binned = self._bin_cls(spec,ell1,ell2,noise=True)
+            return binned
         
         X, Y = specTypeXY
         W, Z = specTypeWZ
@@ -1573,7 +1580,6 @@ def s8_from_as(As,
                h      = 0.68,
                ns     = 0.965
                ):
-    
     omch2 = omegac * h**2.
     ombh2 = omegab * h**2.
     H0 = h*100.
@@ -1588,6 +1594,51 @@ def s8_from_as(As,
     return s8
 
 
-def As_from_s8(sigma8 = 0.81,bounds=[1.9e-9,2.5e-9],**kwargs):
+def As_from_s8(sigma8 = 0.81,bounds=[1.9e-9,2.5e-9],rtol=1e-3,**kwargs):
     from orphics.algorithms import vectorized_bisection_search
-    return vectorized_bisection_search(np.array(sigma8)[None],lambda x: np.array(s8_from_as(x,**kwargs)),bounds,monotonicity='increasing',rtol=1e-5,verbose=True,hang_check_num_iter=20)[0]
+    return vectorized_bisection_search(np.array(sigma8)[None],lambda x: np.array(s8_from_as(x,**kwargs)),bounds,monotonicity='increasing',rtol=rtol,verbose=True,hang_check_num_iter=20)[0]
+
+def save_glens_cls_from_ini(ini_file,out_name,glmax=8000):
+    import camb
+    from camb import model
+    pars = camb.read_ini(ini_file)
+    pars.NonLinear = model.NonLinear_both
+    pars.set_accuracy(AccuracyBoost=3.0, lSampleBoost=1.0, lAccuracyBoost=3.0)
+    pars.set_for_lmax(lmax=10000, lens_potential_accuracy=1, max_eta_k=20000)
+    results = camb.get_results(pars)
+    spec = results.get_cmb_power_spectra(pars)
+    gcls = results.get_lensed_gradient_cls(lmax=glmax, CMB_unit='muK', raw_cl=True)
+    for key in spec.keys():
+        np.savetxt("%s_%s.txt" % (out_name,key),spec[key])
+    np.savetxt("%s_%s.txt" % (out_name,"gradient"),gcls)
+
+
+def load_theory_from_glens(out_name,total=False,lpad=9000,TCMB=2.7255e6):
+
+    gcls = np.loadtxt("%s_%s.txt" % (out_name,"gradient"))
+    if total:
+        lcls = np.loadtxt("%s_%s.txt" % (out_name,'total'))
+    else:
+        lcls = np.loadtxt("%s_%s.txt" % (out_name,'lensed_scalar'))
+        
+    lells = np.arange(2,len(lcls[2:,0])+2,1)
+    gells = np.arange(2,len(gcls[2:,0])+2,1)
+    theory = TheorySpectra()
+    for i,pol in enumerate(['TT','EE','BB','TE']):
+        cls =lcls[2:,i]*TCMB**2.
+
+        cls *= 2.*np.pi/lells/(lells+1.)
+        print(cls)
+        theory.loadCls(lells,cls,pol,lensed=True,interporder="linear",lpad=lpad)
+
+        
+        theory.loadCls(gells,gcls[2:,i] if pol!='TE' else gcls[2:,4],pol,lensed=False,interporder="linear",lpad=lpad)
+
+
+    clphi = np.loadtxt("%s_%s.txt" % (out_name,'lens_potential'),unpack=True,usecols=0)[2:]
+    clkk = clphi* (2.*np.pi/4.)
+    ells = np.arange(2,len(clkk)+2,1)
+    theory.loadGenericCls(ells,clkk,"kk",lpad=lpad)
+    theory.dimensionless = False
+    return theory
+    
