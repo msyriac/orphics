@@ -116,6 +116,16 @@ def mkdir(dirpath,comm=None):
             os.makedirs(dirpath)
     return exists
 
+def prepare_dir(savedir,overwrite,comm=None,msg=None):
+    if msg is None: msg = "This version already exists on disk. Please use a different version identifier."
+    if not(overwrite):
+        assert not(os.path.exists(savedir)), msg
+    try: mkdir(savedir,comm)
+    except:
+        if overwrite: pass
+        else: raise
+
+
 def save_cols(filename,tuple_of_vectors,**kwargs):
     tuple_of_vectors = np.asarray(tuple_of_vectors)
     save_mat = np.vstack(tuple_of_vectors).T
@@ -170,6 +180,22 @@ def list_strings_from_config(Config,section,name):
 
 
 ### PLOTTING
+
+def layered_contour(imap,imap_contour,contour_levels,contour_color,contour_width=1,mask=None,filename=None,**kwargs):
+    p1 = enplot.plot(imap,layers=True,mask=mask,**kwargs)
+    p2 = enplot.plot(imap_contour,layers=True,contours=contour_levels,contour_width=contour_width,mask=mask,contour_color=contour_color)
+    p1 += [a for a in p2 if "cont" in a.name]
+    img = enplot.merge_images([a.img for a in p1])
+    if filename is not None: enplot.write(filename, img)
+    return img
+
+
+def power_crop(p2d,N,fname,ftrans=True,**kwargs):
+    from orphics import maps
+    pmap = maps.ftrans(p2d) if ftrans else p2d
+    Ny,Nx = p2d.shape
+    pimg = maps.crop_center(pmap,N,int(N*Nx/Ny))
+    plot_img(pimg,fname,aspect='auto',**kwargs)
 
 def fplot(img,savename=None,verbose=True,**kwargs):
     hplot(enmap.samewcs(np.fft.fftshift(np.log10(img)),img),savename=savename,verbose=verbose,**kwargs)
@@ -271,7 +297,45 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
+    def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
+        if scheme is not None:
+            if scheme=='Dell':
+                xlabel = '$\\ell$' if xlabel is None else xlabel
+                ylabel = '$D_{\\ell}$' if ylabel is None else ylabel
+                xyscale = 'linlog' if xyscale is None else xyscale
+                scalefn = lambda x: x**2./2./np.pi
+            elif scheme=='Cell':
+                xlabel = '$\\ell$' if xlabel is None else xlabel
+                ylabel = '$C_{\\ell}$' if ylabel is None else ylabel
+                xyscale = 'linlog' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            elif scheme=='CL':
+                xlabel = '$L$' if xlabel is None else xlabel
+                ylabel = '$C_{L}$' if ylabel is None else ylabel
+                xyscale = 'linlog' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            elif scheme=='LCL':
+                xlabel = '$L$' if xlabel is None else xlabel
+                ylabel = '$LC_{L}$' if ylabel is None else ylabel
+                xyscale = 'linlin' if xyscale is None else xyscale
+                scalefn = lambda x: x
+            elif scheme=='rCell':
+                xlabel = '$\\ell$' if xlabel is None else xlabel
+                ylabel = '$\\Delta C_{\\ell} / C_{\\ell}$' if ylabel is None else ylabel
+                xyscale = 'linlin' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            elif scheme=='dCell':
+                xlabel = '$\\ell$' if xlabel is None else xlabel
+                ylabel = '$\\Delta C_{\\ell}$' if ylabel is None else ylabel
+                xyscale = 'linlin' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            elif scheme=='rCL':
+                xlabel = '$L$' if xlabel is None else xlabel
+                ylabel = '$\\Delta C_{L} / C_{L}$' if ylabel is None else ylabel
+                xyscale = 'linlin' if xyscale is None else xyscale
+                scalefn = lambda x: 1
+            else:
+                raise ValueError
         self.scalefn = scalefn
         if xyscale is not None:
             scalemap = {'log':'log','lin':'linear'}
@@ -335,7 +399,7 @@ class Plotter(object):
         yc = y*scaler
         yerrc = yerr*scaler
         if band:
-            self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,**kwargs)
+            self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,markersize=markersize,**kwargs)
             self._ax.fill_between(x*mulx+addx, yc-yerrc, y+yerrc, alpha=alpha)
         else:
             self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)

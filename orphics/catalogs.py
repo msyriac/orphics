@@ -4,7 +4,7 @@ Utilities for dealing with galaxy catalogs, projecting catalogs into pixelated m
 
 
 import numpy as np
-from pixell import enmap,curvedsky
+from pixell import enmap
 import healpy as hp
 from astropy.io import fits
 from orphics import maps
@@ -46,6 +46,7 @@ class Pow2Cat(object):
         
     def get_map(self,seed=None):
         """Get correlated galaxy and kappa map """
+        from pixell import curvedsky
         alms = curvedsky.rand_alm_healpy(self.ps, lmax=self.lmax, seed=seed)
         ncomp = 1 if len(self.shape)==2 else self.shape[0]
         omap   = enmap.empty((ncomp,)+self.shape[-2:], self.wcs, dtype=np.float64)
@@ -401,3 +402,47 @@ def optimize_splits(in_samples,in_splits):
     res = fmin(cost,in_splits[1:-1])
     out_splits = np.append(np.append(in_splits[0],res),in_splits[-1]).flatten()
     return out_splits
+
+
+def select_based_on_mask(ras,decs,mask,threshold=0.99):
+    """
+    Filters ra,dec based on whether it falls within a mask
+    """
+    coords = np.vstack((decs,ras))*np.pi/180.
+    pixs = enmap.sky2pix(mask.shape,mask.wcs,coords).astype(np.int)
+    # First select those that fall within geometry
+    sel = np.logical_and.reduce([pixs[0]>=0,pixs[1]>=0,pixs[0]<mask.shape[0],pixs[1]<mask.shape[1]])
+    pixs = pixs[:,sel]
+    coords = coords[:,sel]
+    scoords = np.rad2deg(coords[:,mask[pixs[0],pixs[1]]>threshold])
+    return scoords[1],scoords[0]
+
+
+def convert_hilton_catalog_to_enplot_annotate_file(annot_fname,hilton_fits,radius=10,width=4,color='red',mask=None,threshold=0.99):
+    convert_fits_catalog_to_enplot_annotate_file(annot_fname,hilton_fits,ra_name='RAdeg',
+                                                 dec_name='DECdeg',radius=radius,width=width,
+                                                 color=color,mask=mask,threshold=threshold)
+
+def convert_fits_catalog_to_enplot_annotate_file(annot_fname,fits_fname,ra_name='RA',
+                                                 dec_name='DEC',radius=10,width=4,
+                                                 color='red',mask=None,threshold=0.99):
+    cols = load_fits(fits_fname,[ra_name,dec_name])
+    ras = cols[ra_name]
+    decs = cols[dec_name]
+    convert_catalog_to_enplot_annotate_file(annot_fname,ras,
+                                            decs,radius=radius,width=width,
+                                            color=color,mask=mask,threshold=threshold)
+
+def convert_catalog_to_enplot_annotate_file(annot_fname,ras,
+                                            decs,radius=10,width=4,
+                                            color='red',mask=None,threshold=0.99):
+    if mask is not None: ras,decs = select_based_on_mask(ras,decs,mask,threshold=threshold)
+    enplot_annotate(annot_fname,ras,decs,radius,width,color)
+    
+def enplot_annotate(fname,ras,decs,radius,width,color):
+    with open(fname,'w') as f:
+        for i,(ra,dec) in enumerate(zip(ras,decs)):
+            r = radius[i] if isinstance(radius,list) else radius
+            w = width[i] if isinstance(width,list) else width
+            c = color[i] if isinstance(color,list) else color
+            f.write("c %.4f %.4f 0 0 %d %d %s \n" % (dec,ra,r,w,c))
