@@ -9,7 +9,6 @@ import os,sys,logging,time
 import contextlib
 import itertools
 import traceback
-from pixell import enmap
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
@@ -198,9 +197,11 @@ def power_crop(p2d,N,fname,ftrans=True,**kwargs):
     plot_img(pimg,fname,aspect='auto',**kwargs)
 
 def fplot(img,savename=None,verbose=True,**kwargs):
+    from pixell import enmap
     hplot(enmap.samewcs(np.fft.fftshift(np.log10(img)),img),savename=savename,verbose=verbose,**kwargs)
 
 def mplot(img,savename=None,verbose=True,**kwargs):
+    from pixell import enmap
     plot_img(enmap.samewcs(np.fft.fftshift(np.log10(img)),img),filename=savename,verbose=verbose,**kwargs)
     
 def hplot(img,savename=None,verbose=True,grid=False,**kwargs):
@@ -269,6 +270,8 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
 
 
 def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None,cmap="planck"):
+    from pixell import enmap
+
     if not(overwrite):
         if os.path.isfile(filename): return
     try:
