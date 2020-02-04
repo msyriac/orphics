@@ -4,6 +4,7 @@ import matplotlib as mpl
 from cycler import cycler
 mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 import matplotlib.pyplot as plt
+
 import numpy as np
 import os,sys,logging,time
 import contextlib
@@ -181,6 +182,8 @@ def list_strings_from_config(Config,section,name):
 
 ### PLOTTING
 
+
+
 def layered_contour(imap,imap_contour,contour_levels,contour_color,contour_width=1,mask=None,filename=None,**kwargs):
     p1 = enplot.plot(imap,layers=True,mask=mask,**kwargs)
     p2 = enplot.plot(imap_contour,layers=True,contours=contour_levels,contour_width=contour_width,mask=mask,contour_color=contour_color)
@@ -236,7 +239,7 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
     return ret
         
 
-def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,**kwargs):
+def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,xsize=1200,**kwargs):
     '''
     mollview plot for healpix wrapper
     '''
@@ -248,7 +251,7 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
     else:
         cmin =-lim
         cmax = lim
-    retimg = hp.mollview(hp_map,min=cmin,max=cmax,coord=coord,return_projected_map=return_projected_map,**kwargs)
+    retimg = hp.mollview(hp_map,min=cmin,max=cmax,coord=coord,return_projected_map=return_projected_map,xsize=xsize,**kwargs)
     if filename is not None:
         plt.savefig(filename)
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
@@ -299,12 +302,12 @@ class Plotter(object):
 
     def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
         if scheme is not None:
-            if scheme=='Dell':
+            if scheme=='Dell' or scheme=='Dl':
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$D_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlog' if xyscale is None else xyscale
                 scalefn = lambda x: x**2./2./np.pi
-            elif scheme=='Cell':
+            elif scheme=='Cell' or scheme=='Cl':
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$C_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlog' if xyscale is None else xyscale
@@ -319,12 +322,12 @@ class Plotter(object):
                 ylabel = '$LC_{L}$' if ylabel is None else ylabel
                 xyscale = 'linlin' if xyscale is None else xyscale
                 scalefn = lambda x: x
-            elif scheme=='rCell':
+            elif scheme=='rCell' or scheme=='rCl':
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$\\Delta C_{\\ell} / C_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlin' if xyscale is None else xyscale
                 scalefn = lambda x: 1
-            elif scheme=='dCell':
+            elif scheme=='dCell' or scheme=='dCl':
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$\\Delta C_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlin' if xyscale is None else xyscale
@@ -382,12 +385,12 @@ class Plotter(object):
 
         return legend
            
-    def add(self,x,y,label=None,lw=2,linewidth=None,**kwargs):
+    def add(self,x,y,label=None,lw=2,linewidth=None,addx=0,**kwargs):
         if linewidth is not(None): lw = linewidth
         if label is not None: self.do_legend = True
         scaler = self.scalefn(x)
         yc = y*scaler
-        return self._ax.plot(x,yc,label=label,linewidth=lw,**kwargs)
+        return self._ax.plot(x+addx,yc,label=label,linewidth=lw,**kwargs)
 
 
     def hist(self,data,**kwargs):

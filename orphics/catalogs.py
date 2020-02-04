@@ -47,7 +47,7 @@ class Pow2Cat(object):
     def get_map(self,seed=None):
         """Get correlated galaxy and kappa map """
         from pixell import curvedsky
-        alms = curvedsky.rand_alm_healpy(self.ps, lmax=self.lmax, seed=seed)
+        alms = curvedsky.rand_alm_healpy(self.ps, lmax=int(self.lmax)+1, seed=seed)
         ncomp = 1 if len(self.shape)==2 else self.shape[0]
         omap   = enmap.empty((ncomp,)+self.shape[-2:], self.wcs, dtype=np.float64)
         omap = curvedsky.alm2map(alms, omap, spin=0)
@@ -57,9 +57,9 @@ class Pow2Cat(object):
         """Get a catalog with total number of galaxies ngals and a kappa map that are correlated."""
         alms,retmap = self.get_map(seed=seed)
         if self.ncomp==1:
-            gmap = retmap[0]
+            gmap = retmap[0].copy()
         else:
-            gmap,kmap = retmap
+            gmap,kmap = retmap.copy()
             kmap -= kmap.mean()
         gmap -= gmap.mean()
         if cull_voids:
@@ -73,8 +73,9 @@ class Pow2Cat(object):
         pdecs,pras = gmap.posmap()
         ngalmap = (gmodmap+1.)*dmap*np.cos(pdecs)
         ngalmap *= (ngals/ngalmap.sum())
+        assert np.all(np.isfinite(ngalmap))
+        assert np.all(ngalmap>=0)
         sampled = np.random.poisson(ngalmap).astype(np.float64)
-        sampled = sampled
         Ny,Nx = self.shape[-2:]
         pixmap = (enmap.pixmap(self.shape,self.wcs)).reshape(2,Ny*Nx)
         nobjs = sampled.reshape(-1).astype(np.int)
@@ -142,47 +143,58 @@ class CatMapper(object):
 
     """
 
-    def __init__(self,ras_deg,decs_deg,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial",mask=None):
+    def __init__(self,ras_deg=None,decs_deg=None,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial",mask=None,weights=None,pixs=None):
 
         self.verbose = verbose
         if nside is not None:
-
-            eq_coords = ['fk5','j2000','equatorial']
-            gal_coords = ['galactic']
-
-            if verbose: print( "Calculating pixels...")
-            if hp_coords in gal_coords:
-                if verbose: print( "Transforming coords...")
-                from astropy.coordinates import SkyCoord
-                import astropy.units as u
-                gc = SkyCoord(ra=ras_deg*u.degree, dec=decs_deg*u.degree, frame='fk5')
-                gc = gc.transform_to('galactic')
-                phOut = gc.l.deg * np.pi/180.
-                thOut = gc.b.deg * np.pi/180.
-                thOut = np.pi/2. - thOut #polar angle is 0 at north pole
-
-                self.pixs = hp.ang2pix( nside, thOut, phOut )
-            elif hp_coords in eq_coords:
-                ras_out = ras_deg
-                decs_out = decs_deg
-                self.pixs = hp.ang2pix(nside,ras_out,decs_out,lonlat=True)
-                
-            else:
-                raise ValueError
-                
-            if verbose: print( "Done with pixels...")
             self.nside = nside
             self.shape = hp.nside2npix(nside)
             self.curved = True
         else:
-            coords = np.vstack((decs_deg,ras_deg))*np.pi/180.
             self.shape = shape
             self.wcs = wcs
-            if verbose: print( "Calculating pixels...")
-            self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
-            if verbose: print( "Done with pixels...")
             self.curved = False
-        self.counts = self.get_map()
+
+        if pixs is None:
+            if nside is not None:
+
+                eq_coords = ['fk5','j2000','equatorial']
+                gal_coords = ['galactic']
+
+                if verbose: print( "Calculating pixels...")
+                if hp_coords in gal_coords:
+                    if verbose: print( "Transforming coords...")
+                    from astropy.coordinates import SkyCoord
+                    import astropy.units as u
+                    gc = SkyCoord(ra=ras_deg*u.degree, dec=decs_deg*u.degree, frame='fk5')
+                    gc = gc.transform_to('galactic')
+                    phOut = gc.l.deg * np.pi/180.
+                    thOut = gc.b.deg * np.pi/180.
+                    thOut = np.pi/2. - thOut #polar angle is 0 at north pole
+
+                    self.pixs = hp.ang2pix( nside, thOut, phOut )
+                elif hp_coords in eq_coords:
+                    ras_out = ras_deg
+                    decs_out = decs_deg
+                    self.pixs = hp.ang2pix(nside,ras_out,decs_out,lonlat=True)
+
+                else:
+                    raise ValueError
+
+                if verbose: print( "Done with pixels...")
+            else:
+                coords = np.vstack((decs_deg,ras_deg))*np.pi/180.
+                if verbose: print( "Calculating pixels...")
+                self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
+                if verbose: print( "Done with pixels...")
+        else:
+            self.pixs = pixs
+
+        self.counts = self.get_map(weights=weights)
+        if weights is None: 
+            self.rcounts = self.get_map(weights=None)
+        else:
+            self.rcounts = self.counts
         if not self.curved:
             self.counts = enmap.enmap(self.counts,self.wcs)
 
@@ -192,15 +204,19 @@ class CatMapper(object):
     def get_map(self,weights=None):
         if self.verbose: print("Calculating histogram...")
         if self.curved:
-            return np.histogram(self.pixs,bins=self.shape,weights=weights,range=[0,self.shape])[0].astype(np.float32)
+            return np.histogram(self.pixs,bins=self.shape,weights=weights,range=[0,self.shape],density=False)[0].astype(np.float32)
         else:
             Ny,Nx = self.shape[-2:]
-            return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],bins=self.shape,weights=weights,range=[[0,Ny],[0,Nx]])[0],self.wcs)
+            return enmap.ndmap(np.histogram2d(self.pixs[0,:],self.pixs[1,:],
+                                              bins=self.shape,weights=weights,
+                                              range=[[0,Ny],[0,Nx]],density=False)[0],self.wcs)
 
     def _counts(self):
         cts = self.counts.copy()
         cts[self.mask<0.9] = np.nan
-        self.ngals = np.nansum(cts)
+        rcts = self.rcounts.copy()
+        rcts[self.mask<0.9] = np.nan
+        self.ngals = np.nansum(rcts)
         self.nmean = np.nanmean(cts)
         if self.curved:
             area_sqdeg = 4.*np.pi*(180./np.pi)**2.
@@ -219,23 +235,62 @@ class CatMapper(object):
         return delta
     
 
+def load_boss(boss_files,zmin,zmax,do_weights):
+    ras = []
+    decs = []
+    zs = []
+    if do_weights: w = []
+    for boss_file in boss_files:
+        f = fits.open(boss_file)
+        cat = f[1]
+        if do_weights: w += cat.data['WEIGHT_SYSTOT'].tolist()
+        ras += cat.data['RA'].tolist()
+        decs += cat.data['DEC'].tolist()
+        zs += cat.data['Z'].tolist()
+        f.close()
+    ras = np.asarray(ras)
+    decs = np.asarray(decs)
+    zs = np.asarray(zs)
+    sel = np.logical_and(zs>=zmin,zs<zmax)
+    ras = ras[sel]
+    decs = decs[sel]
+    if do_weights:
+        w = np.asarray(w)
+        w = w[sel]
+    else:
+        w = None
+    zs = zs[sel]
+    return ras,decs,w
+
+
+def get_delta(mask,ws=None,ras=None,decs=None,pixs=None):
+    assert mask.ndim==1
+    npix = mask.size
+    nside = hp.npix2nside(npix)
+    if pixs is None: pixs = hp.ang2pix(nside,ras,decs,lonlat=True)    
+    # This gives me n_p = sum_i_in_p w_i
+    if ws is None: ws = np.ones(pixs.size)
+    wcounts = np.histogram(pixs,bins=npix,weights=ws,range=[0,npix],density=False)[0]
+    nanmask = mask.copy()
+    nanmask[nanmask<1] = np.nan
+    fsky = np.nansum(nanmask)/nanmask.size
+    wall = np.nanmean(wcounts * nanmask)
+    delta = wcounts/wall - 1
+    delta[~np.isfinite(delta)] = 0
+    return delta,fsky
+    
+    
 
 class BOSSMapper(CatMapper):
 
-    def __init__(self,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial"):
+    def __init__(self,boss_files,random_files=None,rand_sigma_arcmin=2.,rand_threshold=1e-3,zmin=None,zmax=None,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial",mask=None,do_weights=True):
         from astropy.io import fits
 
-        ras = []
-        decs = []
-        for boss_file in boss_files:
-            f = fits.open(boss_file)
-            cat = f[1] #.copy()
-            ras += cat.data['RA'].tolist()
-            decs += cat.data['DEC'].tolist()
-            f.close()
+        ras,decs,w = load_boss(boss_files,zmin,zmax,do_weights)
             
-        CatMapper.__init__(self,ras,decs,shape,wcs,nside,verbose=verbose,hp_coords=hp_coords)
-        if random_files is not None:
+        CatMapper.__init__(self,ras,decs,shape,wcs,nside,verbose=verbose,hp_coords=hp_coords,mask=mask,weights=w if do_weights else None)
+        if (random_files is not None):
+            assert mask is None
             self.rand_map = 0.
             #ras = []
             #decs = []
@@ -244,9 +299,11 @@ class BOSSMapper(CatMapper):
                 f = fits.open(random_file)
                 if verbose: print ("Done opening fits...")
                 cat = f[1] #.copy()
-                ras = cat.data['RA'] #.tolist()
-                decs = cat.data['DEC'] #.tolist()
-                rcat = CatMapper(ras,decs,shape,wcs,nside,verbose=verbose,hp_coords=hp_coords)
+                ras = cat.data['RA'] 
+                decs = cat.data['DEC'] 
+                zs = cat.data['Z'] 
+                sel = np.logical_and(zs>=zmin,zs<zmax)
+                rcat = CatMapper(ras[sel],decs[sel],shape,wcs,nside,verbose=verbose,hp_coords=hp_coords)
                 self.rand_map += rcat.counts
                 del rcat
                 del ras
