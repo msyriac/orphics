@@ -584,10 +584,11 @@ def hp_from_mangle(nside,weight_ply_files,veto_ply_files=None,hp_coords='equ',ve
         m=pymangle.Mangle(filename)
         output = output + m.weight(ra,dec)
 
+    if veto_ply_files is None: veto_ply_files = []
     for veto in veto_ply_files:
         if verbose: print(f"Reading veto file {veto}...")
         m=pymangle.Mangle(veto)
-        good = m.contains(ra, dec)
-        output[good] = 0
+        bad = m.contains(ra, dec)
+        output[bad] = 0
 
     return output
