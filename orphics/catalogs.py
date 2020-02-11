@@ -243,7 +243,8 @@ def load_boss(boss_files,zmin,zmax,do_weights):
     for boss_file in boss_files:
         f = fits.open(boss_file)
         cat = f[1]
-        if do_weights: w += cat.data['WEIGHT_SYSTOT'].tolist()
+        if do_weights: 
+            w += (cat.data['WEIGHT_SYSTOT']*(cat.data['WEIGHT_NOZ'] + cat.data['WEIGHT_CP'] - 1.0)).tolist()
         ras += cat.data['RA'].tolist()
         decs += cat.data['DEC'].tolist()
         zs += cat.data['Z'].tolist()
@@ -263,11 +264,29 @@ def load_boss(boss_files,zmin,zmax,do_weights):
     return ras,decs,w
 
 
-def get_delta(mask,ws=None,ras=None,decs=None,pixs=None):
+def get_delta(mask,ws=None,ras=None,decs=None,pixs=None,hp_coords='equatorial'):
     assert mask.ndim==1
     npix = mask.size
     nside = hp.npix2nside(npix)
-    if pixs is None: pixs = hp.ang2pix(nside,ras,decs,lonlat=True)    
+
+    if pixs is None: 
+
+        eq_coords = ['fk5','j2000','equatorial','equ']
+        gal_coords = ['galactic','gal']
+
+        if hp_coords in gal_coords:
+            from astropy.coordinates import SkyCoord
+            import astropy.units as u
+            gc = SkyCoord(ra=ras*u.degree, dec=decs*u.degree, frame='fk5')
+            gc = gc.transform_to('galactic')
+            phOut = gc.l.deg * np.pi/180.
+            thOut = gc.b.deg * np.pi/180.
+            thOut = np.pi/2. - thOut #polar angle is 0 at north pole
+            pixs = hp.ang2pix( nside, thOut, phOut )
+        else:
+            pixs = hp.ang2pix(nside,ras,decs,lonlat=True)    
+
+
     # This gives me n_p = sum_i_in_p w_i
     if ws is None: ws = np.ones(pixs.size)
     wcounts = np.histogram(pixs,bins=npix,weights=ws,range=[0,npix],density=False)[0]
@@ -503,3 +522,72 @@ def enplot_annotate(fname,ras,decs,radius,width,color):
             w = width[i] if isinstance(width,list) else width
             c = color[i] if isinstance(color,list) else color
             f.write("c %.4f %.4f 0 0 %d %d %s \n" % (dec,ra,r,w,c))
+
+
+def hp_from_mangle(nside,weight_ply_files,veto_ply_files=None,hp_coords='equ',verbose=False):
+    """
+    Rasterize a set of mangle ply files to a healpix map.
+
+    Parameters
+    ----------
+
+    nside : int
+        Healpix map nside parameter
+
+    weight_ply_files : list of strings
+        List of filenames of mangle ply files from which weights for the output mask will be
+        extracted. The weights from different files will be summed into the same output map,
+        so if a pixel is masked in one file, it need not be masked in the final map if a
+        different file contains a non-zero weight for it.
+
+    veto_ply_files : list of strings, optional
+        List of filenames of mangle ply files containing regions that need to be masked
+        or vetoed. A region only needs to exist in at least one of the provided files
+        in order to be masked.
+
+    hp_coords : string, optional
+        The coordinate system of the output healpix map. Use 'fk5','j2000','equatorial' or 'equ'
+        for Equatorial, which is the default. Use 'galactic' or 'gal' for Galactic.
+
+    verbose : bool, optinal
+        Whether to print more information. Defaults to False.
+
+    Returns
+    -------
+
+    output : 1d numpy array
+        The resulting healpix map.
+    """
+
+    import pymangle
+    eq_coords = ['fk5','j2000','equatorial','equ']
+    gal_coords = ['galactic','gal']
+
+    npix = hp.nside2npix(nside)
+    pixs = np.arange(npix,dtype=np.int)
+    if verbose: print("Converting healpix pixels to coordinates.")
+    ra,dec = hp.pix2ang(nside,pixs,lonlat=True)
+
+    if hp_coords in gal_coords:
+        if verbose: print( "Transforming coords...")
+        from astropy.coordinates import SkyCoord
+        import astropy.units as u
+
+        gc = SkyCoord(ra*u.degree, dec*u.degree, frame = 'galactic')
+        equ = gc.transform_to('fk5')
+        ra = equ.ra.deg
+        dec = equ.dec.deg
+
+    output = 0
+    for filename in weight_ply_files:
+        if verbose: print(f"Reading weight file {filename}...")
+        m=pymangle.Mangle(filename)
+        output = output + m.weight(ra,dec)
+
+    for veto in veto_ply_files:
+        if verbose: print(f"Reading veto file {veto}...")
+        m=pymangle.Mangle(veto)
+        good = m.contains(ra, dec)
+        output[good] = 0
+
+    return output
