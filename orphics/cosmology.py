@@ -922,7 +922,7 @@ def default_theory(lpad=9000):
     cambRoot = os.path.dirname(__file__)+"/../data/cosmo2017_10K_acc3"
     return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lpad,get_dimensionless=False)
     
-def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True):
+def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True,skip_lens=False,dells=False):
     '''
     Given a CAMB path+output_root, reads CMB and lensing Cls into 
     an orphics.theory.gaussianCov.TheorySpectra object.
@@ -948,7 +948,8 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
     theory = TheorySpectra()
 
     ell, lcltt, lclee, lclbb, lclte = np.loadtxt(lFile,unpack=True,usecols=[0,1,2,3,4])
-    mult = 2.*np.pi/ell/(ell+1.)/TCMB**2.
+    lfact = 2.*np.pi/ell/(ell+1.) if not(dells) else 1
+    mult = lfact/TCMB**2.
     lcltt *= mult
     lclee *= mult
     lclte *= mult
@@ -958,14 +959,15 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
     theory.loadCls(ell,lclee,'EE',lensed=True,interporder="linear",lpad=lpad)
     theory.loadCls(ell,lclbb,'BB',lensed=True,interporder="linear",lpad=lpad)
 
-    try:
-        elldd, cldd = np.loadtxt(cambRoot+"_lenspotentialCls.dat",unpack=True,usecols=[0,5])
-        clkk = 2.*np.pi*cldd/4.
-    except:
-        elldd, cldd = np.loadtxt(cambRoot+"_scalCls.dat",unpack=True,usecols=[0,4])
-        clkk = cldd*(elldd+1.)**2./elldd**2./4./TCMB**2.
-        
-    theory.loadGenericCls(elldd,clkk,"kk",lpad=lpad)
+    if not(skip_lens):
+        try:
+            elldd, cldd = np.loadtxt(cambRoot+"_lenspotentialCls.dat",unpack=True,usecols=[0,5])
+            clkk = 2.*np.pi*cldd/4.
+        except:
+            elldd, cldd = np.loadtxt(cambRoot+"_scalCls.dat",unpack=True,usecols=[0,4])
+            clkk = cldd*(elldd+1.)**2./elldd**2./4./TCMB**2.
+
+        theory.loadGenericCls(elldd,clkk,"kk",lpad=lpad)
 
 
     if unlensedEqualsLensed:
@@ -977,7 +979,8 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
 
     else:
         ell, cltt, clee, clte = np.loadtxt(uFile,unpack=True,usecols=[0,1,2,3])
-        mult = 2.*np.pi/ell/(ell+1.)/TCMB**2.
+        lfact = 2.*np.pi/ell/(ell+1.) if not(dells) else 1
+        mult = lfact/TCMB**2.
         cltt *= mult
         clee *= mult
         clte *= mult

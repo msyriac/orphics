@@ -28,8 +28,7 @@ def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh,plot_file=None):
 
 
 
-    
-def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True):
+def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True,Cinv=None,Cy=None):
     """
     Given measurements with known uncertainties, this function fits those to a linear model:
     y = a0*funcs[0](x) + a1*funcs[1](x) + ...
@@ -41,11 +40,14 @@ def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True):
     A = np.zeros((y.size,len(funcs)))
     for i,func in enumerate(funcs):
         A[:,i] = func(x)
-    cov = np.linalg.inv(np.dot(A.T,s(C,A)))
-    b = np.dot(A.T,s(C,y))
+    CA = s(C,A) if Cinv is None else np.dot(Cinv,A)
+    cov = np.linalg.inv(np.dot(A.T,CA))
+    if Cy is None: Cy = s(C,y) if Cinv is None else np.dot(Cinv,y)
+    b = np.dot(A.T,Cy)
     X = np.dot(cov,b)
     YAX = y - np.dot(A,X)
-    chisquare = np.dot(YAX.T,s(C,YAX))
+    CYAX = s(C,YAX) if Cinv is None else np.dot(Cinv,YAX)
+    chisquare = np.dot(YAX.T,CYAX)
     dofs = len(x)-len(funcs)-1 if dofs is None else dofs
     pte = 1 - chi2.cdf(chisquare, dofs)    
     return X,cov,chisquare/dofs,pte

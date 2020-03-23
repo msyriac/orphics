@@ -303,46 +303,47 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = lambda x: 1,**kwargs):
+    def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = None,**kwargs):
+        self.scalefn = None
         if scheme is not None:
             if scheme=='Dell' or scheme=='Dl':
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$D_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlog' if xyscale is None else xyscale
-                scalefn = lambda x: x**2./2./np.pi
+                self.scalefn = (lambda x: x**2./2./np.pi) if scalefn is None else scalefn
             elif scheme=='Cell' or scheme=='Cl':
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$C_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlog' if xyscale is None else xyscale
-                scalefn = lambda x: 1
+                self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
             elif scheme=='CL':
                 xlabel = '$L$' if xlabel is None else xlabel
                 ylabel = '$C_{L}$' if ylabel is None else ylabel
                 xyscale = 'linlog' if xyscale is None else xyscale
-                scalefn = lambda x: 1
+                self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
             elif scheme=='LCL':
                 xlabel = '$L$' if xlabel is None else xlabel
                 ylabel = '$LC_{L}$' if ylabel is None else ylabel
                 xyscale = 'linlin' if xyscale is None else xyscale
-                scalefn = lambda x: x
+                self.scalefn = (lambda x: x)  if scalefn is None else scalefn
             elif scheme=='rCell' or scheme=='rCl':
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$\\Delta C_{\\ell} / C_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlin' if xyscale is None else xyscale
-                scalefn = lambda x: 1
+                self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
             elif scheme=='dCell' or scheme=='dCl':
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$\\Delta C_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlin' if xyscale is None else xyscale
-                scalefn = lambda x: 1
+                self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
             elif scheme=='rCL':
                 xlabel = '$L$' if xlabel is None else xlabel
                 ylabel = '$\\Delta C_{L} / C_{L}$' if ylabel is None else ylabel
                 xyscale = 'linlin' if xyscale is None else xyscale
-                scalefn = lambda x: 1
+                self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
             else:
                 raise ValueError
-        self.scalefn = scalefn
+        if self.scalefn is None: self.scalefn = lambda x: 1
         if xyscale is not None:
             scalemap = {'log':'log','lin':'linear'}
             xscale = scalemap[xyscale[:3]]

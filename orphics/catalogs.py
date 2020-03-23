@@ -290,12 +290,15 @@ def get_delta(mask,ws=None,ras=None,decs=None,pixs=None,hp_coords='equatorial'):
     # This gives me n_p = sum_i_in_p w_i
     if ws is None: ws = np.ones(pixs.size)
     wcounts = np.histogram(pixs,bins=npix,weights=ws,range=[0,npix],density=False)[0]
-    nanmask = mask.copy()
-    nanmask[nanmask<1] = np.nan
-    fsky = np.nansum(nanmask)/nanmask.size
-    wall = np.nanmean(wcounts * nanmask)
+    # the mask should be a number from 0 to 1 that tells me
+    # what the area weight for each pixel is
+    pix_area = 4*np.pi / npix
+    areas = mask * pix_area
+    nmean = np.sum(wcounts) / np.sum(areas) # should this be weighted counts
+    wall = nmean * areas
     delta = wcounts/wall - 1
     delta[~np.isfinite(delta)] = 0
+    fsky = np.sum(areas) / 4. / np.pi
     return delta,fsky
     
     
@@ -524,21 +527,22 @@ def enplot_annotate(fname,ras,decs,radius,width,color):
             f.write("c %.4f %.4f 0 0 %d %d %s \n" % (dec,ra,r,w,c))
 
 
-def hp_from_mangle(nside,weight_ply_files,veto_ply_files=None,hp_coords='equ',verbose=False):
+def hp_from_mangle(weight_ply_files,nside=None,veto_ply_files=None,hp_coords='equ',verbose=False,
+                   coords=None,return_coords=False):
     """
     Rasterize a set of mangle ply files to a healpix map.
 
     Parameters
     ----------
 
-    nside : int
-        Healpix map nside parameter
-
     weight_ply_files : list of strings
         List of filenames of mangle ply files from which weights for the output mask will be
         extracted. The weights from different files will be summed into the same output map,
         so if a pixel is masked in one file, it need not be masked in the final map if a
         different file contains a non-zero weight for it.
+
+    nside : int, optional
+        Healpix map nside parameter. If coords is provided, this is optional.
 
     veto_ply_files : list of strings, optional
         List of filenames of mangle ply files containing regions that need to be masked
@@ -552,31 +556,50 @@ def hp_from_mangle(nside,weight_ply_files,veto_ply_files=None,hp_coords='equ',ve
     verbose : bool, optinal
         Whether to print more information. Defaults to False.
 
+    coords : optional, (2,npix) array
+        Pre-calculated ra,dec values corresponding to each pixel in the output healpix map.
+        If not provided, nside has to be provided and the coords will be calculated 
+        based on the coordinate system hp_coords.
+
+    return_coords : bool
+        Whether to return the ra,dec values corresponding to each pixel in the output healpix map.
+        Defaults to False.
+
     Returns
     -------
 
     output : 1d numpy array
         The resulting healpix map.
+
+    coords : optional, (2,npix) array
+        The ra,dec values corresponding to each pixel in the output healpix map.
+        Only returned if return_coords is True.
+
     """
 
     import pymangle
-    eq_coords = ['fk5','j2000','equatorial','equ']
-    gal_coords = ['galactic','gal']
 
-    npix = hp.nside2npix(nside)
-    pixs = np.arange(npix,dtype=np.int)
-    if verbose: print("Converting healpix pixels to coordinates.")
-    ra,dec = hp.pix2ang(nside,pixs,lonlat=True)
+    if coords is None:
+        npix = hp.nside2npix(nside)
+        pixs = np.arange(npix,dtype=np.int)
+        if verbose: print("Converting healpix pixels to coordinates.")
+        ra,dec = hp.pix2ang(nside,pixs,lonlat=True)
 
-    if hp_coords in gal_coords:
-        if verbose: print( "Transforming coords...")
-        from astropy.coordinates import SkyCoord
-        import astropy.units as u
+        eq_coords = ['fk5','j2000','equatorial','equ']
+        gal_coords = ['galactic','gal']
 
-        gc = SkyCoord(ra*u.degree, dec*u.degree, frame = 'galactic')
-        equ = gc.transform_to('fk5')
-        ra = equ.ra.deg
-        dec = equ.dec.deg
+        if hp_coords in gal_coords:
+            if verbose: print( "Transforming coords...")
+            from astropy.coordinates import SkyCoord
+            import astropy.units as u
+
+            gc = SkyCoord(ra*u.degree, dec*u.degree, frame = 'galactic')
+            equ = gc.transform_to('fk5')
+            ra = equ.ra.deg
+            dec = equ.dec.deg
+    else:
+        ra,dec = coords
+
 
     output = 0
     for filename in weight_ply_files:
@@ -591,4 +614,17 @@ def hp_from_mangle(nside,weight_ply_files,veto_ply_files=None,hp_coords='equ',ve
         bad = m.contains(ra, dec)
         output[bad] = 0
 
-    return output
+    if return_coords:
+        return output, np.asarray((ra,dec))
+    else:
+        return output
+
+
+
+def df_from_fits(filename,columns=None,rename=None):
+    from astropy.table import Table
+    table = Table.read(filename)
+    df = table.to_pandas()
+    if columns is not None: df.drop(df.columns.difference(columns), 1, inplace=True)
+    if rename is not None: df.rename(columns=dict(zip(columns, rename)) , inplace=True)
+    return df

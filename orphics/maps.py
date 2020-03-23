@@ -92,7 +92,7 @@ def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
 
 def binary_mask(mask,threshold=0.5):
     m = np.abs(mask)
-    m[m<threshold] = 0
+    m[m<=threshold] = 0
     m[m>threshold] = 1
     return m
         
@@ -118,12 +118,16 @@ def get_central(img,fracy,fracx=None):
         if cropx%2==1 and Nx%2==0: cropx -= 1
     return crop_center(img,cropy,cropx)
 
-def crop_center(img,cropy,cropx=None):
+def crop_center(img,cropy,cropx=None,sel=False):
     cropx = cropy if cropx is None else cropx
     y,x = img.shape[-2:]
     startx = x//2-(cropx//2)
     starty = y//2-(cropy//2)
-    ret = img[...,starty:starty+cropy,startx:startx+cropx]
+    selection = np.s_[...,starty:starty+cropy,startx:startx+cropx]
+    if sel:
+        ret = selection
+    else:
+        ret = img[selection]
     return ret
 
 def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None,mask=1):
@@ -700,12 +704,12 @@ def butterworth(ells,ell0,n):
     return 1./(1.+(ells*1./ell0)**(2.*n))
 
 
-def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
+def get_taper(shape,wcs,taper_percent = 12.0,pad_percent = 3.0,weight=None):
     Ny,Nx = shape[-2:]
     if weight is None: weight = np.ones(shape[-2:])
     taper = cosine_window(Ny,Nx,lenApodY=int(taper_percent*min(Ny,Nx)/100.),lenApodX=int(taper_percent*min(Ny,Nx)/100.),padY=int(pad_percent*min(Ny,Nx)/100.),padX=int(pad_percent*min(Ny,Nx)/100.))*weight
     w2 = np.mean(taper**2.)
-    return taper,w2
+    return enmap.enmap(taper,wcs),w2
 
 def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,weight=None):
     Ny,Nx = shape[-2:]
