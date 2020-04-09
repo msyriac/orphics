@@ -34,15 +34,20 @@ def psizemap(shape,wcs):
     area = np.abs(dra*(np.sin(np.minimum(np.pi/2.,dec+ddec/2))-np.sin(np.maximum(-np.pi/2.,dec-ddec/2))))
     Nx = shape[-1]
     return enmap.ndmap(area[...,None].repeat(Nx,axis=-1),wcs)
-    
+
+def ivar(shape,wcs,noise_muK_arcmin):
+    pmap = psizemap(shape,wcs)*((180.*60./np.pi)**2.)
+    return pmap/noise_muK_arcmin**2.
+
 def white_noise(shape,wcs,noise_muK_arcmin,seed=None):
     """
     Generate a non-band-limited white noise map.
     """
-    pmap = psizemap(shape,wcs)*((180.*60./np.pi)**2.)
+    div = ivar(shape,wcs,noise_muK_arcmin)
     if seed is not None: np.random.seed(seed)
-    return (noise_muK_arcmin/np.sqrt(pmap))*np.random.standard_normal(shape)
+    return np.random.standard_normal(shape) / np.sqrt(div)
 
+    
 def get_ecc(img):
     """Returns eccentricity from central moments of image
     """
