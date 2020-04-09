@@ -804,12 +804,13 @@ class bin2D(object):
 
     def bin(self,data2d,weights=None,err=False,get_count=False):
         if weights is None:
-            count = np.bincount(self.digitized)[1:-1]
-            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/count
+            keep = ~np.isnan(data2d.reshape(-1))
+            count = np.bincount(self.digitized[keep])[1:-1]
+            res = np.bincount(self.digitized[keep],(data2d).reshape(-1)[keep])[1:-1]/count
             if err:
                 meanmap = self.modrmap.copy().reshape(-1) * 0
                 for i in range(self.centers.size): meanmap[self.digitized==i] = res[i]
-                std = np.sqrt(np.bincount(self.digitized,((data2d-meanmap.reshape(self.modrmap.shape))**2.).reshape(-1))[1:-1]/(count-1)/count)
+                std = np.sqrt(np.bincount(self.digitized[keep],((data2d-meanmap.reshape(self.modrmap.shape))**2.).reshape(-1)[keep])[1:-1]/(count-1)/count)
         else:
             count = np.bincount(self.digitized,weights.reshape(-1))[1:-1]
             res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/count
