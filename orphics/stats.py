@@ -673,6 +673,10 @@ class Stats(object):
         """
 
         vector = np.asarray(vector)
+
+        if np.iscomplexobj(vector):
+            print("ERROR: stats on complex arrays not supported. Do the real and imaginary parts separately.")
+            raise TypeError
         
         if not(label in list(self.vectors.keys())):
             self.vectors[label] = []
@@ -687,6 +691,9 @@ class Stats(object):
         Add arr to a cumulative stack named "label". Could be 2d arrays.
         Create a new one if it doesn't already exist.
         """
+        if np.iscomplexobj(arr):
+            print("ERROR: stacking of complex arrays not supported. Stack the real and imaginary parts separately.")
+            raise TypeError
         if not(label in list(self.little_stack.keys())):
             self.little_stack[label] = arr*0.
             self.little_stack_count[label] = 0

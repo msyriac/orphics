@@ -711,13 +711,13 @@ def get_taper(shape,wcs,taper_percent = 12.0,pad_percent = 3.0,weight=None):
     w2 = np.mean(taper**2.)
     return enmap.enmap(taper,wcs),w2
 
-def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,weight=None):
+def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,weight=None,only_y = False):
     Ny,Nx = shape[-2:]
     if weight is None: weight = np.ones(shape[-2:])
     res = resolution(shape,wcs)
     pix_apod = int(taper_width_degrees*np.pi/180./res)
     pix_pad = int(pad_width_degrees*np.pi/180./res)
-    taper = enmap.enmap(cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod,padY=pix_pad,padX=pix_pad)*weight,wcs)
+    taper = enmap.enmap(cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod if not(only_y) else 0,padY=pix_pad,padX=pix_pad if not(only_y) else 0)*weight,wcs)
     w2 = np.mean(taper**2.)
     return taper,w2
 

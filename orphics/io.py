@@ -343,7 +343,8 @@ class Plotter(object):
                 self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
             else:
                 raise ValueError
-        if self.scalefn is None: self.scalefn = lambda x: 1
+        if self.scalefn is None: 
+            self.scalefn = (lambda x: 1) if scalefn is None else scalefn
         if xyscale is not None:
             scalemap = {'log':'log','lin':'linear'}
             xscale = scalemap[xyscale[:3]]
