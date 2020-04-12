@@ -22,6 +22,18 @@ import time
 from six.moves import cPickle as pickle
 
 from orphics import stats
+import os,sys
+
+def get_nl(exp):
+    exp = exp.strip().lower()
+    froot = os.path.dirname(__file__)+"/../data/"
+    if exp=='planck':
+        return np.loadtxt(f'{froot}planck_2018_mv_nlkk.dat',usecols=[0,1],unpack=True)
+    elif exp=='so_goal':
+        return np.loadtxt(f'{froot}so_v3_1_deproj0_goal_fsky0p4_it.dat',usecols=[0,7],unpack=True)
+    elif exp=='s4':
+        return np.loadtxt(f'{froot}s4_noise.dat',usecols=[0,7],unpack=True)
+        
 
 def validate_geometry(shape,wcs,verbose=False):
     area = enmap.area(shape,wcs)*(180./np.pi)**2.
