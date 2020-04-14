@@ -802,9 +802,12 @@ class bin2D(object):
         self.bin_edges = bin_edges
         self.modrmap = modrmap
 
-    def bin(self,data2d,weights=None,err=False,get_count=False):
+    def bin(self,data2d,weights=None,err=False,get_count=False,mask_nan=False):
         if weights is None:
-            keep = ~np.isnan(data2d.reshape(-1))
+            if mask_nan:
+                keep = ~np.isnan(data2d.reshape(-1))
+            else:
+                keep = np.ones((data2d.size,),dtype=bool)
             count = np.bincount(self.digitized[keep])[1:-1]
             res = np.bincount(self.digitized[keep],(data2d).reshape(-1)[keep])[1:-1]/count
             if err:
