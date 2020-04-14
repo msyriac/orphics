@@ -1645,3 +1645,85 @@ def load_theory_from_glens(out_name,total=False,lpad=9000,TCMB=2.7255e6):
     theory.dimensionless = False
     return theory
     
+
+
+def get_lss_cls(windows,lmax,nonlinear=True,params=None):
+    from camb.sources import GaussianSourceWindow, SplinedSourceWindow
+    from camb import model
+    if params is None: params = dict(defaultCosmology)
+    p = params
+    pars = camb.CAMBparams()
+    pars.set_cosmology(H0=p['H0'], ombh2=p['ombh2'], omch2=p['omch2'])
+    pars.InitPower.set_params(As=p['As'], ns=p['ns'])
+    pars.set_for_lmax(lmax, lens_potential_accuracy=1)
+    pars.Want_CMB = False 
+    #NonLinear_both or NonLinear_lens will use non-linear corrections
+    if nonlinear:
+        pars.NonLinear = model.NonLinear_both
+    else:
+        pars.NonLinear = None
+
+    sws = []
+    aws = dict(windows)
+    wkeys = list(aws.keys())
+    for key in wkeys:
+        assert ('P' not in key) and ('x' not in key), "The letters P and x are not allowed in window names."
+        ws = aws[key]
+        stype = ws['stype'].strip().lower()
+        if stype=='counts':
+            bias = ws['b']
+            try:
+                dlog10Ndm = ws['dlog10Ndm']
+            except:
+                dlog10Ndm = -0.2
+        elif stype=='lensing':
+            bias = 0
+            dlog10Ndm = 0
+        else:
+            raise ValueError
+        wtype = ws['wtype'].strip().lower()
+        if wtype=='gaussian':
+            wfunc = GaussianSourceWindow
+            redshift = ws['zmean']
+            sigma = ws['zsigma']
+            sws = sws + [wfunc(source_type=stype,bias=bias,dlog10Ndm=dlog10Ndm,redshift=redshift,sigma=sigma)]
+        elif wtype=='spline':
+            wfunc = SplinedSourceWindow
+            zs = ws['zs']
+            dndz = ws['dndz']
+            sws = sws + [wfunc(source_type=stype,bias=bias,dlog10Ndm=dlog10Ndm,z=zs,W=dndz)]
+        else:
+            raise ValueError
+
+    pars.SourceWindows = [*sws]
+    results = camb.get_results(pars)
+    cls = results.get_source_cls_dict()
+    odict = {}
+    ls = np.arange(cls['PxP'].size)    
+    for key in cls.keys():
+        w1,w2 = key.split('x')
+        if w1=='P':
+            mul1 = 1./2.
+            ow1 = 'CMB'
+        else:
+            a,ind = w1[0],int(w1[1:])
+            assert a=='W'
+            assert ind>0
+            ow1 = wkeys[ind-1]
+            with np.errstate(divide='ignore',invalid='ignore'):                     
+                mul1 = 1./np.sqrt(ls*(ls+1.))
+        if w2=='P':
+            mul2 = 1./2.
+            ow2 = 'CMB'
+        else:
+            a,ind = w2[0],int(w2[1:])
+            assert a=='W'
+            assert ind>0
+            ow2 = wkeys[ind-1]
+            with np.errstate(divide='ignore',invalid='ignore'):                     
+                mul2 = 1./np.sqrt(ls*(ls+1.))
+                
+        mul = mul1 * mul2 * 2. * np.pi
+        odict[f'{ow1}x{ow2}'] = cls[key] * mul
+        
+    return odict
