@@ -2,8 +2,11 @@ from __future__ import print_function
 import matplotlib
 import matplotlib as mpl
 from cycler import cycler
-mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
+#mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set()
+
 
 import numpy as np
 import os,sys,logging,time
@@ -402,15 +405,15 @@ class Plotter(object):
         return self._ax.hist(data,**kwargs)
     
         
-    def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",elinewidth=2,markersize=4,label=None,mulx=1.,addx=0.,**kwargs):
+    def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",color=None,elinewidth=2,markersize=4,label=None,mulx=1.,addx=0.,edgecolor=None,**kwargs):
         scaler = self.scalefn(x)
         yc = y*scaler
         yerrc = yerr*scaler
         if band:
-            self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,markersize=markersize,**kwargs)
-            self._ax.fill_between(x*mulx+addx, yc-yerrc, y+yerrc, alpha=alpha)
+            self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,markersize=markersize,color=color,**kwargs)
+            self._ax.fill_between(x*mulx+addx, yc-yerrc, y+yerrc, alpha=alpha,color=color,edgecolor=edgecolor)
         else:
-            self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,**kwargs)
+            self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,color=color,**kwargs)
         if label is not None: self.do_legend = True
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,**kwargs):

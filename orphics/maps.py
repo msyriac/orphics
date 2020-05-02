@@ -10,6 +10,19 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def galactic_mask(shape,wcs,nside,theta1,theta2):
+    npix = hp.nside2npix(nside)
+    orig = np.ones(npix)
+    orig[hp.query_strip(nside,theta1,theta2)] = 0
+    return reproject.ivar_hp_to_cyl(orig, shape, wcs, rot=True,do_mask=False,extensive=False)
+
+def north_galactic_mask(shape,wcs,nside):
+    return galactic_mask(shape,wcs,nside,0,np.deg2rad(90))
+
+def south_galactic_mask(shape,wcs,nside):
+    return galactic_mask(shape,wcs,nside,np.deg2rad(90),np.deg2rad(180))
+
+
 def rms_from_ivar(ivar,parea=None,cylindrical=True):
     """
     Return rms noise for each pixel in a map in physical units
@@ -35,15 +48,16 @@ def psizemap(shape,wcs):
     Nx = shape[-1]
     return enmap.ndmap(area[...,None].repeat(Nx,axis=-1),wcs)
 
-def ivar(shape,wcs,noise_muK_arcmin):
-    pmap = psizemap(shape,wcs)*((180.*60./np.pi)**2.)
+def ivar(shape,wcs,noise_muK_arcmin,ipsizemap=None):
+    if ipsizemap is None: ipsizemap = psizemap(shape,wcs)
+    pmap = ipsizemap*((180.*60./np.pi)**2.)
     return pmap/noise_muK_arcmin**2.
 
-def white_noise(shape,wcs,noise_muK_arcmin,seed=None):
+def white_noise(shape,wcs,noise_muK_arcmin,seed=None,ipsizemap=None):
     """
     Generate a non-band-limited white noise map.
     """
-    div = ivar(shape,wcs,noise_muK_arcmin)
+    div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
     if seed is not None: np.random.seed(seed)
     return np.random.standard_normal(shape) / np.sqrt(div)
 

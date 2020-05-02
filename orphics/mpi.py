@@ -55,7 +55,7 @@ except:
 
 
 def mpi_distribute(num_tasks,avail_cores,allow_empty=False):
-
+    # copied to mapsims.convert_noise_templates
     if not(allow_empty): assert avail_cores<=num_tasks
     min_each, rem = divmod(num_tasks,avail_cores)
     num_each = np.array([min_each]*avail_cores) # first distribute equally
