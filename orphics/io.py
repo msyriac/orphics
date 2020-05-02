@@ -416,7 +416,7 @@ class Plotter(object):
             self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,color=color,**kwargs)
         if label is not None: self.do_legend = True
 
-    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,**kwargs):
+    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,disable_grid=False,**kwargs):
         '''
         For an array passed in as [j,i]
         Displays j along y and i along x , so (y,x)
@@ -436,7 +436,11 @@ class Plotter(object):
             limmin=-lim
             limmax = lim
 
+        if extent is None:
+            extent = (0, arr.shape[1], arr.shape[0], 0)
         img = self._ax.imshow(arr,interpolation="none",vmin=limmin,vmax=limmax,cmap=cm,extent=extent,**kwargs)
+        if disable_grid: self._ax.grid(b=None)
+        
 
         if levels!=None:
            self._ax.contour(arr,levels=levels,extent=extent,origin="upper",colors=['black','black'],linestyles=['--','-'])
