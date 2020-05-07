@@ -28,8 +28,7 @@ def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh,plot_file=None):
 
 
 
-    
-def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True):
+def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True,Cinv=None,Cy=None):
     """
     Given measurements with known uncertainties, this function fits those to a linear model:
     y = a0*funcs[0](x) + a1*funcs[1](x) + ...
@@ -41,11 +40,14 @@ def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True):
     A = np.zeros((y.size,len(funcs)))
     for i,func in enumerate(funcs):
         A[:,i] = func(x)
-    cov = np.linalg.inv(np.dot(A.T,solve(C,A)))
-    b = np.dot(A.T,solve(C,y))
+    CA = s(C,A) if Cinv is None else np.dot(Cinv,A)
+    cov = np.linalg.inv(np.dot(A.T,CA))
+    if Cy is None: Cy = s(C,y) if Cinv is None else np.dot(Cinv,y)
+    b = np.dot(A.T,Cy)
     X = np.dot(cov,b)
     YAX = y - np.dot(A,X)
-    chisquare = np.dot(YAX.T,solve(C,YAX))
+    CYAX = s(C,YAX) if Cinv is None else np.dot(Cinv,YAX)
+    chisquare = np.dot(YAX.T,CYAX)
     dofs = len(x)-len(funcs)-1 if dofs is None else dofs
     pte = 1 - chi2.cdf(chisquare, dofs)    
     return X,cov,chisquare/dofs,pte
@@ -582,17 +584,50 @@ def sm_update(Ainv, u, v=None):
     ans = Ainv - (np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / det_update)
     return ans, det_update
 
-def cov2corr(cov):
-    # slow and stupid!
-    
+def cov2corr_legacy(cov):
+    # slow and stupid! see cov2corr
     d = np.diag(cov)
     stddev = np.sqrt(d)
     corr = cov.copy()*0.
     for i in range(cov.shape[0]):
         for j in range(cov.shape[0]):
             corr[i,j] = cov[i,j]/stddev[i]/stddev[j]
-
     return corr
+
+def cov2corr(mat):
+    diags = np.diagonal(mat).T
+    xdiags = diags[:,None,...]
+    ydiags = diags[None,:,...]
+    corr = mat/np.sqrt(xdiags*ydiags)
+    return corr
+    
+def correlated_hybrid_matrix(data_covmat,theory_covmat=None,theory_corr=None,cap=True,cap_off=0.99):
+    """
+    Given a diagonal matrix data_covmat,
+    and a theory matrix theory_covmat or its correlation matrix theory_corr,
+    produce a hybrid non-diagonal matrix that has the same diagonals as the data matrix
+    but has correlation coefficient given by theory.
+    """
+    if theory_corr is None:
+        assert theory_covmat is not None
+        theory_corr = cov2corr(theory_covmat)
+    r = theory_corr
+
+    def _cap(imat,cval,csel):
+        imat[imat>1] = 1
+        imat[imat<-1] = -1
+        imat[csel][imat[csel]>cval] = cval
+        imat[csel][imat[csel]>-cval] = -cval
+
+    d = data_covmat.copy()
+    sel = np.where(~np.eye(d.shape[0],dtype=bool))
+    d[sel] = 1
+    dcorr = 1./cov2corr(d)
+    if cap: _cap(r,cap_off,sel)
+    fcorr = dcorr * r
+    d[sel] = fcorr[sel]
+    return d
+
 
 class Stats(object):
     """
@@ -638,6 +673,10 @@ class Stats(object):
         """
 
         vector = np.asarray(vector)
+
+        if np.iscomplexobj(vector):
+            print("ERROR: stats on complex arrays not supported. Do the real and imaginary parts separately.")
+            raise TypeError
         
         if not(label in list(self.vectors.keys())):
             self.vectors[label] = []
@@ -652,6 +691,9 @@ class Stats(object):
         Add arr to a cumulative stack named "label". Could be 2d arrays.
         Create a new one if it doesn't already exist.
         """
+        if np.iscomplexobj(arr):
+            print("ERROR: stacking of complex arrays not supported. Stack the real and imaginary parts separately.")
+            raise TypeError
         if not(label in list(self.little_stack.keys())):
             self.little_stack[label] = arr*0.
             self.little_stack_count[label] = 0
@@ -760,14 +802,18 @@ class bin2D(object):
         self.bin_edges = bin_edges
         self.modrmap = modrmap
 
-    def bin(self,data2d,weights=None,err=False,get_count=False):
+    def bin(self,data2d,weights=None,err=False,get_count=False,mask_nan=False):
         if weights is None:
-            count = np.bincount(self.digitized)[1:-1]
-            res = np.bincount(self.digitized,(data2d).reshape(-1))[1:-1]/count
+            if mask_nan:
+                keep = ~np.isnan(data2d.reshape(-1))
+            else:
+                keep = np.ones((data2d.size,),dtype=bool)
+            count = np.bincount(self.digitized[keep])[1:-1]
+            res = np.bincount(self.digitized[keep],(data2d).reshape(-1)[keep])[1:-1]/count
             if err:
                 meanmap = self.modrmap.copy().reshape(-1) * 0
                 for i in range(self.centers.size): meanmap[self.digitized==i] = res[i]
-                std = np.sqrt(np.bincount(self.digitized,((data2d-meanmap.reshape(self.modrmap.shape))**2.).reshape(-1))[1:-1]/(count-1)/count)
+                std = np.sqrt(np.bincount(self.digitized[keep],((data2d-meanmap.reshape(self.modrmap.shape))**2.).reshape(-1)[keep])[1:-1]/(count-1)/count)
         else:
             count = np.bincount(self.digitized,weights.reshape(-1))[1:-1]
             res = np.bincount(self.digitized,(data2d*weights).reshape(-1))[1:-1]/count
@@ -803,7 +849,7 @@ class bin1D:
         self.bin_edges_min = self.bin_edges.min()
         self.bin_edges_max = self.bin_edges.max()
 
-    def binned(self,ix,iy):
+    def bin(self,ix,iy):
         x = ix.copy()
         y = iy.copy()
         # this just prevents an annoying warning (which is otherwise informative) everytime

@@ -10,6 +10,19 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def galactic_mask(shape,wcs,nside,theta1,theta2):
+    npix = hp.nside2npix(nside)
+    orig = np.ones(npix)
+    orig[hp.query_strip(nside,theta1,theta2)] = 0
+    return reproject.ivar_hp_to_cyl(orig, shape, wcs, rot=True,do_mask=False,extensive=False)
+
+def north_galactic_mask(shape,wcs,nside):
+    return galactic_mask(shape,wcs,nside,0,np.deg2rad(90))
+
+def south_galactic_mask(shape,wcs,nside):
+    return galactic_mask(shape,wcs,nside,np.deg2rad(90),np.deg2rad(180))
+
+
 def rms_from_ivar(ivar,parea=None,cylindrical=True):
     """
     Return rms noise for each pixel in a map in physical units
@@ -34,15 +47,21 @@ def psizemap(shape,wcs):
     area = np.abs(dra*(np.sin(np.minimum(np.pi/2.,dec+ddec/2))-np.sin(np.maximum(-np.pi/2.,dec-ddec/2))))
     Nx = shape[-1]
     return enmap.ndmap(area[...,None].repeat(Nx,axis=-1),wcs)
-    
-def white_noise(shape,wcs,noise_muK_arcmin,seed=None):
+
+def ivar(shape,wcs,noise_muK_arcmin,ipsizemap=None):
+    if ipsizemap is None: ipsizemap = psizemap(shape,wcs)
+    pmap = ipsizemap*((180.*60./np.pi)**2.)
+    return pmap/noise_muK_arcmin**2.
+
+def white_noise(shape,wcs,noise_muK_arcmin,seed=None,ipsizemap=None):
     """
     Generate a non-band-limited white noise map.
     """
-    pmap = psizemap(shape,wcs)*((180.*60./np.pi)**2.)
+    div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
     if seed is not None: np.random.seed(seed)
-    return (noise_muK_arcmin/np.sqrt(pmap))*np.random.standard_normal(shape)
+    return np.random.standard_normal(shape) / np.sqrt(div)
 
+    
 def get_ecc(img):
     """Returns eccentricity from central moments of image
     """
@@ -79,6 +98,7 @@ def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
     that module independent. Ideally, it should be implemented in
     enlib.enmap.
     """
+    assert np.all(np.isfinite(cov))
     rot = np.zeros((3,3,cov.shape[-2],cov.shape[-1]))
     rot[0,0,:,:] = 1
     prot = enmap.queb_rotmat(enmap.lmap(shape,wcs), inverse=inverse, iau=iau)
@@ -91,7 +111,7 @@ def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
 
 def binary_mask(mask,threshold=0.5):
     m = np.abs(mask)
-    m[m<threshold] = 0
+    m[m<=threshold] = 0
     m[m>threshold] = 1
     return m
         
@@ -117,12 +137,16 @@ def get_central(img,fracy,fracx=None):
         if cropx%2==1 and Nx%2==0: cropx -= 1
     return crop_center(img,cropy,cropx)
 
-def crop_center(img,cropy,cropx=None):
+def crop_center(img,cropy,cropx=None,sel=False):
     cropx = cropy if cropx is None else cropx
     y,x = img.shape[-2:]
     startx = x//2-(cropx//2)
     starty = y//2-(cropy//2)
-    ret = img[...,starty:starty+cropy,startx:startx+cropx]
+    selection = np.s_[...,starty:starty+cropy,startx:startx+cropx]
+    if sel:
+        ret = selection
+    else:
+        ret = img[selection]
     return ret
 
 def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None,mask=1):
@@ -699,20 +723,20 @@ def butterworth(ells,ell0,n):
     return 1./(1.+(ells*1./ell0)**(2.*n))
 
 
-def get_taper(shape,taper_percent = 12.0,pad_percent = 3.0,weight=None):
+def get_taper(shape,wcs,taper_percent = 12.0,pad_percent = 3.0,weight=None):
     Ny,Nx = shape[-2:]
     if weight is None: weight = np.ones(shape[-2:])
     taper = cosine_window(Ny,Nx,lenApodY=int(taper_percent*min(Ny,Nx)/100.),lenApodX=int(taper_percent*min(Ny,Nx)/100.),padY=int(pad_percent*min(Ny,Nx)/100.),padX=int(pad_percent*min(Ny,Nx)/100.))*weight
     w2 = np.mean(taper**2.)
-    return taper,w2
+    return enmap.enmap(taper,wcs),w2
 
-def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,weight=None):
+def get_taper_deg(shape,wcs,taper_width_degrees = 1.0,pad_width_degrees = 0.,weight=None,only_y = False):
     Ny,Nx = shape[-2:]
     if weight is None: weight = np.ones(shape[-2:])
     res = resolution(shape,wcs)
     pix_apod = int(taper_width_degrees*np.pi/180./res)
     pix_pad = int(pad_width_degrees*np.pi/180./res)
-    taper = enmap.enmap(cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod,padY=pix_pad,padX=pix_pad)*weight,wcs)
+    taper = enmap.enmap(cosine_window(Ny,Nx,lenApodY=pix_apod,lenApodX=pix_apod if not(only_y) else 0,padY=pix_pad,padX=pix_pad if not(only_y) else 0)*weight,wcs)
     w2 = np.mean(taper**2.)
     return taper,w2
 
@@ -2846,6 +2870,8 @@ def change_alm_lmax(alms, lmax):
         idx_oeidx = hp.Alm.getidx(olmax, lmaxc, m)
 
         alms_out[..., idx_osidx:idx_oeidx+1] = alms[..., idx_isidx:idx_ieidx+1].copy()
+
+
     return alms_out
 
 
