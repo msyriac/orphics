@@ -10,6 +10,18 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+
+def kspace_coadd(kcoadds,kbeams,kncovs,fkbeam=1):
+    kcoadds = np.asarray(kcoadds)
+    kbeams = np.asarray(kbeams)
+    kncovs = np.asarray(kncovs)
+    numer = np.sum(kcoadds * kbeams * fkbeam / kncovs,axis=0)
+    numer[~np.isfinite(numer)] = 0
+    denom = np.sum(kbeams**2 / kncovs,axis=0)
+    f = numer/denom
+    f[~np.isfinite(f)] = 0
+    return f
+
 def atm_factor(ells,lknee,alpha):
     with np.errstate(divide='ignore', invalid='ignore',over='ignore'):
         ret = (lknee*np.nan_to_num(1./ells))**(-alpha) if lknee>1.e-3 else 0.*ells
@@ -26,7 +38,8 @@ def rednoise(ells,rms_noise,lknee=0.,alpha=1.):
 
 
 def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
-                        N_ell_standard=None,parea=None,cylindrical=False):
+                        N_ell_standard=None,parea=None,cylindrical=False,
+                        seed=None,lmin=None):
     """
     Produces a simulated noise map (using SHTs)
     corresponding to a Gaussian map which when its
@@ -42,11 +55,13 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
         ells = np.arange(lmax)
         N_ell_standard = atm_factor(ells,lknee,alpha) + 1.
         N_ell_standard[~np.isfinite(N_ell_standard)] = 0
+        if lmin is not None: N_ell_standard[ells<lmin] = 0
     shape,wcs = ivar.shape[-2:],ivar.wcs
     if N_ell_standard is None and (lknee is None):
+        if seed is not None: np.random.seed(seed)
         return np.random.standard_normal(shape) / np.sqrt(ivar)
     else:
-        smap = cs.rand_map((1,)+shape,wcs,ps=N_ell_standard[None,None])[0]
+        smap = cs.rand_map((1,)+shape,wcs,ps=N_ell_standard[None,None],seed=seed)[0]
         return rms_from_ivar(ivar,parea=parea,cylindrical=cylindrical) * smap *np.pi / 180./ 60.
 
 
@@ -72,7 +87,11 @@ def rms_from_ivar(ivar,parea=None,cylindrical=True):
     if parea is None:
         shape,wcs = ivar.shape, ivar.wcs
         parea = psizemap(shape,wcs) if cylindrical else enmap.pixsizemap(shape,wcs)
-    return np.sqrt((1./ivar)*parea)*180*60./np.pi
+    with np.errstate(divide='ignore', invalid='ignore',over='ignore'):
+        var = (1./ivar)
+    var[ivar<=0] = 0
+    assert np.all(np.isfinite(var))
+    return np.sqrt(var*parea)*180*60./np.pi
 
     
 

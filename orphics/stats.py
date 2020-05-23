@@ -671,6 +671,7 @@ class Stats(object):
         Append the 1d vector to a statistic named "label".
         Create a new one if it doesn't already exist.
         """
+        assert label!='stats', "Sorry, 'stats' is a forbidden label."
 
         vector = np.asarray(vector)
 
@@ -691,6 +692,8 @@ class Stats(object):
         Add arr to a cumulative stack named "label". Could be 2d arrays.
         Create a new one if it doesn't already exist.
         """
+        assert label!='stats', "Sorry, 'stats' is a forbidden label."
+
         if np.iscomplexobj(arr):
             print("ERROR: stacking of complex arrays not supported. Stack the real and imaginary parts separately.")
             raise TypeError
@@ -785,9 +788,46 @@ class Stats(object):
                 for k,label in enumerate(self.vectors.keys()):
                     self.stats[label] = get_stats(self.vectors[label])
             #self.vectors = {}
-                
 
+    
+    def dump(self,path):
+        for d,name in zip([self.vectors,self.stacks],['vectors','stack']):
+            for key in d.keys():
+                np.save(f"{path}/mstats_dump_{name}_{key}.npy",d[key])
+        for key in self.stats.keys():
+            for skey in self.stats[key].keys():
+                np.savetxt(f"{path}/mstats_dump_stats_{key}_{skey}.txt",np.atleast_1d(self.stats[key][skey]))
+        
+def load_stats(path):                
+    import glob,re
+    class S:
+        pass
+    s = S()
+    s.vectors = {}
+    s.stats = {}
+    s.stacks = {}
+    for sstr,sdict in zip(['vectors','stack'],[s.vectors,s.stacks]):
+        vfiles = glob.glob(f"{path}/mstats_dump_{sstr}_*.npy")
+        for vfile in vfiles:
+            key = re.search(rf'mstats_dump_{sstr}_(.*?).npy', vfile).group(1)
+            sdict[key] = np.load(f"{path}/mstats_dump_{sstr}_{key}.npy")
 
+    vfiles = glob.glob(f"{path}/mstats_dump_stats_*_mean.txt")
+    keys = []
+    for vfile in vfiles:
+        key = re.search(rf'mstats_dump_stats_(.*?)_mean.txt', vfile).group(1)
+        keys.append(key)
+    for key in keys:
+        s.stats[key] = {}
+        vfiles = glob.glob(f"{path}/mstats_dump_stats_{key}_*.txt")
+        for vfile in vfiles:
+            skey = re.search(rf'mstats_dump_stats_{key}_(.*?).txt', vfile).group(1)
+            arr = np.loadtxt(f"{path}/mstats_dump_stats_{key}_{skey}.txt")
+            if arr.size==1: arr = arr.ravel()[0]
+            s.stats[key][skey] = arr
+    return s
+
+    
 def npspace(minim,maxim,num,scale="lin"):
     if scale=="lin" or scale=="linear":
         return np.linspace(minim,maxim,num)
