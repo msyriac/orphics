@@ -150,7 +150,7 @@ def filter_alms(alms,lmin,lmax):
     return hp.almxfl(alms,fs)
 
 
-def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
+def rotate_pol_power(shape,wcs,cov,iau=True,inverse=False):
     """Rotate a 2D power spectrum from TQU to TEB (inverse=False) or
     back (inverse=True). cov is a (3,3,Ny,Nx) 2D power spectrum.
     WARNING: This function is duplicated in orphics.pixcov to make 
@@ -434,15 +434,18 @@ class MapGen(object):
                             self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
 
-        def get_map(self,seed=None,scalar=False,iau=True,real=False):
+        def get_map(self,seed=None,scalar=False,iau=True,real=False,harm=False):
                 if seed is not None: np.random.seed(seed)
                 rand = enmap.fft(enmap.rand_gauss(self.shape, self.wcs)) if real else enmap.rand_gauss_harm(self.shape, self.wcs)
                 data = enmap.map_mul(self.covsqrt, rand)
                 kmap = enmap.ndmap(data, self.wcs)
-                if scalar:
-                        return enmap.ifft(kmap).real
+                if harm: 
+                    return kmap
                 else:
-                        return enmap.harm2map(kmap,iau=iau)
+                    if scalar:
+                            return enmap.ifft(kmap).real
+                    else:
+                            return enmap.harm2map(kmap,iau=iau)
 
         
         
@@ -795,7 +798,7 @@ def gauss_beam_real(rs,fwhm):
 
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
-    output = np.ones(shape[-2:], dtype = int)
+    output = enmap.ones(shape[-2:],wcs, dtype = np.int)
     if (lmin is not None) or (lmax is not None): modlmap = enmap.modlmap(shape, wcs)
     if (lxcut is not None) or (lycut is not None): ly, lx = enmap.laxes(shape, wcs, oversample=1)
     if lmin is not None:
@@ -1444,7 +1447,7 @@ class Purify(object):
         self.windict = init_deriv_window(window,px)
         lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes(shape,wcs)
 
-    def lteb_from_iqu(self,imap,method='pure',flip_q=True,iau=False):
+    def lteb_from_iqu(self,imap,method='pure',flip_q=True,iau=True):
         """
         maps must  have window applied!
         """
@@ -1479,7 +1482,7 @@ def init_deriv_window(window,px):
 
 
 
-def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure',iau=False):
+def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure',iau=True):
     """
     maps must  have window applied!
     """

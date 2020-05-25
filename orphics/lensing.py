@@ -56,20 +56,20 @@ def validate_geometry(shape,wcs,verbose=False):
 
 
 
-def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin=None,overdensity=200.,critical=False,at_cluster_z=True):
+def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax=None,lmin=None,overdensity=200.,critical=False,at_cluster_z=True,kmask=None):
     # mass in msolar/h
     # cc Cosmology object
     modrmap = enmap.modrmap(shape,wcs)
     binner = bin2D(modrmap,bin_edges_arcmin*np.pi/180./60.)
     k = nfw_kappa(mass,modrmap,cc,zL=z,concentration=conc,overdensity=overdensity,critical=critical,atClusterZ=at_cluster_z)
-    kmask = maps.mask_kspace(shape,wcs,lmin=lmin,lmax=lmax)
+    if kmask is None: kmask = maps.mask_kspace(shape,wcs,lmin=lmin,lmax=lmax)
     kf = maps.filter_map(k,kmask)
     cents,k1d = binner.bin(kf)
     return cents,k1d
 
 def fit_nfw_profile(profile_data,profile_cov,masses,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin=None,
                     overdensity=200.,critical=False,at_cluster_z=True,
-                    mass_guess=2e14,sigma_guess=2e13):
+                    mass_guess=2e14,sigma_guess=2e13,kmask=None):
     """
     Returns
     lnlikes - actual lnlike as function of masses
@@ -80,15 +80,20 @@ def fit_nfw_profile(profile_data,profile_cov,masses,z,conc,cc,shape,wcs,bin_edge
     from orphics.stats import fit_gauss
     cinv = np.linalg.inv(profile_cov)
     lnlikes = []
+    fprofiles = []
+
     for mass in masses:
-        cents,profile_theory = binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin,overdensity,critical,at_cluster_z)
+        cents,profile_theory = binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin,overdensity,critical,at_cluster_z,kmask=kmask)
         diff = profile_data - profile_theory
+        fprofiles.append(profile_theory)
         lnlike = -0.5 * np.dot(np.dot(diff,cinv),diff)
         lnlikes.append(lnlike)
+
     fit_mass,mass_err,_,_ = fit_gauss(masses,np.exp(lnlikes),mu_guess=mass_guess,sigma_guess=sigma_guess)
     gaussian = lambda t,mu,sigma: np.exp(-(t-mu)**2./2./sigma**2.)/np.sqrt(2.*np.pi*sigma**2.)
     like_fit = gaussian(masses,fit_mass,mass_err)
-    return np.array(lnlikes),np.array(like_fit),fit_mass,mass_err
+    cents,fit_profile = binned_nfw(fit_mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax,lmin,overdensity,critical,at_cluster_z,kmask=kmask)
+    return np.array(lnlikes),np.array(like_fit),fit_mass,mass_err,fprofiles,fit_profile
 
 def mass_estimate(kappa_recon,kappa_noise_2d,mass_guess,concentration,z):
     """Given a cutout kappa map centered on a cluster and a redshift,
@@ -2084,7 +2089,6 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
     else:
         r500 = cc.rdel_m(M,zdensity,overdensity) # R500 in Mpc/h
 
-
     conv=np.pi/(180.*60.)
     theta = thetaArc*conv # theta in radians
 
@@ -2100,7 +2104,6 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
     const4 = M / (rS*rS) #solar mass / MPc^2
     const5 = 1./fc
     
-
     kappaU = gnfw(theta/thetaS)+theta*0. # added for compatibility with enmap
 
     consts = const12 * const3 * const4 * const5
@@ -2112,7 +2115,7 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
         cy = int(Ny/2.)
         kappa[cy,cx] = kappa[cy-1,cx]
         
-
+    assert np.all(np.isfinite(kappa))
     return kappa, r500
 
 
@@ -2251,46 +2254,6 @@ def rayleigh(theta,sigma):
         
 
 
-def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,critical=True,atClusterZ=True):
-
-    comL  = (cc.results.comoving_radial_distance(zL) )*cc.h
-
-    
-
-    c = concentration
-    M = massOverh
-
-    zdensity = 0.
-    if atClusterZ: zdensity = zL
-
-    if critical:
-        r500 = cc.rdel_c(M,zdensity,overdensity).flatten()[0] # R500 in Mpc/h
-    else:
-        r500 = cc.rdel_m(M,zdensity,overdensity) # R500 in Mpc/h
-
-    conv=np.pi/(180.*60.)
-    theta = thetaArc*conv # theta in radians
-
-    rS = r500/c
-
-    thetaS = rS/ comL 
-
-
-    const12 = 9.571e-20 # 2G/c^2 in Mpc / solar mass 
-    fc = np.log(1.+c) - (c/(1.+c))    
-    #const3 = comL * comLS * (1.+zL) / comS #  Mpc
-    const3 = comL *  (1.+zL) *winAtLens #  Mpc
-    const4 = M / (rS*rS) #solar mass / MPc^2
-    const5 = 1./fc
-    
-
-    kappaU = gnfw(theta/thetaS)+theta*0. # added for compatibility with enmap
-
-    consts = const12 * const3 * const4 * const5
-    kappa = consts * kappaU
-
-
-    return kappa, r500
 
 
 # NFW dimensionless form
