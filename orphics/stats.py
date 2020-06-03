@@ -438,7 +438,7 @@ def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
     if save_file is None:
         plt.show()
     else:
-        plt.savefig(save_file, bbox_inches='tight',format='png')
+        plt.savefig(save_file, bbox_inches='tight')
         print(io.bcolors.OKGREEN+"Saved plot to", save_file+io.bcolors.ENDC)
         
 
