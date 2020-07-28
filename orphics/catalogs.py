@@ -235,7 +235,7 @@ class CatMapper(object):
         return delta
     
 
-def load_boss(boss_files,zmin,zmax,do_weights):
+def load_boss(boss_files,zmin,zmax,do_weights,sys_weights=True):
     ras = []
     decs = []
     zs = []
@@ -244,7 +244,8 @@ def load_boss(boss_files,zmin,zmax,do_weights):
         f = fits.open(boss_file)
         cat = f[1]
         if do_weights: 
-            w += (cat.data['WEIGHT_SYSTOT']*(cat.data['WEIGHT_NOZ'] + cat.data['WEIGHT_CP'] - 1.0)).tolist()
+            m = cat.data['WEIGHT_SYSTOT'] if sys_weights else 1
+            w += (m*(cat.data['WEIGHT_NOZ'] + cat.data['WEIGHT_CP'] - 1.0)).tolist()
         ras += cat.data['RA'].tolist()
         decs += cat.data['DEC'].tolist()
         zs += cat.data['Z'].tolist()
@@ -261,7 +262,7 @@ def load_boss(boss_files,zmin,zmax,do_weights):
     else:
         w = None
     zs = zs[sel]
-    return ras,decs,w
+    return ras,decs,w,zs
 
 
 def get_delta(mask,ws=None,ras=None,decs=None,pixs=None,hp_coords='equatorial'):

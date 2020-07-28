@@ -1777,7 +1777,7 @@ def symmat_from_data(data):
 
 
 
-def change_alm_lmax(alms, lmax):
+def change_alm_lmax(alms, lmax, dtype=np.complex128):
     ilmax  = hp.Alm.getlmax(alms.shape[-1])
     olmax  = lmax
 
@@ -1785,7 +1785,7 @@ def change_alm_lmax(alms, lmax):
     oshape[-1] = hp.Alm.getsize(olmax)
     oshape     = tuple(oshape)
 
-    alms_out   = np.zeros(oshape, dtype = np.complex128)
+    alms_out   = np.zeros(oshape, dtype = dtype)
     flmax      = min(ilmax, olmax)
 
     for m in range(flmax+1):
