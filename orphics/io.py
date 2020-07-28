@@ -185,8 +185,8 @@ def list_strings_from_config(Config,section,name):
 ### PLOTTING
 
 
-
 def layered_contour(imap,imap_contour,contour_levels,contour_color,contour_width=1,mask=None,filename=None,**kwargs):
+    from pixell import enplot
     p1 = enplot.plot(imap,layers=True,mask=mask,**kwargs)
     p2 = enplot.plot(imap_contour,layers=True,contours=contour_levels,contour_width=contour_width,mask=mask,contour_color=contour_color)
     p1 += [a for a in p2 if "cont" in a.name]

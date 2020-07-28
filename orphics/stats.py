@@ -27,6 +27,40 @@ def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh,plot_file=None):
     pl.done(plot_file)
 
 
+def get_sigma2(ells,cls,w0,delta_ells,fsky,ell0=0,alpha=1,w0p=None,ell0p=0,alphap=1,clxx=None,clyy=None):
+    afact = ((ell0/ells)**(-alpha)) if ell0>1.e-3 else 0.*ells
+    nlxx = (w0*np.pi/180./60.)**2 * afact
+    if clxx is not None:
+        afact = ((ell0p/ells)**(-alphap)) if ell0>1.e-3 else 0.*ells
+        nlyy = (w0p*np.pi/180./60.)**2 * afact
+        tclxx = clxx + nlxx
+        tclyy = clyy + nlyy
+        tcl2 = cls**2 + tclxx*tclyy
+    else:
+        assert clyy is None
+        assert w0p is None
+        tcl2 = 2 * (cls+nlxx)**2
+    return tcl2/(2*ells+1)/fsky/delta_ells
+
+def fit_cltt_power(ells,cls,cltt_func,w0,sigma2,ell0=0,alpha=1,fix_knee=False):
+    """
+    Fit binned power spectra to a linear model of the form
+    A * C_ell + B * w0^2 (ell/ell0)^alpha + C * w0^2
+    """
+    # Cinv = np.diag(1./sigma2)
+    # Cov = np.diag(sigma2)
+    sw0 = w0 * np.pi / 180./ 60.
+    if fix_knee:
+        funcs = [lambda x: sw0**2]
+    else:
+        funcs = [lambda x: sw0**2, lambda x: sw0**2 * (ell0/x)**(-alpha) if ell0>1e-3 else sw0**2 ]
+    bds = (0,np.inf)
+    X,_ = curve_fit(lambda x,*args: sum([arg*f(x) for f,arg in zip(funcs,args) ]) , ells, (cls-cltt_func(ells)),
+                  p0=[1] if fix_knee else [1,ell0],sigma=np.sqrt(sigma2),absolute_sigma=True,
+                  bounds=bds)
+    #X,_,_,_ = fit_linear_model(ells,(cls-cltt_func(ells)),Cov,funcs,Cinv=Cinv) # Linear models dont allow bounds
+    return lambda x : cltt_func(x) + sum([ coeff*f(x)  for coeff,f in zip(X,funcs)])
+        
 
 def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True,Cinv=None,Cy=None):
     """
@@ -404,7 +438,7 @@ def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
     if save_file is None:
         plt.show()
     else:
-        plt.savefig(save_file, bbox_inches='tight',format='png')
+        plt.savefig(save_file, bbox_inches='tight')
         print(io.bcolors.OKGREEN+"Saved plot to", save_file+io.bcolors.ENDC)
         
 
@@ -671,6 +705,7 @@ class Stats(object):
         Append the 1d vector to a statistic named "label".
         Create a new one if it doesn't already exist.
         """
+        assert label!='stats', "Sorry, 'stats' is a forbidden label."
 
         vector = np.asarray(vector)
 
@@ -691,6 +726,8 @@ class Stats(object):
         Add arr to a cumulative stack named "label". Could be 2d arrays.
         Create a new one if it doesn't already exist.
         """
+        assert label!='stats', "Sorry, 'stats' is a forbidden label."
+
         if np.iscomplexobj(arr):
             print("ERROR: stacking of complex arrays not supported. Stack the real and imaginary parts separately.")
             raise TypeError
@@ -785,9 +822,46 @@ class Stats(object):
                 for k,label in enumerate(self.vectors.keys()):
                     self.stats[label] = get_stats(self.vectors[label])
             #self.vectors = {}
-                
 
+    
+    def dump(self,path):
+        for d,name in zip([self.vectors,self.stacks],['vectors','stack']):
+            for key in d.keys():
+                np.save(f"{path}/mstats_dump_{name}_{key}.npy",d[key])
+        for key in self.stats.keys():
+            for skey in self.stats[key].keys():
+                np.savetxt(f"{path}/mstats_dump_stats_{key}_{skey}.txt",np.atleast_1d(self.stats[key][skey]))
+        
+def load_stats(path):                
+    import glob,re
+    class S:
+        pass
+    s = S()
+    s.vectors = {}
+    s.stats = {}
+    s.stacks = {}
+    for sstr,sdict in zip(['vectors','stack'],[s.vectors,s.stacks]):
+        vfiles = glob.glob(f"{path}/mstats_dump_{sstr}_*.npy")
+        for vfile in vfiles:
+            key = re.search(rf'mstats_dump_{sstr}_(.*?).npy', vfile).group(1)
+            sdict[key] = np.load(f"{path}/mstats_dump_{sstr}_{key}.npy")
 
+    vfiles = glob.glob(f"{path}/mstats_dump_stats_*_mean.txt")
+    keys = []
+    for vfile in vfiles:
+        key = re.search(rf'mstats_dump_stats_(.*?)_mean.txt', vfile).group(1)
+        keys.append(key)
+    for key in keys:
+        s.stats[key] = {}
+        vfiles = glob.glob(f"{path}/mstats_dump_stats_{key}_*.txt")
+        for vfile in vfiles:
+            skey = re.search(rf'mstats_dump_stats_{key}_(.*?).txt', vfile).group(1)
+            arr = np.loadtxt(f"{path}/mstats_dump_stats_{key}_{skey}.txt")
+            if arr.size==1: arr = arr.ravel()[0]
+            s.stats[key][skey] = arr
+    return s
+
+    
 def npspace(minim,maxim,num,scale="lin"):
     if scale=="lin" or scale=="linear":
         return np.linspace(minim,maxim,num)
