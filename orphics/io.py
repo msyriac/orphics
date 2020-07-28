@@ -376,8 +376,8 @@ class Plotter(object):
         if xlabel!=None: self._ax.set_xlabel(xlabel,fontsize=ftsize)
         if ylabel!=None: self._ax.set_ylabel(ylabel,fontsize=ftsize)
 
-        self._ax.set_xscale(xscale, nonposx='clip') 
-        self._ax.set_yscale(yscale, nonposy='clip')
+        self._ax.set_xscale(xscale) 
+        self._ax.set_yscale(yscale)
 
 
         if labsize is None: labsize=ftsize-2
