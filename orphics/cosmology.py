@@ -926,9 +926,9 @@ def planck_theory(ells,ellmax=2000):
     fname = os.path.dirname(__file__)+"/../data/COM_PowerSpect_CMB-TT-full_R3.01.txt"
     ls,dells = np.loadtxt(fname,usecols=[0,1],unpack=True)
     cells = dells/ls/(ls+1.)*2*np.pi
-    dells = dells[ls<ellmax]
+    cells = cells[ls<ellmax]
     ls = ls[ls<ellmax]
-    return maps.interp(ls,dells)(ells)
+    return interp1d(ls,cells,bounds_error=False,fill_value=0.)(ells)
 
 
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True,skip_lens=False,dells=False):
