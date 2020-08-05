@@ -112,11 +112,11 @@ def ivar(shape,wcs,noise_muK_arcmin,ipsizemap=None):
     pmap = ipsizemap*((180.*60./np.pi)**2.)
     return pmap/noise_muK_arcmin**2.
 
-def white_noise(shape,wcs,noise_muK_arcmin,seed=None,ipsizemap=None):
+def white_noise(shape,wcs,noise_muK_arcmin=None,seed=None,ipsizemap=None,div=None):
     """
     Generate a non-band-limited white noise map.
     """
-    div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
+    if div is None: div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
     if seed is not None: np.random.seed(seed)
     return np.random.standard_normal(shape) / np.sqrt(div)
 
@@ -1368,6 +1368,14 @@ def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
     flux = stamp[modrmap<aperture_radius].sum()*pix_scale**2
     return flux #* enmap.area(stamp.shape,stamp.wcs )/ np.prod(stamp.shape[-2:])**2.  *((180*60)/np.pi)**2.
 
+def aperture_photometry2(instamp,aperture_radius,modrmap=None):
+    # inputs in radians, outputs in arcmin^2
+    stamp = instamp.copy()
+    if modrmap is None: modrmap = stamp.modrmap()
+    annulus_out = np.sqrt(2.) * aperture_radius
+    flux = stamp[modrmap<aperture_radius].mean() - stamp[np.logical_and(modrmap>aperture_radius,modrmap<(annulus_out))].mean()
+    return flux 
+
 
 
 
@@ -1417,9 +1425,11 @@ class MatchedFilter(object):
             ktemp = self.ktemp if template is None else enmap.fft(template,normalize=False)
         else:
             ktemp = ktemplate
-            
-        phi_un = np.nansum(ktemp.conj()*kmap*self.normfact*kmask/n2d).real 
-        phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact*kmask/n2d).real 
+
+        in2d = 1./n2d
+        in2d[~np.isfinite(in2d)] = 0
+        phi_un = np.sum(ktemp.conj()*kmap*self.normfact*kmask*in2d).real 
+        phi_var = 1./np.sum(ktemp.conj()*ktemp*self.normfact*kmask*in2d).real 
         return phi_un*phi_var, phi_var
 
 

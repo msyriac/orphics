@@ -921,7 +921,16 @@ def validateMapType(mapXYType):
 def default_theory(lpad=9000):
     cambRoot = os.path.dirname(__file__)+"/../data/cosmo2017_10K_acc3"
     return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lpad,get_dimensionless=False)
-    
+
+def planck_theory(ells,ellmax=2000):
+    fname = os.path.dirname(__file__)+"/../data/COM_PowerSpect_CMB-TT-full_R3.01.txt"
+    ls,dells = np.loadtxt(fname,usecols=[0,1],unpack=True)
+    cells = dells/ls/(ls+1.)*2*np.pi
+    cells = cells[ls<ellmax]
+    ls = ls[ls<ellmax]
+    return interp1d(ls,cells,bounds_error=False,fill_value=0.)(ells)
+
+
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True,skip_lens=False,dells=False):
     '''
     Given a CAMB path+output_root, reads CMB and lensing Cls into 
