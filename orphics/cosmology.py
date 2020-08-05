@@ -1078,7 +1078,7 @@ class LensForecast:
         if Nls is not None: self.Nls[specType] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
         self.theory.loadGenericCls(ellsCls,Cls,specType)
         
-    def _bin_cls(self,spec,ell_left,ell_right,noise=True):
+    def _bin_cls(self,spec,ell_left,ell_right,noise=True,ntot=False):
         a,b = spec
         ells = np.arange(ell_left,ell_right+1,1)
         cls = self.theory.gCl(spec,ells)
@@ -1088,15 +1088,18 @@ class LensForecast:
                 Noise = self.Nls[spec](ells)
             else:
                 Noise = 0.
-        tot = cls+Noise
+        if ntot and a==b and noise: 
+            tot = Noise
+        else:
+            tot = cls+Noise
         return np.sum(ells*tot)/np.sum(ells)
 
-    def KnoxCov(self,specTypeXY,specTypeWZ,ellBinEdges,fsky):
+    def KnoxCov(self,specTypeXY,specTypeWZ,ellBinEdges,fsky,ntot=False):
         '''
         returns cov(Cl_XY,Cl_WZ),signalToNoise(Cl_XY)^2, signalToNoise(Cl_WZ)^2
         '''
         def ClTot(spec,ell1,ell2):
-            binned = self._bin_cls(spec,ell1,ell2,noise=True)
+            binned = self._bin_cls(spec,ell1,ell2,noise=True,ntot=ntot)
             return binned
         
         X, Y = specTypeXY
@@ -1121,12 +1124,12 @@ class LensForecast:
 
         return np.array(covs), np.array(sigs1), np.array(sigs2)
 
-    def sigmaClSquared(self,specType,ellBinEdges,fsky):
-        return self.KnoxCov(specType,specType,ellBinEdges,fsky)[0]
+    def sigmaClSquared(self,specType,ellBinEdges,fsky,ntot=False):
+        return self.KnoxCov(specType,specType,ellBinEdges,fsky,ntot=ntot)[0]
 
-    def sn(self,ellBinEdges,fsky,specType):
+    def sn(self,ellBinEdges,fsky,specType,ntot=False):
         
-        var, sigs1, sigs2 = self.KnoxCov(specType,specType,ellBinEdges,fsky)
+        var, sigs1, sigs2 = self.KnoxCov(specType,specType,ellBinEdges,fsky,ntot=ntot)
 
         signoise = np.sqrt(sigs1.sum())
         errs = np.sqrt(var)
