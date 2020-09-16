@@ -4,8 +4,8 @@ import matplotlib as mpl
 from cycler import cycler
 #mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set()
+# import seaborn as sns
+# sns.set()
 
 
 import numpy as np
@@ -261,7 +261,7 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,**kwargs):
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
@@ -270,7 +270,15 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
     else:
         extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
         pl = Plotter(ftsize=ftsize,xlabel=xlabel,ylabel=ylabel,figsize=figsize)
-        pl.plot2d(array,extent=extent,cm=cmap,**kwargs)
+        pl.plot2d(array,extent=extent,cm=cmap,label=label,**kwargs)
+
+        if quiver is not None:
+            assert arc_width is not None
+            ny,nx = array.shape
+            ax = np.linspace(-arc_width/2., arc_width/2., nx)
+            ay = np.linspace(-arc_width/2., arc_width/2., ny)
+            x,y = np.meshgrid(ax, ay)
+            q = pl._ax.quiver(x,y,quiver[1],quiver[0])
         pl.done(filename,verbose=verbose)
 
 
