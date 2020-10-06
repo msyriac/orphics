@@ -1,5 +1,5 @@
 from __future__ import print_function 
-from pixell import enmap, utils, resample, curvedsky as cs
+from pixell import enmap, utils, resample, curvedsky as cs, reproject
 import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
