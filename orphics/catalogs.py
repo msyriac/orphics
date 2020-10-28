@@ -139,11 +139,9 @@ class CatMapper(object):
     (either in enlib shape,wcs form or as healpix nside), converts the contents
     of the catalog to pixel positions and bins it into pixelated maps.
 
-    Currently
-
     """
 
-    def __init__(self,ras_deg=None,decs_deg=None,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial",mask=None,weights=None,pixs=None):
+    def __init__(self,ras_deg=None,decs_deg=None,shape=None,wcs=None,nside=None,verbose=True,hp_coords="equatorial",mask=None,weights=None,pixs=None,lonlat=True,skip_init=False,corner=True):
 
         self.verbose = verbose
         if nside is not None:
@@ -171,35 +169,41 @@ class CatMapper(object):
                     phOut = gc.l.deg * np.pi/180.
                     thOut = gc.b.deg * np.pi/180.
                     thOut = np.pi/2. - thOut #polar angle is 0 at north pole
-
-                    self.pixs = hp.ang2pix( nside, thOut, phOut )
+                    self.pixs = hp.ang2pix( nside, thOut, phOut,lonlat=False)
                 elif hp_coords in eq_coords:
-                    ras_out = ras_deg
-                    decs_out = decs_deg
-                    self.pixs = hp.ang2pix(nside,ras_out,decs_out,lonlat=True)
-
+                    if lonlat:
+                        ras_out = ras_deg
+                        decs_out = decs_deg
+                        self.pixs = hp.ang2pix(nside,ras_out,decs_out,lonlat=lonlat)
+                    else:
+                        ras_out = np.deg2rad(ras_deg)
+                        decs_out = np.deg2rad(decs_deg)
+                        self.pixs = hp.ang2pix(nside,decs_out,ras_out,lonlat=lonlat)
                 else:
                     raise ValueError
 
                 if verbose: print( "Done with pixels...")
             else:
                 coords = np.vstack((decs_deg,ras_deg))*np.pi/180.
+                if not(lonlat):
+                    coords[0] = np.pi/2. - coords[0]
                 if verbose: print( "Calculating pixels...")
-                self.pixs = enmap.sky2pix(shape,wcs,coords,corner=True) # should corner=True?!
+                self.pixs = enmap.sky2pix(shape,wcs,coords,corner=corner) # should corner=True?!
                 if verbose: print( "Done with pixels...")
         else:
             self.pixs = pixs
 
-        self.counts = self.get_map(weights=weights)
-        if weights is None: 
-            self.rcounts = self.get_map(weights=None)
-        else:
-            self.rcounts = self.counts
-        if not self.curved:
-            self.counts = enmap.enmap(self.counts,self.wcs)
+        if not(skip_init):
+            self.counts = self.get_map(weights=weights)
+            if weights is None: 
+                self.rcounts = self.get_map(weights=None)
+            else:
+                self.rcounts = self.counts
+            if not self.curved:
+                self.counts = enmap.enmap(self.counts,self.wcs)
 
-        self.mask = np.ones(shape) if mask is None else mask
-        self._counts()
+            self.mask = np.ones(shape) if mask is None else mask
+            self._counts()
 
     def get_map(self,weights=None):
         if self.verbose: print("Calculating histogram...")

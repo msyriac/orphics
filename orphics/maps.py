@@ -1,5 +1,5 @@
 from __future__ import print_function 
-from pixell import enmap, utils, resample, curvedsky as cs
+from pixell import enmap, utils, resample, curvedsky as cs,reproject
 import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
@@ -1038,8 +1038,7 @@ def minimum_ell(shape,wcs):
 
 
 def resolution(shape,wcs):
-    res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
-    return res
+    return np.abs(wcs.wcs.cdelt[1])*utils.degree
 
 
 def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
