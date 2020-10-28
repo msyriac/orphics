@@ -71,7 +71,7 @@ def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax=None,lmin=None,ove
         zsource = 1100
         sig = sigma_mis*utils.arcmin if sigma_mis is not None else None
         k1h = hm.kappa_1h_profiles(thetas,Ms,concs,zsource,sig_theta=sig,delta=overdensity,rho='critical' if critical else 'mean',rho_at_z=at_cluster_z)
-        k2h = hm.kappa_2h_profiles(thetas,Ms,concs,zsource,delta=overdensity,rho='critical' if critical else 'mean',rho_at_z=at_cluster_z,lmin=2,lmax=10000) if not(exclude_2h) else np.asarray(k1h).T*0
+        k2h = hm.kappa_2h_profiles(thetas,Ms,zsource,delta=overdensity,rho='critical' if critical else 'mean',rho_at_z=at_cluster_z,lmin=2,lmax=10000) if not(exclude_2h) else np.asarray(k1h).T*0
         k1h[~np.isfinite(k1h)] = 0
         k1h = np.asarray(k1h[0])
         k2h = k2h[:,0] 
