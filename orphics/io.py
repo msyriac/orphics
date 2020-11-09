@@ -4,8 +4,10 @@ import matplotlib as mpl
 from cycler import cycler
 #mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set()
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+# import seaborn as sns
+# sns.set()
 
 
 import numpy as np
@@ -185,7 +187,6 @@ def list_strings_from_config(Config,section,name):
 ### PLOTTING
 
 
-
 def layered_contour(imap,imap_contour,contour_levels,contour_color,contour_width=1,mask=None,filename=None,**kwargs):
     from pixell import enplot
     p1 = enplot.plot(imap,layers=True,mask=mask,**kwargs)
@@ -262,7 +263,7 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,**kwargs):
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
@@ -270,8 +271,16 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
         high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,cmap=cmap,**kwargs)
     else:
         extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
-        pl = Plotter(ftsize=ftsize,xlabel=xlabel,ylabel=ylabel,figsize=figsize)
-        pl.plot2d(array,extent=extent,cm=cmap,**kwargs)
+        pl = Plotter(ftsize=ftsize,xlabel=xlabel,ylabel=ylabel,figsize=figsize,projection=projection)
+        pl.plot2d(array,extent=extent,cm=cmap,label=label,**kwargs)
+
+        if quiver is not None:
+            assert arc_width is not None
+            ny,nx = array.shape
+            ax = np.linspace(-arc_width/2., arc_width/2., nx)
+            ay = np.linspace(-arc_width/2., arc_width/2., ny)
+            x,y = np.meshgrid(ax, ay)
+            q = pl._ax.quiver(x,y,quiver[1],quiver[0])
         pl.done(filename,verbose=verbose)
 
 
@@ -307,7 +316,7 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = None,**kwargs):
+    def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = None,projection=None,**kwargs):
         self.scalefn = None
         if scheme is not None:
             if scheme=='Dell' or scheme=='Dl':
@@ -358,7 +367,7 @@ class Plotter(object):
         self.thk = thk
         
         self._fig=plt.figure(**kwargs)
-        self._ax=self._fig.add_subplot(1,1,1)
+        self._ax=self._fig.add_subplot(1,1,1,projection=projection)
 
 
         # Some self-disciplining :)
@@ -377,13 +386,14 @@ class Plotter(object):
         if xlabel!=None: self._ax.set_xlabel(xlabel,fontsize=ftsize)
         if ylabel!=None: self._ax.set_ylabel(ylabel,fontsize=ftsize)
 
-        self._ax.set_xscale(xscale, nonposx='clip') 
-        self._ax.set_yscale(yscale, nonposy='clip')
+        self._ax.set_xscale(xscale) 
+        self._ax.set_yscale(yscale)
 
 
         if labsize is None: labsize=ftsize-2
-        plt.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)#,size=labsize)
-        plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
+        if projection is None:
+            plt.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)#,size=labsize)
+            plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
         self.do_legend = False
 
 
@@ -397,6 +407,8 @@ class Plotter(object):
     def add(self,x,y,label=None,lw=2,linewidth=None,addx=0,**kwargs):
         if linewidth is not(None): lw = linewidth
         if label is not None: self.do_legend = True
+        x = np.asarray(x)
+        y = np.asarray(y)
         scaler = self.scalefn(x)
         yc = y*scaler
         return self._ax.plot(x+addx,yc,label=label,linewidth=lw,**kwargs)
@@ -407,6 +419,9 @@ class Plotter(object):
     
         
     def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",color=None,elinewidth=2,markersize=4,label=None,mulx=1.,addx=0.,edgecolor=None,**kwargs):
+        x = np.asarray(x)
+        y = np.asarray(y)
+        yerr = np.asarray(yerr)
         scaler = self.scalefn(x)
         yc = y*scaler
         yerrc = yerr*scaler
@@ -448,7 +463,10 @@ class Plotter(object):
 
         
         if clbar:
-            cbar = self._fig.colorbar(img)
+            divider = make_axes_locatable(self._ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            cbar = self._fig.colorbar(img,cax=cax)
+
             for t in cbar.ax.get_yticklabels():
                 t.set_fontsize(ticksize)
             if label!=None:

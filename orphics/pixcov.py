@@ -127,21 +127,24 @@ def scov_from_theory(modlmap,cmb_theory_fn,beam_fn,iau=False):
     return tcov
 
 
-def pcov_from_ivar(n,dec,ra,ivar,cmb_theory_fn,beam_fn,iau=False):
+def pcov_from_ivar(n,dec,ra,ivar,cmb_theory_fn,beam_fn,iau=False,full_map=True):
     """
     Get a pixel covariance matrix for a stamp around a given location
     from the white noise inverse variance map and theory and beam
     functions.
     """
     assert ivar.ndim==2
-    py,px = ivar.sky2pix((dec,ra))
-    py = int(py)
-    px = int(px)
-    sy = py - n//2
-    sx = px - n//2
-    ey = sy + n
-    ex = sx + n
-    sliced = 1./ivar[sy:ey,sx:ex]
+    if full_map:
+        py,px = ivar.sky2pix((dec,ra))
+        py = int(py)
+        px = int(px)
+        sy = py - n//2
+        sx = px - n//2
+        ey = sy + n
+        ex = sx + n
+        sliced = 1./ivar[sy:ey,sx:ex]
+    else:
+        sliced = 1./ivar
     sliced[~np.isfinite(sliced)] = 1./ivar[ivar>0].max() # this is wrong! but needed to prevent singular matrices?!
     ncov = np.diag(sliced.reshape(-1))
     ncov_IQU = np.zeros((3,3,n*n,n*n))
@@ -158,6 +161,27 @@ def pcov_from_ivar(n,dec,ra,ivar,cmb_theory_fn,beam_fn,iau=False):
     cmb2d_TEB[1,0] = theory('TE',modlmap)
     beam2d = beam_fn(modlmap)
     tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
+    return tcov + ncov_IQU
+
+
+def tpcov_from_ivar(n,ivar,cmb_theory_fn,beam_fn):
+    """
+    Get a pixel covariance matrix for a stamp around a given location
+    from the white noise inverse variance map and theory and beam
+    functions.
+    """
+    assert ivar.ndim==2
+    sliced = 1./ivar
+    sliced[~np.isfinite(sliced)] = 1./ivar[ivar>0].max() # this is wrong! but needed to prevent singular matrices?!
+    ncov = np.diag(sliced.reshape(-1))
+    ncov_IQU = np.zeros((1,1,n*n,n*n))
+    ncov_IQU[0,0] = ncov.copy()
+    modlmap = sliced.modlmap()
+    cmb2d_TEB = np.zeros((1,1,n,n))
+    theory = cmb_theory_fn
+    cmb2d_TEB[0,0] = theory('TT',modlmap)
+    beam2d = beam_fn(modlmap)
+    tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,return_pow=False)    
     return tcov + ncov_IQU
 
 def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=None,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None,tot_pow2d=None,store_pcov=False,pcov=None):
@@ -256,6 +280,38 @@ def paste(stamp,m,paste_this):
     a.reshape(-1)[m] = paste_this.copy()
     a.reshape(stamp.shape)
     return a
+
+
+def inpaint_stamp(stamp,geometry):
+    cov_root = geometry['covsqrt']
+    mean_mul = geometry['meanmul']
+    Npix = geometry['n']
+    m1 = geometry['m1']  # hole
+    m2 = geometry['m2']  # context
+    ncomp = geometry['ncomp']
+
+    if ncomp==1 or ncomp==3:
+        polslice = np.s_[:ncomp,...]
+    elif ncomp==2:
+        raise NotImplementedError
+    else:
+        raise ValueError
+
+    # Set the masked region to be zero
+    cstamp = stamp.copy().reshape(-1)
+    cstamp[m1] = 0.
+
+    # Get the mean infill
+    mean = np.dot(mean_mul,cstamp[m2])
+    # Get a random realization (this could be moved outside the loop)
+    r = np.random.normal(0.,1.,size=(m1.size))
+    rand = np.dot(cov_root,r)
+    # Total
+    sim = mean + rand
+
+    # Paste into returned map
+    rstamp = paste(stamp,m1,sim)
+    return rstamp
 
 
 def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arcmin=0.5,
@@ -380,5 +436,4 @@ def get_geometry_regions(ncomp,n,res,hole_radius):
     amodrmap = np.repeat(modrmap.reshape((1,n,n)),ncomp,0)
     m1 = np.where(amodrmap.reshape(-1)<hole_radius)[0]
     m2 = np.where(amodrmap.reshape(-1)>=hole_radius)[0]
-    
     return m1,m2

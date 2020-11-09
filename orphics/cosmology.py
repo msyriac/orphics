@@ -921,7 +921,16 @@ def validateMapType(mapXYType):
 def default_theory(lpad=9000):
     cambRoot = os.path.dirname(__file__)+"/../data/cosmo2017_10K_acc3"
     return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lpad,get_dimensionless=False)
-    
+
+def planck_theory(ells,ellmax=2000):
+    fname = os.path.dirname(__file__)+"/../data/COM_PowerSpect_CMB-TT-full_R3.01.txt"
+    ls,dells = np.loadtxt(fname,usecols=[0,1],unpack=True)
+    cells = dells/ls/(ls+1.)*2*np.pi
+    cells = cells[ls<ellmax]
+    ls = ls[ls<ellmax]
+    return interp1d(ls,cells,bounds_error=False,fill_value=0.)(ells)
+
+
 def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=9000,get_dimensionless=True,skip_lens=False,dells=False):
     '''
     Given a CAMB path+output_root, reads CMB and lensing Cls into 
@@ -1078,7 +1087,7 @@ class LensForecast:
         if Nls is not None: self.Nls[specType] = interp1d(ellsNls,Nls,bounds_error=False,fill_value=np.inf)
         self.theory.loadGenericCls(ellsCls,Cls,specType)
         
-    def _bin_cls(self,spec,ell_left,ell_right,noise=True):
+    def _bin_cls(self,spec,ell_left,ell_right,noise=True,ntot=False):
         a,b = spec
         ells = np.arange(ell_left,ell_right+1,1)
         cls = self.theory.gCl(spec,ells)
@@ -1088,15 +1097,18 @@ class LensForecast:
                 Noise = self.Nls[spec](ells)
             else:
                 Noise = 0.
-        tot = cls+Noise
+        if ntot and a==b and noise: 
+            tot = Noise
+        else:
+            tot = cls+Noise
         return np.sum(ells*tot)/np.sum(ells)
 
-    def KnoxCov(self,specTypeXY,specTypeWZ,ellBinEdges,fsky):
+    def KnoxCov(self,specTypeXY,specTypeWZ,ellBinEdges,fsky,ntot=False):
         '''
         returns cov(Cl_XY,Cl_WZ),signalToNoise(Cl_XY)^2, signalToNoise(Cl_WZ)^2
         '''
         def ClTot(spec,ell1,ell2):
-            binned = self._bin_cls(spec,ell1,ell2,noise=True)
+            binned = self._bin_cls(spec,ell1,ell2,noise=True,ntot=ntot)
             return binned
         
         X, Y = specTypeXY
@@ -1121,12 +1133,12 @@ class LensForecast:
 
         return np.array(covs), np.array(sigs1), np.array(sigs2)
 
-    def sigmaClSquared(self,specType,ellBinEdges,fsky):
-        return self.KnoxCov(specType,specType,ellBinEdges,fsky)[0]
+    def sigmaClSquared(self,specType,ellBinEdges,fsky,ntot=False):
+        return self.KnoxCov(specType,specType,ellBinEdges,fsky,ntot=ntot)[0]
 
-    def sn(self,ellBinEdges,fsky,specType):
+    def sn(self,ellBinEdges,fsky,specType,ntot=False):
         
-        var, sigs1, sigs2 = self.KnoxCov(specType,specType,ellBinEdges,fsky)
+        var, sigs1, sigs2 = self.KnoxCov(specType,specType,ellBinEdges,fsky,ntot=ntot)
 
         signoise = np.sqrt(sigs1.sum())
         errs = np.sqrt(var)

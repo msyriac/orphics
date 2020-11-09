@@ -1,5 +1,5 @@
 from __future__ import print_function 
-from pixell import enmap, utils, resample
+from pixell import enmap, utils, resample, curvedsky as cs, reproject
 import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
@@ -9,6 +9,65 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
+
+def cosine_apodize(bmask,width_deg):
+    r = width_deg * np.pi / 180.
+    return 0.5*(1-np.cos(bmask.distance_transform(rmax=r)*(np.pi/r)))
+
+
+def kspace_coadd(kcoadds,kbeams,kncovs,fkbeam=1):
+    kcoadds = np.asarray(kcoadds)
+    kbeams = np.asarray(kbeams)
+    kncovs = np.asarray(kncovs)
+    numer = np.sum(kcoadds * kbeams * fkbeam / kncovs,axis=0)
+    numer[~np.isfinite(numer)] = 0
+    denom = np.sum(kbeams**2 / kncovs,axis=0)
+    f = numer/denom
+    f[~np.isfinite(f)] = 0
+    return f
+
+def atm_factor(ells,lknee,alpha):
+    with np.errstate(divide='ignore', invalid='ignore',over='ignore'):
+        ret = (lknee*np.nan_to_num(1./ells))**(-alpha) if lknee>1.e-3 else 0.*ells
+    return ret
+
+def rednoise(ells,rms_noise,lknee=0.,alpha=1.):
+    """Atmospheric noise model
+    rms_noise in muK-arcmin
+    [(lknee/ells)^(-alpha) + 1] * rms_noise**2
+    """
+    rms = rms_noise * (1./60.)*(np.pi/180.)
+    wnoise = ells*0.+rms**2.
+    return (atm_factor(ells,lknee,alpha)+1.)*wnoise
+
+
+def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
+                        N_ell_standard=None,parea=None,cylindrical=False,
+                        seed=None,lmin=None):
+    """
+    Produces a simulated noise map (using SHTs)
+    corresponding to a Gaussian map which when its
+    white noise standard deviation has been divided out,
+    has a power spectrum N_ell_whitened (which should asymptote
+    to 1 at high ell).  Instead of specifying N_ell_whitened,
+    one can specify lknee and alpha from which the 
+    following whitened N_ell is generated:
+    N_ell_standard = [(lknee/ells)^(-alpha) + 1]
+    
+    """
+    if (N_ell_standard is None) and not(lknee is None):
+        ells = np.arange(lmax)
+        N_ell_standard = atm_factor(ells,lknee,alpha) + 1.
+        N_ell_standard[~np.isfinite(N_ell_standard)] = 0
+        if lmin is not None: N_ell_standard[ells<lmin] = 0
+    shape,wcs = ivar.shape[-2:],ivar.wcs
+    if N_ell_standard is None and (lknee is None):
+        if seed is not None: np.random.seed(seed)
+        return np.random.standard_normal(shape) / np.sqrt(ivar)
+    else:
+        smap = cs.rand_map((1,)+shape,wcs,ps=N_ell_standard[None,None],seed=seed)[0]
+        return rms_from_ivar(ivar,parea=parea,cylindrical=cylindrical) * smap *np.pi / 180./ 60.
+
 
 def galactic_mask(shape,wcs,nside,theta1,theta2):
     npix = hp.nside2npix(nside)
@@ -32,7 +91,11 @@ def rms_from_ivar(ivar,parea=None,cylindrical=True):
     if parea is None:
         shape,wcs = ivar.shape, ivar.wcs
         parea = psizemap(shape,wcs) if cylindrical else enmap.pixsizemap(shape,wcs)
-    return np.sqrt((1./ivar)*parea)*180*60./np.pi
+    with np.errstate(divide='ignore', invalid='ignore',over='ignore'):
+        var = (1./ivar)
+    var[ivar<=0] = 0
+    assert np.all(np.isfinite(var))
+    return np.sqrt(var*parea)*180*60./np.pi
 
     
 
@@ -53,11 +116,11 @@ def ivar(shape,wcs,noise_muK_arcmin,ipsizemap=None):
     pmap = ipsizemap*((180.*60./np.pi)**2.)
     return pmap/noise_muK_arcmin**2.
 
-def white_noise(shape,wcs,noise_muK_arcmin,seed=None,ipsizemap=None):
+def white_noise(shape,wcs,noise_muK_arcmin=None,seed=None,ipsizemap=None,div=None):
     """
     Generate a non-band-limited white noise map.
     """
-    div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
+    if div is None: div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
     if seed is not None: np.random.seed(seed)
     return np.random.standard_normal(shape) / np.sqrt(div)
 
@@ -91,7 +154,7 @@ def filter_alms(alms,lmin,lmax):
     return hp.almxfl(alms,fs)
 
 
-def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
+def rotate_pol_power(shape,wcs,cov,iau=True,inverse=False):
     """Rotate a 2D power spectrum from TQU to TEB (inverse=False) or
     back (inverse=True). cov is a (3,3,Ny,Nx) 2D power spectrum.
     WARNING: This function is duplicated in orphics.pixcov to make 
@@ -375,15 +438,18 @@ class MapGen(object):
                             self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
 
-        def get_map(self,seed=None,scalar=False,iau=True,real=False):
+        def get_map(self,seed=None,scalar=False,iau=True,real=False,harm=False):
                 if seed is not None: np.random.seed(seed)
                 rand = enmap.fft(enmap.rand_gauss(self.shape, self.wcs)) if real else enmap.rand_gauss_harm(self.shape, self.wcs)
                 data = enmap.map_mul(self.covsqrt, rand)
                 kmap = enmap.ndmap(data, self.wcs)
-                if scalar:
-                        return enmap.ifft(kmap).real
+                if harm: 
+                    return kmap
                 else:
-                        return enmap.harm2map(kmap,iau=iau)
+                    if scalar:
+                            return enmap.ifft(kmap).real
+                    else:
+                            return enmap.harm2map(kmap,iau=iau)
 
         
         
@@ -585,60 +651,6 @@ def rotate_map(imap,shape_target=None,wcs_target=None,pix_target=None,**kwargs):
     rotmap = enmap.at(imap,pix_target,unit="pix",**kwargs)
     return rotmap
     
-                    
-### REAL AND FOURIER SPACE ATTRIBUTES
-
-def angmap(shape,wcs,iau=False):
-    sgn = -1 if iau else 1
-    lmap = enmap.lmap(shape,wcs)
-    return sgn*np.arctan2(-lmap[1], lmap[0])
-
-def get_ft_attributes(shape,wcs):
-    shape = shape[-2:]
-    Ny, Nx = shape
-    pixScaleY, pixScaleX = enmap.pixshape(shape,wcs)
-
-    
-        
-    lx =  2*np.pi  * np.fft.fftfreq( Nx, d = pixScaleX )
-    ly =  2*np.pi  * np.fft.fftfreq( Ny, d = pixScaleY )
-    
-    ix = np.mod(np.arange(Nx*Ny),Nx)
-    iy = np.arange(Nx*Ny)//Nx
-    
-    modlmap = enmap.modlmap(shape,wcs)
-    
-    theta_map = np.zeros([Ny,Nx])
-    theta_map[iy[:],ix[:]] = np.arctan2(ly[iy[:]],lx[ix[:]])
-
-
-    lxMap, lyMap = np.meshgrid(lx, ly)  # is this the right order?
-
-    return lxMap,lyMap,modlmap,theta_map,lx,ly
-
-
-def get_real_attributes(shape,wcs):
-    Ny, Nx = shape[-2:]
-    pixScaleY, pixScaleX = enmap.pixshape(shape,wcs)
-    
-    return get_real_attributes_generic(Ny,Nx,pixScaleY,pixScaleX)
-
-def get_real_attributes_generic(Ny,Nx,pixScaleY,pixScaleX):
-    
-    xx =  (np.arange(Nx)-Nx/2.+0.5)*pixScaleX
-    yy =  (np.arange(Ny)-Ny/2.+0.5)*pixScaleY
-    
-    ix = np.mod(np.arange(Nx*Ny),Nx)
-    iy = np.arange(Nx*Ny)/Nx
-    
-    modRMap = np.zeros([Ny,Nx])
-    modRMap[iy,ix] = np.sqrt(xx[ix]**2 + yy[iy]**2)
-    
-
-    xMap, yMap = np.meshgrid(xx, yy)  # is this the right order?
-
-    return xMap,yMap,modRMap,xx,yy
-
 
 ## MAXLIKE
 
@@ -790,7 +802,7 @@ def gauss_beam_real(rs,fwhm):
 
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
-    output = np.ones(shape[-2:], dtype = int)
+    output = enmap.ones(shape[-2:],wcs, dtype = np.int)
     if (lmin is not None) or (lmax is not None): modlmap = enmap.modlmap(shape, wcs)
     if (lxcut is not None) or (lycut is not None): ly, lx = enmap.laxes(shape, wcs, oversample=1)
     if lmin is not None:
@@ -1030,8 +1042,7 @@ def minimum_ell(shape,wcs):
 
 
 def resolution(shape,wcs):
-    res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
-    return res
+    return np.abs(wcs.wcs.cdelt[1])*utils.degree
 
 
 def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
@@ -1143,117 +1154,6 @@ def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
 
 ## WORKING WITH DATA
 
-class DataNoise(object):
-
-    def __init__(self,splits,wmaps,taper):
-
-        h0 = wmaps[0]
-        ht = np.zeros(h0.shape)
-        for h1 in wmaps:
-            ht[h1!=0] += (h1[h1!=0]**-2)
-        ht[ht!=0] = 1./ht[ht!=0]
-
-
-class NoiseModel(object):
-    # Deprecated?
-
-    def __init__(self,splits=None,wmap=None,mask=None,kmask=None,directory=None,spec_smooth_width=2.,skip_beam=True,skip_mask=True,skip_kmask=True,skip_cross=True,iau=False):
-        """
-        shape, wcs for geometry
-        unmasked splits
-        hit counts wmap
-        real-space mask that must include a taper. Can be 3-dimensional if Q/U different from I.
-        k-space kmask
-        """
-
-        if directory is not None:
-            self._load(directory,skip_beam,skip_mask,skip_kmask,skip_cross)
-        else:
-            
-            shape = splits[0].shape
-            wcs = splits[0].wcs
-
-        
-            if wmap is None: wmap = enmap.ones(shape[-2:],wcs)
-            if mask is None: mask = np.ones(shape[-2:])
-            if kmask is None: kmask = np.ones(shape[-2:])
-
-            wmap = enmap.ndmap(wmap,wcs)
-
-            osplits = [split*mask for split in splits]
-            fc = FourierCalc(shape,wcs,iau)
-            n2d, p2d = noise_from_splits(osplits,fc)
-            del osplits
-            del splits
-            w2 = np.mean(mask**2.)
-            n2d *= (1./w2)
-            p2d *= (1./w2)
-
-            n2d = np.fft.ifftshift(enmap.smooth_spectrum(np.fft.fftshift(n2d), kernel="gauss", weight="mode", width=spec_smooth_width))
-            self.spec_smooth_width = spec_smooth_width
-            ncomp = shape[0] if len(shape)>2 else 1
-            
-            self.cross2d = p2d
-            self.cross2d *= kmask
-            n2d *= kmask
-            self.noise2d = n2d.reshape((ncomp,ncomp,shape[-2],shape[-1]))
-            self.mask = mask
-            self.kmask = kmask
-            self.wmap = wmap
-            self.shape = shape
-            self.wcs = wcs
-        self.ngen = MapGen(self.shape,self.wcs,self.noise2d)
-        # self.noise_modulation = 1./np.sqrt(self.wmap)/np.sqrt(np.mean((1./self.wmap)))
-        wt = 1./np.sqrt(self.wmap)
-        wtw2 = np.mean(1./wt**2.)
-        self.noise_modulation = wt*np.sqrt(wtw2)
-
-
-    def _load(self,directory,skip_beam=True,skip_mask=True,skip_kmask=True,skip_cross=True):
-
-        self.wmap = enmap.read_hdf(directory+"/wmap.hdf")
-        
-        self.wcs = self.wmap.wcs
-        self.noise2d = np.load(directory+"/noise2d.npy")
-        if not(skip_mask): self.mask = enmap.read_hdf(directory+"/mask.hdf")
-        if not(skip_cross): self.cross2d = np.load(directory+"/cross2d.npy")
-        if not(skip_beam): self.kbeam2d = np.load(directory+"/kbeam2d.npy")
-        if not(skip_kmask): self.kmask = np.load(directory+"/kmask.npy")
-        loadnum = np.loadtxt(directory+"/spec_smooth_width.txt")
-        assert loadnum.size==1
-        self.spec_smooth_width = float(loadnum.ravel()[0])
-
-        loadnum = np.loadtxt(directory+"/shape.txt")
-        self.shape = tuple([int(x) for x in loadnum.ravel()])
-
-    def save(self,directory):
-        io.mkdir(directory)
-        
-        
-        enmap.write_hdf(directory+"/wmap.hdf",self.wmap)
-        enmap.write_hdf(directory+"/mask.hdf",self.mask)
-        np.save(directory+"/noise2d.npy",self.noise2d)
-        np.save(directory+"/cross2d.npy",self.cross2d)
-        np.save(directory+"/kmask.npy",self.kmask)
-        try: np.save(directory+"/kbeam2d.npy",self.kbeam2d)
-        except: pass
-        np.savetxt(directory+"/spec_smooth_width.txt",np.array(self.spec_smooth_width).reshape((1,1)))
-        np.savetxt(directory+"/shape.txt",np.array(self.shape))
-
-
-        
-        
-
-    def get_noise_sim(self,seed=None,noise_mod=True):
-        nval = self.noise_modulation if noise_mod else 1.
-        return self.ngen.get_map(seed=seed,scalar=True) * nval
-        
-    def add_beam_1d(self,ells,beam_1d_transform):
-        modlmap = enmap.modlmap(self.shape[-2:],self.wcs)
-        self.kbeam2d = interp1d(ells,beam_1d_transform,bounds_error=False,fill_value=0.)(modlmap)
-    def add_beam_2d(self,beam_2d_transform):
-        assert self.shape[-2:]==beam_2d_transform.shape
-        self.kbeam2d = beam_2d_transform
 
 
 def split_calc(isplits,jsplits,icoadd,jcoadd,fourier_calc=None,alt=True):
@@ -1376,282 +1276,6 @@ def noise_from_splits(splits,fourier_calc=None,nthread=0,do_cross=True):
 
 ### FULL SKY
 
-class HealpixProjector(object):
-    def __init__(self,shape,wcs,rot=None,ncomp=1):
-        from pixell import coordinates
-        self.pmap = enmap.posmap(shape, wcs)
-        
-        assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
-        pmap = self.pmap
-        
-        if rot:
-            # Rotate by displacing coordinates and then fixing the polarization
-            print("Computing pixel positions")
-            if rot:
-                print("Computing rotated positions")
-                s1,s2 = rot.split(",")
-                opos = coordinates.transform(s2, s1, pmap[::-1], pol=ncomp==3)
-                pmap[...] = opos[1::-1]
-                if len(opos) == 3: self.psi = -opos[2].copy()
-                del opos
-        self.ncomp = ncomp
-        self.rot = rot
-        
-    def project(self,ihealmap=None,hpmap=None,unit=1,lmax=0,first=0,return_hp=False):
-        from pixell import sharp, coordinates, curvedsky
-        import healpy as hp
-
-        dtype = np.float64
-        ctype = np.result_type(dtype,0j)
-        # Read the input maps
-        print("Reading " + str(ihealmap))
-        hpmap = hp.read_map(ihealmap, field=tuple(range(first,first+self.ncomp))) if hpmap is None else hpmap
-        m = np.atleast_2d(hpmap).astype(dtype)
-        if unit != 1: m /= unit
-        # Prepare the transformation
-        print("Preparing SHT")
-        nside = hp.npix2nside(m.shape[1])
-        lmax  = lmax or 3*nside
-        minfo = sharp.map_info_healpix(nside)
-        ainfo = sharp.alm_info(lmax)
-        sht   = sharp.sht(minfo, ainfo)
-        alm   = np.zeros((self.ncomp,ainfo.nelem), dtype=ctype)
-        # Perform the actual transform
-        print("T -> alm")
-        print( m.dtype, alm.dtype)
-        sht.map2alm(m[0], alm[0])
-        if self.ncomp == 3:
-            print("P -> alm")
-            sht.map2alm(m[1:3],alm[1:3], spin=2)
-
-        print("Projecting")
-        res  = curvedsky.alm2map_pos(alm, self.pmap)
-        if self.rot and self.ncomp==3:
-            print("Rotating polarization vectors")
-            res[1:3] = enmap.rotate_pol(res[1:3], self.psi)
-
-        if return_hp:
-            return res,m
-        else:
-            return res
-        
-def enmap_from_healpix_file(ihealmap,shape,wcs,ncomp=1,unit=1,lmax=0,rot_method="not-alm",rot=None,first=0):
-    from pixell import utils, sharp, coordinates, curvedsky
-    import healpy as hp
-    
-    # equatorial to galactic euler zyz angles
-    euler = np.array([57.06793215,  62.87115487, -167.14056929])*utils.degree
-
-    
-    assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
-    dtype = np.float64
-    ctype = np.result_type(dtype,0j)
-    # Read the input maps
-    print("Reading " + ihealmap)
-    m = np.atleast_2d(hp.read_map(ihealmap, field=tuple(range(first,first+ncomp)))).astype(dtype)
-    if unit != 1: m /= unit
-    # Prepare the transformation
-    print("Preparing SHT")
-    nside = hp.npix2nside(m.shape[1])
-    lmax  = lmax or 3*nside
-    minfo = sharp.map_info_healpix(nside)
-    ainfo = sharp.alm_info(lmax)
-    sht   = sharp.sht(minfo, ainfo)
-    alm   = np.zeros((ncomp,ainfo.nelem), dtype=ctype)
-    # Perform the actual transform
-    print("T -> alm")
-    print( m.dtype, alm.dtype)
-    sht.map2alm(m[0], alm[0])
-    if ncomp == 3:
-        print("P -> alm")
-        sht.map2alm(m[1:3],alm[1:3], spin=2)
-    del m
-
-
-    if rot and rot_method != "alm":
-        # Rotate by displacing coordinates and then fixing the polarization
-        print("Computing pixel positions")
-        pmap = enmap.posmap(shape, wcs)
-        if rot:
-            print("Computing rotated positions")
-            s1,s2 = rot.split(",")
-            opos = coordinates.transform(s2, s1, pmap[::-1], pol=ncomp==3)
-            pmap[...] = opos[1::-1]
-            if len(opos) == 3: psi = -opos[2].copy()
-            del opos
-        print("Projecting")
-        res  = curvedsky.alm2map_pos(alm, pmap)
-        if rot and ncomp==3:
-            print("Rotating polarization vectors")
-            res[1:3] = enmap.rotate_pol(res[1:3], psi)
-    else:
-        # We will project directly onto target map if possible
-        if rot:
-            print("Rotating alms")
-            s1,s2 = rot.split(",")
-            if s1 != s2:
-                # Note: rotate_alm does not actually modify alm
-                # if it is single precision
-                if s1 == "gal" and (s2 == "equ" or s2 == "cel"):
-                    hp.rotate_alm(alm, euler[0], euler[1], euler[2])
-                elif s2 == "gal" and (s1 == "equ" or s1 == "cel"):
-                    hp.rotate_alm(alm,-euler[2],-euler[1],-euler[0])
-                else:
-                    raise NotImplementedError
-        print("Projecting")
-        res = enmap.zeros((len(alm),)+shape[-2:], wcs, dtype)
-        res = curvedsky.alm2map(alm, res)
-    return res
-
-# def enmap_from_healpix_alms(shape,wcs,hp_map_file=None,hp_map=None,ncomp=1,lmax=0,rot="gal,equ",rot_method="alm"):
-#         """Project a healpix map to an enmap of chosen shape and wcs. The wcs
-#         is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
-#         is in galactic coordinates, this can be specified by hp_coords, and a
-#         slow conversion is done. No coordinate systems other than equatorial
-#         or galactic are currently supported. Only intensity maps are supported.
-#         If interpolate is True, bilinear interpolation using 4 nearest neighbours
-#         is done.
-
-#         shape -- 2-tuple (Ny,Nx)
-#         wcs -- enmap wcs object in equatorial coordinates
-#         hp_map -- array-like healpix map
-#         hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
-#         interpolate -- boolean
-        
-#         """
-        
-#         import healpy
-#         from enlib import coordinates, curvedsky, sharp, utils
-
-#         # equatorial to galactic euler zyz angles
-#         euler = np.array([57.06793215,  62.87115487, -167.14056929])*utils.degree
-
-#         # If multiple templates are specified, the output file is
-#         # interpreted as an output directory.
-
-#         print("Loading map...")
-#         assert ncomp == 1 or ncomp == 3, "Only 1 or 3 components supported"
-#         dtype = np.float64
-#         ctype = np.result_type(dtype,0j)
-#         # Read the input maps
-#         if hp_map_file is not None:
-#             print(hp_map_file)
-#             m = np.atleast_2d(healpy.read_map(hp_map_file, field=tuple(range(0,ncomp)))).astype(dtype)
-#         else:
-#             assert hp_map is not None
-#             m = np.atleast_2d(hp_map).astype(dtype)
-
-#         # Prepare the transformation
-#         print("SHT prep...")
-
-#         nside = healpy.npix2nside(m.shape[1])
-#         lmax  = lmax or 3*nside
-#         minfo = sharp.map_info_healpix(nside)
-#         ainfo = sharp.alm_info(lmax)
-#         sht   = sharp.sht(minfo, ainfo)
-#         alm   = np.zeros((ncomp,ainfo.nelem), dtype=ctype)
-#         # Perform the actual transform
-#         print("SHT...")
-#         sht.map2alm(m[0], alm[0])
-        
-#         if ncomp == 3:
-#                 sht.map2alm(m[1:3],alm[1:3], spin=2)
-#         del m
-
-
-#         if rot and rot_method != "alm":
-#                 print("rotate...")
-#                 pmap = posmap(shape, wcs)
-#                 s1,s2 = rot.split(",")
-#                 opos = coordinates.transform(s2, s1, pmap[::-1], pol=ncomp==3)
-#                 pmap[...] = opos[1::-1]
-#                 if len(opos) == 3: psi = -opos[2].copy()
-#                 del opos
-#                 res  = curvedsky.alm2map_pos(alm, pmap)
-#                 if ncomp==3:
-#                         res[1:3] = rotate_pol(res[1:3], psi)
-#         else:
-#                 print(" alm rotate...")
-#                 # We will project directly onto target map if possible
-#                 if rot:
-#                         s1,s2 = rot.split(",")
-#                         if s1 != s2:
-#                                 print("rotating alm...")
-#                                 # Note: rotate_alm does not actually modify alm
-#                                 # if it is single precision
-#                                 if s1 == "gal" and (s2 == "equ" or s2 == "cel"):
-#                                         healpy.rotate_alm(alm, euler[0], euler[1], euler[2])
-#                                 elif s2 == "gal" and (s1 == "equ" or s1 == "cel"):
-#                                         healpy.rotate_alm(alm,-euler[2],-euler[1],-euler[0])
-#                                 else:
-#                                         raise NotImplementedError
-#                         print("done rotating alm...")
-#                 res = enmap.zeros((len(alm),)+shape[-2:], wcs, dtype)
-#                 res = curvedsky.alm2map(alm, res)
-#         return res
-
-
-# def enmap_from_healpix(shape,wcs,hp_map,hp_coords="galactic",interpolate=True):
-#         """Project a healpix map to an enmap of chosen shape and wcs. The wcs
-#         is assumed to be in equatorial (ra/dec) coordinates. If the healpix map
-#         is in galactic coordinates, this can be specified by hp_coords, and a
-#         slow conversion is done. No coordinate systems other than equatorial
-#         or galactic are currently supported. Only intensity maps are supported.
-#         If interpolate is True, bilinear interpolation using 4 nearest neighbours
-#         is done.
-
-#         shape -- 2-tuple (Ny,Nx)
-#         wcs -- enmap wcs object in equatorial coordinates
-#         hp_map -- array-like healpix map
-#         hp_coords -- "galactic" to perform a coordinate transform, "fk5","j2000" or "equatorial" otherwise
-#         interpolate -- boolean
-        
-#         """
-        
-#         import healpy as hp
-#         from astropy.coordinates import SkyCoord
-#         import astropy.units as u
-
-
-#         eq_coords = ['fk5','j2000','equatorial']
-#         gal_coords = ['galactic']
-        
-#         imap = enmap.zeros(shape,wcs)
-#         Ny,Nx = shape
-
-#         pixmap = enmap.pixmap(shape,wcs)
-#         y = pixmap[0,...].T.ravel()
-#         x = pixmap[1,...].T.ravel()
-#         posmap = enmap.posmap(shape,wcs)
-
-#         ph = posmap[1,...].T.ravel()
-#         th = posmap[0,...].T.ravel()
-
-#         if hp_coords.lower() not in eq_coords:
-#                 # This is still the slowest part. If there are faster coord transform libraries, let me know!
-#                 assert hp_coords.lower() in gal_coords
-#                 gc = SkyCoord(ra=ph*u.degree, dec=th*u.degree, frame='fk5')
-#                 gc = gc.transform_to('galactic')
-#                 phOut = gc.l.deg* np.pi/180.
-#                 thOut = gc.b.deg* np.pi/180.
-#         else:
-#                 thOut = th
-#                 phOut = ph
-
-#         thOut = np.pi/2. - thOut #polar angle is 0 at north pole
-
-#         # Not as slow as you'd expect
-#         if interpolate:
-#                 imap[y,x] = hp.get_interp_val(hp_map, thOut, phOut)
-#         else:
-#                 ind = hp.ang2pix( hp.get_nside(hp_map), thOut, phOut )
-#                 imap[:] = 0.
-#                 imap[[y,x]]=hp_map[ind]
-
-                
-                
-#         return enmap.ndmap(imap,wcs)
-
 
 def get_planck_cutout(imap,ra,dec,arcmin,px=2.0,arcmin_y=None):
     if arcmin_y is None: arcmin_y = arcmin
@@ -1732,286 +1356,9 @@ def cutout_gnomonic(map,rot=None,coord=None,
     return img
 
 
-def whiteNoise2D(noiseLevels,beamArcmin,modLMap,TCMB = 2.7255e6,lknees=None,alphas=None,beamFile=None, \
-                 noiseFuncs=None):
-    # Returns 2d map noise in units of uK**0.
-    # Despite the name of the function, there are options to add
-    # a simplistic atmosphere noise model
-
-    # If no atmosphere is specified, set lknee to zero and alpha to 1
-    if lknees is None:
-        lknees = (np.array(noiseLevels)*0.).tolist()
-    if alphas is None:
-        alphas = (np.array(noiseLevels)*0.+1.).tolist()
-
-    # we'll loop over it, so make it a list if nothing is specified
-    if noiseFuncs is None: noiseFuncs = [None]*len(noiseLevels)
-
-        
-    # if one of the noise files is not specified, we will need a beam
-    if None in noiseFuncs:
-        
-        if beamFile is not None:
-            ell, f_ell = np.transpose(np.loadtxt(beamFile))[0:2,:]
-            filt = 1./(np.array(f_ell)**2.)
-            bfunc = interp1d(ell,f_ell,bounds_error=False,fill_value=np.inf)
-            filt2d = bfunc(modLMap)
-        else:
-            Sigma = beamArcmin *np.pi/60./180./ np.sqrt(8.*np.log(2.))  # radians
-            filt2d = np.exp(-(modLMap**2.)*Sigma*Sigma)
-
-    retList = []
-
-    for noiseLevel,lknee,alpha,noiseFunc in zip(noiseLevels,lknees,alphas,noiseFuncs):
-        if noiseFunc is not None:
-            retList.append(noiseFunc(modLMap))
-        else:
-            noiseForFilter = (np.pi / (180. * 60.))**2.  * noiseLevel**2. / TCMB**2.  
-            if lknee>1.e-3:
-                atmFactor = (lknee*np.nan_to_num(1./modLMap))**(-alpha)
-            else:
-                atmFactor = 0.
-                
-            with np.errstate(divide='ignore'):
-                retList.append(noiseForFilter*(atmFactor+1.)*np.nan_to_num(1./filt2d.copy()))
-    return retList
-
-
-### INTERFACES WITH EXPERIMENTS
-
-
-
-class ACTMapReader(object):
-
-    def __init__(self,map_root,beam_root,config_yaml_path):
-
-        with open(config_yaml_path, 'r') as ymlfile:
-            self._cfg = yaml.load(ymlfile,Loader=yaml.BaseLoader)
-
-        self.map_root = map_root #self._cfg['map_root']
-        self.beam_root = beam_root #self._cfg['beam_root']
-
-        
-        self.boxes = {}
-        for key in self._cfg['patches']:
-            self.boxes[key] = bounds_from_list(io.list_from_string(self._cfg['patches'][key]))
-
-
-    def sel_from_region(self,region,shape=None,wcs=None):
-        if shape is None: shape = self.shape
-        if wcs is None: wcs = self.wcs
-        if region is None:
-            selection = None
-        elif isinstance(region, six.string_types):
-            selection = self.boxes[region] #enmap.slice_from_box(shape,wcs,self.boxes[region])
-        else:
-            selection = region #enmap.slice_from_box(shape,wcs,region)
-        return selection
-    
-    def patch_bounds(self,patch):
-        return (np.array([float(x) for x in self._cfg['patches'][patch].split(',')])*np.pi/180.).reshape((2,2))
-        
-
-
-class SigurdCoaddReader(ACTMapReader):
-    
-    def __init__(self,map_root,beam_root,config_yaml_path):
-        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
-        eg_file = self._fstring(split=-1,freq="150",day_night="daynight",planck=True)
-        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
-
-
-    def _config_tag(self,freq,day_night,planck):
-        planckstr = "_planck" if planck else ""
-        return freq+planckstr+"_"+day_night
-
-
-    def get_ptsrc_mask(self,region=None):
-        selection = self.sel_from_region(region)
-        fstr = self.map_root+"s16/coadd/pointSourceMask_full_all.fits"
-        fmap = enmap.read_fits(fstr,box=selection)
-        return fmap
-    
-    def get_survey_mask(self,region=None):
-        selection = self.sel_from_region(region)
-        self.map_root+"s16/coadd/surveyMask_full_all.fits"
-        fmap = enmap.read_fits(fstr,box=selection)
-        return fmap
-    
-    def get_map(self,split,freq="150",day_night="daynight",planck=True,region=None,weight=False,get_identifier=False):
-
-        
-        fstr = self._fstring(split,freq,day_night,planck,weight)
-        cal = float(self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['cal']) if not(weight) else 1.
-
-        selection = self.sel_from_region(region)
-        fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
-
-        if get_identifier:
-            identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
-            return fmap,identifier
-        else:
-            return fmap
-        
-
-    def _fstring(self,split,freq="150",day_night="daynight",planck=True,weight=False):
-        # Change this function if the map naming scheme changes
-        splitstr = "" if split<0 or split>3 else "_2way_"+str(split)
-        weightstr = "div" if weight else "map"
-        return self.map_root+"s16/coadd/f"+freq+"_"+day_night+"_all"+splitstr+"_"+weightstr+"_mono.fits"
-
-
-    def get_beam(self,freq="150",day_night="daynight",planck=True):
-        beam_file = self.beam_root+self._cfg['coadd'][self._config_tag(freq,day_night,planck)]['beam']
-        ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
-        return ls, bells
-
-
-class SigurdMR2Reader(ACTMapReader):
-    
-    def __init__(self,map_root,beam_root,config_yaml_path):
-        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
-        eg_file = self._fstring(split=-1,season="s15",array="pa1",freq="150",day_night="night")
-        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
-
-    def get_map(self,split,season,array,freq="150",day_night="night",region=None,weight=False,get_identifier=False):
-
-        
-        patch="boss"
-        fstr = self._fstring(split,season,array,freq,day_night,weight)
-        cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) if not(weight) else 1.
-        selection = self.sel_from_region(region)
-        fmap = enmap.read_fits(fstr,box=selection)*np.sqrt(cal)
-
-        if weight:
-            ndim = fmap.ndim
-            if ndim==4: fmap = fmap[0,0]
-            if ndim==3: fmap = fmap[0]
-            
-
-        if get_identifier:
-            identifier = '_'.join(map(str,[freq,day_night,"planck",planck]))
-            return fmap,identifier
-        else:
-            return fmap
-        
-    def _fstring(self,split,season,array,freq="150",day_night="night",weight=False):
-        # Change this function if the map naming scheme changes
-        splitstr = "_4way_tot_" if split<0 or split>3 else "_4way_"+str(split)+"_"
-        weightstr = "div" if weight else "map0500"
-        return self.map_root+"mr2/"+season+"/boss_north/"+season+"_boss_"+array+"_f"+freq.zfill(3)+"_"+day_night+"_nohwp"+splitstr+"sky_"+weightstr+"_mono.fits"
-
-
-    def get_beam(self,season,array,freq="150",day_night="night"):
-        patch = "boss"
-        beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
-        ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
-        return ls, bells
-
-    
-class SimoneMR2Reader(ACTMapReader):
-    
-    def __init__(self,map_root,beam_root,config_yaml_path,patch):
-        ACTMapReader.__init__(self,map_root,beam_root,config_yaml_path)
-        self.patch = patch
-        #eg_file = self._fstring(split=-1,season="s15" if (patch=="deep56" or patch=="deep8") else "s13",array="pa1",freq="150",day_night="night",pol="I")
-        eg_file = self._fstring(split=-1,season="s14" if (patch=="deep56" or patch=="deep8") else "s13",array="pa2" if (patch=="deep56" or patch=="deep8") else "pa1",freq="150",day_night="night",pol="srcfree_I")
-        self.shape,self.wcs = enmap.read_fits_geometry(eg_file)
-        
-    def get_beam(self,season,array,freq="150",day_night="night"):
-        patch = self.patch
-        beam_file = self.beam_root+self._cfg[season][array][freq][patch][day_night]['beam']
-        ls,bells = np.loadtxt(beam_file,usecols=[0,1],unpack=True)
-        return ls, bells
-    def get_map(self,split,season,array,freq="150",day_night="night",full_map=True,weight=False,get_identifier=False,t_only=False,box=None):
-        patch = self.patch
-        maps = []
-        maplist = ['srcfree_I','Q','U'] if not(t_only) else ['srcfree_I']
-        for pol in maplist if not(weight) else [None]:
-            fstr = self._hstring(season,array,freq,day_night) if weight else self._fstring(split,season,array,freq,day_night,pol)
-            cal = float(self._cfg[season][array][freq][patch][day_night]['cal']) #if not(weight) else 1.
-            fmap = enmap.read_fits(fstr,box=box)*np.sqrt(cal) if not(weight) else np.nan_to_num(1./enmap.read_fits(fstr,box=box)**2.)
-            if not(full_map):
-                bounds = self.patch_bounds(patch) 
-                retval = fmap.submap(bounds)
-            else:
-                retval = fmap
-            maps.append(retval)
-        retval = enmap.ndmap(np.stack(maps),maps[0].wcs) if not(weight) else maps[0]
-
-        if get_identifier:
-            identifier = '_'.join(map(str,[season,patch,array,freq,day_night]))
-            return retval,identifier
-        else:
-            return retval
-        
-
-    def _fstring(self,split,season,array,freq,day_night,pol):
-        patch = self.patch
-        # Change this function if the map naming scheme changes
-        splitstr = "set0123" if split<0 or split>3 else "set"+str(split)
-        #return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
-        return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_wpoly_500_"+pol+".fits"
-
-    def _hstring(self,season,array,freq,day_night):
-        patch = self.patch
-        splitstr = "set0123"
-        #return self.map_root+"c7v5/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
-        #return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_hits.fits"
-        return self.map_root+"mr2/"+season+"/"+patch+"/"+season+"_mr2_"+patch+"_"+array+"_f"+freq+"_"+day_night+"_"+splitstr+"_noise.fits"
-
 
 
 ### STACKING
-
-class Stacker(object):
-
-    def __init__(self,imap,arcmin_width):
-        self.imap = imap
-        res = np.min(imap.extent()/imap.shape[-2:])*180./np.pi*60.
-        self.Npix = int(arcmin_width/res)*1.
-        if self.Npix%2==0: self.Npix += 1
-        self.shape,self.wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=(self.Npix,self.Npix))
-
-    def cutout(self,ra,dec):   
-        iy,ix = self.imap.sky2pix(coords=(dec,ra))
-        cutout = self.imap[int(iy-self.Npix/2):int(iy+self.Npix/2),int(ix-self.Npix/2):int(ix+self.Npix/2)]
-        assert self.shape==cutout.shape
-        return enmap.ndmap(cutout,self.wcs)
-
-
-def cutout_slice(shape,wcs,arcmin_width=None,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,res=None,Npix=None):
-    Ny,Nx = shape
-    # see enmap.sky2pix for "corner" options
-    if corner:
-        fround = lambda x : int(math.floor(x))
-    else:
-        fround = lambda x : int(np.round(x))
-    #fround = lambda x : int(x)
-    if (iy is None) or (ix is None):
-        iy,ix = enmap.sky2pix(shape,wcs,coords=(dec,ra),corner=corner)
-    if res is None:
-        res = np.min(enmap.extent(shape,wcs)/shape[-2:])*180./np.pi*60.
-    else:
-        res = res*180./np.pi*60.
-    
-    if Npix is None: Npix = int(arcmin_width/res)
-    if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad): return None
-    s = np.s_[fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
-    return s,res,Npix
-    
-def cutout(imap,arcmin_width=None,ra=None,dec=None,iy=None,ix=None,pad=1,corner=False,preserve_wcs=False,res=None,Npix=None,proj="car"):
-    ret = cutout_slice(imap.shape,imap.wcs,arcmin_width=arcmin_width,ra=ra,dec=dec,iy=iy,ix=ix,pad=pad,corner=corner,res=res,Npix=Npix)
-    if ret is None:
-        return None
-    s,res,Npix = ret
-    cutout = imap[s]
-    if preserve_wcs:
-        return cutout
-    else:
-        shape,wcs = enmap.geometry(pos=(0.,0.),res=res/(180./np.pi*60.),shape=(Npix,Npix),proj=proj)
-        assert np.all(cutout.shape==shape)
-        return enmap.enmap(cutout,wcs)
 
 
 def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
@@ -2024,100 +1371,13 @@ def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
     flux = stamp[modrmap<aperture_radius].sum()*pix_scale**2
     return flux #* enmap.area(stamp.shape,stamp.wcs )/ np.prod(stamp.shape[-2:])**2.  *((180*60)/np.pi)**2.
 
-
-
-
-class InterpStack(object):
-
-    def __init__(self,arc_width,px,proj="car"):
-        if proj.upper()!="CAR": raise NotImplementedError
-        
-        self.shape_target,self.wcs_target = rect_geometry(width_arcmin=arc_width,
-                                                      height_arcmin=arc_width,
-                                                      px_res_arcmin=px,yoffset_degree=0.
-                                                      ,xoffset_degree=0.,proj=proj)
-                 
-        center_target = enmap.pix2sky(self.shape_target,self.wcs_target,(self.shape_target[0]/2.,self.shape_target[1]/2.))
-        self.dect,self.rat = center_target
-        # what are the angle coordinates of each pixel in the target geometry
-        pos_target = enmap.posmap(self.shape_target,self.wcs_target)
-        self.lra = pos_target[1,:,:].ravel()
-        self.ldec = pos_target[0,:,:].ravel()
-        del pos_target
-
-        self.arc_width = arc_width 
-
-
-    def cutout(self,imap,ra,dec,**kwargs):
-        ra_rad = np.deg2rad(ra)
-        dec_rad = np.deg2rad(dec)
-
-        box = self._box_from_ra_dec(ra_rad,dec_rad)
-        submap = imap.submap(box,inclusive=True)
-        return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
-    
-    def cutout_from_file(self,imap_file,shape,wcs,ra,dec,**kwargs):
-        ra_rad = np.deg2rad(ra)
-        dec_rad = np.deg2rad(dec)
-
-        box = self._box_from_ra_dec(ra_rad,dec_rad)
-        # print(ra_rad*180./np.pi,dec_rad*180./np.pi,box*180./np.pi)
-        # selection = slice_from_box(shape,wcs,box)
-        # print(selection)
-        submap = enmap.read_fits(imap_file,box=box)#sel=selection)
-        print(submap.shape)
-        # sys.exit()
-        # submap = enmap.read_fits(imap_file,sel=selection)
-        # io.plot_img(submap,io.dout_dir+"scut.png",high_res=True)
-
-        # try:
-        #     self.count +=1
-        # except:
-        #     self.count = 0
-
-        # print(ra,dec)
-        # io.plot_img(submap,io.dout_dir+"stest_qwert_"+str(self.count)+".png")
-
-
-        
-        return self._rot_cut(submap,ra_rad,dec_rad,**kwargs)
-
-    def _box_from_ra_dec(self,ra_rad,dec_rad):
-
-        
-        # CAR
-        coord_width = np.deg2rad(self.arc_width/60.)#np.cos(dec_rad)/60.)
-        coord_height = np.deg2rad(self.arc_width/60.)
-
-        box = np.array([[dec_rad-coord_height/2.,ra_rad-coord_width/2.],[dec_rad+coord_height/2.,ra_rad+coord_width/2.]])
-
-        return box
-
-        
-    def _rot_cut(self,submap,ra_rad,dec_rad,**kwargs):
-        from pixell import coordinates
-    
-        if submap.shape[0]<1 or submap.shape[1]<1:
-            return None
-        
-        
-        newcoord = coordinates.recenter((self.lra,self.ldec),(self.rat,self.dect,ra_rad,dec_rad))
-
-        # reshape these new coordinates into enmap-friendly form
-        new_pos = np.empty((2,self.shape_target[0],self.shape_target[1]))
-        new_pos[0,:,:] = newcoord[1,:].reshape(self.shape_target)
-        new_pos[1,:,:] = newcoord[0,:].reshape(self.shape_target)
-        del newcoord
-        
-        # translate these new coordinates to pixel positions in the target geometry based on the source's wcs
-        pix_new = enmap.sky2pix(submap.shape,submap.wcs,new_pos)
-
-        rotmap = enmap.at(submap,pix_new,unit="pix",**kwargs)
-        assert rotmap.shape[-2:]==self.shape_target[-2:]
-
-        
-        return rotmap
-        
+def aperture_photometry2(instamp,aperture_radius,modrmap=None):
+    # inputs in radians, outputs in arcmin^2
+    stamp = instamp.copy()
+    if modrmap is None: modrmap = stamp.modrmap()
+    annulus_out = np.sqrt(2.) * aperture_radius
+    flux = stamp[modrmap<aperture_radius].mean() - stamp[np.logical_and(modrmap>aperture_radius,modrmap<(annulus_out))].mean()
+    return flux 
 
 
 
@@ -2168,9 +1428,11 @@ class MatchedFilter(object):
             ktemp = self.ktemp if template is None else enmap.fft(template,normalize=False)
         else:
             ktemp = ktemplate
-            
-        phi_un = np.nansum(ktemp.conj()*kmap*self.normfact*kmask/n2d).real 
-        phi_var = 1./np.nansum(ktemp.conj()*ktemp*self.normfact*kmask/n2d).real 
+
+        in2d = 1./n2d
+        in2d[~np.isfinite(in2d)] = 0
+        phi_un = np.sum(ktemp.conj()*kmap*self.normfact*kmask*in2d).real 
+        phi_var = 1./np.sum(ktemp.conj()*ktemp*self.normfact*kmask*in2d).real 
         return phi_un*phi_var, phi_var
 
 
@@ -2198,7 +1460,7 @@ class Purify(object):
         self.windict = init_deriv_window(window,px)
         lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes(shape,wcs)
 
-    def lteb_from_iqu(self,imap,method='pure',flip_q=True,iau=False):
+    def lteb_from_iqu(self,imap,method='pure',flip_q=True,iau=True):
         """
         maps must  have window applied!
         """
@@ -2233,7 +1495,7 @@ def init_deriv_window(window,px):
 
 
 
-def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure',iau=False):
+def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure',iau=True):
     """
     maps must  have window applied!
     """
@@ -2300,135 +1562,6 @@ def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure',
         return fT, fE, fB
 
 
-
-## LEGACY
-
-class PatchArray(object):
-    def __init__(self,shape,wcs,dimensionless=False,TCMB=2.7255e6,cc=None,theory=None,lmax=None,skip_real=False,orphics_is_dimensionless=True):
-        self.shape = shape
-        self.wcs = wcs
-        if not(skip_real): self.modrmap = enmap.modrmap(shape,wcs)
-        self.lxmap,self.lymap,self.modlmap,self.angmap,self.lx,self.ly = get_ft_attributes(shape,wcs)
-        self.pix_ells = np.arange(0.,self.modlmap.max(),1.)
-        self.posmap = enmap.posmap(self.shape,self.wcs)
-        self.dimensionless = dimensionless
-        self.TCMB = TCMB
-
-        if (theory is not None) or (cc is not None):
-            self.add_theory(cc,theory,lmax,orphics_is_dimensionless)
-
-    def add_theory(self,cc=None,theory=None,lmax=None,orphics_is_dimensionless=True):
-        if cc is not None:
-            self.cc = cc
-            self.theory = cc.theory
-            self.lmax = cc.lmax
-            # assert theory is None
-            # assert lmax is None
-            if theory is None: theory = self.theory
-            if lmax is None: lmax = self.lmax
-        else:
-            assert theory is not None
-            assert lmax is not None
-            self.theory = theory
-            self.lmax = lmax
-            
-        #psl = cmb.enmap_power_from_orphics_theory(theory,lmax,lensed=True,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
-        from orphics import cosmology
-        psu = cosmology.enmap_power_from_orphics_theory(theory,lmax,lensed=False,dimensionless=self.dimensionless,TCMB=self.TCMB,orphics_dimensionless=orphics_is_dimensionless)
-        self.fine_ells = np.arange(0,lmax,1)
-        pclkk = theory.gCl("kk",self.fine_ells)
-        self.clkk = pclkk.copy()
-        pclkk = pclkk.reshape((1,1,pclkk.size))
-        #self.pclkk.resize((1,self.pclkk.size))
-        self.ugenerator = MapGen(self.shape,self.wcs,psu)
-        self.kgenerator = MapGen(self.shape[-2:],self.wcs,pclkk)
-
-
-    def update_kappa(self,kappa):
-        # Converts kappa map to pixel displacements
-        from orphics import lensing
-        fphi = lensing.kappa_to_fphi(kappa,self.modlmap)
-        grad_phi = enmap.gradf(enmap.ndmap(fphi,self.wcs))
-        pos = self.posmap + grad_phi
-        self._displace_pix = enmap.sky2pix(self.shape,self.wcs,pos, safe=False)
-
-    def get_lensed(self, unlensed, order=3, mode="spline", border="cyclic"):
-        from pixell import lensing as enlensing
-        return enlensing.displace_map(unlensed, self._displace_pix, order=order, mode=mode, border=border)
-
-
-    def get_unlensed_cmb(self,seed=None,scalar=False):
-        return self.ugenerator.get_map(seed=seed,scalar=scalar)
-        
-    def get_grf_kappa(self,seed=None,skip_update=False):
-        kappa = self.kgenerator.get_map(seed=seed,scalar=True)
-        if not(skip_update): self.update_kappa(kappa)
-        return kappa
-
-
-    def _fill_beam(self,beam_func):
-        self.lbeam = beam_func(self.modlmap)
-        self.lbeam[self.modlmap<2] = 1.
-        
-    def add_gaussian_beam(self,fwhm):
-        if fwhm<1.e-5:
-            bfunc = lambda x: x*0.+1.
-        else:
-            bfunc = lambda x : cmb.gauss_beam(x,fwhm)
-        self._fill_beam(bfunc)
-        
-    def add_1d_beam(self,ells,bls,fill_value="extrapolate"):
-        bfunc = interp1d(ells,bls,fill_value=fill_value)
-        self._fill_beam(bfunc)
-
-    def add_2d_beam(self,beam_2d):
-        self.lbeam = beam_2d
-
-    def add_white_noise_with_atm(self,noise_uK_arcmin_T,noise_uK_arcmin_P=None,lknee_T=0.,alpha_T=0.,lknee_P=0.,
-                        alpha_P=0.):
-
-        map_dimensionless=self.dimensionless
-        TCMB=self.TCMB
-
-
-        
-        self.nT = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_T,lknee_T,alpha_T,
-                                                map_dimensionless,TCMB)
-        
-        if noise_uK_arcmin_P is None and np.isclose(lknee_T,lknee_P) and np.isclose(alpha_T,alpha_P):
-            self.nP = 2.*self.nT.copy()
-        else:
-            if noise_uK_arcmin_P is None: noise_uK_arcmin_P = np.sqrt(2.)*noise_uK_arcmin_T
-            self.nP = cmb.white_noise_with_atm_func(self.modlmap,noise_uK_arcmin_P,lknee_P,alpha_P,
-                                      map_dimensionless,TCMB)
-
-        TCMBt = TCMB if map_dimensionless else 1.
-        ps_noise = np.zeros((3,3,self.pix_ells.size))
-        ps_noise[0,0] = self.pix_ells*0.+(noise_uK_arcmin_T*np.pi/180./60./TCMBt)**2.
-        ps_noise[1,1] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
-        ps_noise[2,2] = self.pix_ells*0.+(noise_uK_arcmin_P*np.pi/180./60./TCMBt)**2.
-        noisecov = ps_noise
-        self.is_2d_noise = False
-        self.ngenerator = MapGen(self.shape,self.wcs,noisecov)
-
-            
-    def add_noise_2d(self,nT,nP=None):
-        self.nT = nT
-        if nP is None: nP = 2.*nT
-        self.nP = nP
-
-        ps_noise = np.zeros((3,3,self.modlmap.shape[0],self.modlmap.shape[1]))
-        ps_noise[0,0] = nT
-        ps_noise[1,1] = nP
-        ps_noise[2,2] = nP
-        noisecov = ps_noise
-        self.is_2d_noise = True
-        self.ngenerator = MapGen(self.shape,self.wcs,noisecov)
-
-
-    def get_noise_sim(self,seed=None,scalar=False):
-        return self.ngenerator.get_map(seed=seed,scalar=scalar)
-    
 
 
 
@@ -2545,32 +1678,6 @@ def get_grf_realization(shape,wcs,power2d,seed=None):
     return mg.get_map(seed=seed)
 
 
-class QuickSim(object):
-    def __init__(self,deg,px,theory=None,pol=False):
-        from orphics import cosmology
-        self.shape,self.wcs = rect_geometry(width_deg=deg,px_res_arcmin=px)
-        self.modlmap = enmap.modlmap(self.shape,self.wcs)
-        self.lmax = self.modlmap.max()
-        self.ells = np.arange(0,self.lmax,1)
-        if theory is None: theory = cosmology.default_theory()
-        self.theory = theory
-        ncomp = 3 if pol else 1
-        ps = np.zeros((ncomp,ncomp,self.ells.size))
-        self.cltt = theory.lCl('TT',self.ells)
-        ps[0,0] = self.cltt
-        if pol:
-            self.clee = theory.lCl('EE',self.ells)
-            self.clte = theory.lCl('TE',self.ells)
-            self.clbb = theory.lCl('BB',self.ells)
-            ps[1,1] = self.clee
-            ps[2,2] = self.clbb
-            ps[0,1] = self.clte
-            ps[1,0] = self.clte
-        if pol: self.shape = (3,)+self.shape
-        self.mgen = MapGen(self.shape,self.wcs,ps)
-        self.fc = FourierCalc(self.shape,self.wcs)
-    def get_map(self,seed=None):
-        return self.mgen.get_map(seed=seed)
             
 def ftrans(p2d,tfunc=np.log10):
     wcs = None
@@ -2682,174 +1789,8 @@ def symmat_from_data(data):
 
 
 
-class SplitSimulator(object):
-    def __init__(self,shape,wcs,beams,freqs,noises,nsplits,
-                 lknees=None,alphas=None,pss=None,nu0=None,
-                 lmins=None,lmaxs=None,
-                 theory=None,atmosphere=True,lensing=False,
-                 dust=False,do_fgs=False,
-                 lpass=False,aseed=1,ell_min_noise=200):
-        self.lensing = lensing
-        self.lpass = lpass
-        self.aseed = aseed
-        if pss is not None:
-            ncomp = pss.shape[0]
-        else:
-            if lensing: ncomp = 1
-            assert not(do_fgs)
-            assert not(dust)
-        self.fgs = do_fgs
-        self.dust = dust
-        if not(atmosphere) or (lknees is None) or (alphas is None) :
-            lknees = [0.]*len(freqs)
-            alphas = [1.]*len(freqs)
-            warnings.warn("No atmosphere in split simulator.")
-        self.nu0 = nu0
-        self.freqs = freqs
-        self.lmins = lmins
-        self.lmaxs = lmaxs
-        self.modlmap = enmap.modlmap(shape,wcs)
-        lmax = self.modlmap.max()
-        if theory is None: theory = cosmology.default_theory()
-        ells = np.arange(0,lmax,1)
-        cltt = theory.uCl('TT',ells) if lensing else theory.lCl('TT',ells)
-        self.theory = theory
-        self.cseed = 0
-        self.kseed = 1
-        self.nseed = 2
-        if (pss is None) and lensing:
-            pss = theory.gCl('kk',ells)[None,None]
-        if pss is not None:
-            self.fgen = MapGen((ncomp,)+shape[-2:],wcs,pss)
-        self.cgen = MapGen(shape[-2:],wcs,cltt[None,None])
-        self.shape, self.wcs = shape,wcs
-        self.arrays = range(len(freqs))
-        self.nsplits = np.asarray(nsplits).astype(np.int)
-        self.ngens = []
-        self.kbeams = []
-        self.ebeams = []
-        self.ps_noises = []
-        self.eps_noises = []
-        for array in self.arrays:
-            ps_noise = cosmology.noise_func(ells,0.,noises[array],lknee=lknees[array],alpha=alphas[array])
-            ps_noise[ells<ell_min_noise] = ps_noise[ells>=ell_min_noise].max()
-            if lpass: ps_noise[ells<lmins[array]] = 0
-            self.ps_noises.append(interp(ells,ps_noise.copy())(self.modlmap))
-            self.eps_noises.append(ps_noise.copy())
-            self.ngens.append( MapGen(shape[-2:],wcs,ps_noise[None,None]*nsplits[array]) )
-            self.kbeams.append( gauss_beam(self.modlmap,beams[array]) )
-            self.ebeams.append( gauss_beam(ells,beams[array]))
-        self.ells = ells
 
-    def get_corr(self,seed):
-        fmap = self.fgen.get_map(seed=(self.aseed,self.kseed,seed),scalar=True)
-        return fmap
-
-    def _lens(self,unlensed,kappa,lens_order=5):
-        from orphics import lensing
-        from pixell import lensing as enlensing
-        self.kappa = kappa
-        alpha = lensing.alpha_from_kappa(kappa,posmap=enmap.posmap(self.shape,self.wcs))
-        lensed = enlensing.displace_map(unlensed, alpha, order=lens_order)
-        return lensed
-
-    def get_sim(self,seed):
-        from szar import foregrounds as fg
-        if self.lensing or self.fgs:
-            ret = self.get_corr(seed)
-            if self.dust:
-                kappa,tsz,cib = ret
-            elif self.fgs:
-                kappa,tsz = ret
-            else:
-                kappa = ret[0]
-        
-        unlensed = self.cgen.get_map(seed=(self.aseed,self.cseed,seed))
-        lensed = self._lens(unlensed,kappa) if self.lensing else unlensed
-        self.lensed = lensed.copy()
-        tcmb = 2.726e6
-        if self.fgs: self.y = tsz.copy()/tcmb/fg.ffunc(self.nu0)
-        observed = []
-        noises = []
-        for array in self.arrays:
-            if self.fgs:
-                scaled_tsz = tsz * fg.ffunc(self.freqs[array]) / fg.ffunc(self.nu0) if self.fgs else 0.
-            else:
-                scaled_tsz = 0.
-            if self.dust:
-                scaled_cib = cib * fg.cib_nu(self.freqs[array]) / fg.cib_nu(self.nu0) if self.fgs else 0.
-            else:
-                scaled_cib = 0.
-            sky = lensed + scaled_tsz + scaled_cib
-            beamed = filter_map(sky,self.kbeams[array])
-            observed.append([])
-            noises.append([])
-            for split in range(self.nsplits[array]):
-                noise = self.ngens[array].get_map(seed=(self.aseed,self.nseed,seed,split,array))
-                observed[array].append(beamed+noise)
-                noises[array].append(noise)
-            observed[array] = enmap.enmap(np.stack(observed[array]),self.wcs)
-            noises[array] = enmap.enmap(np.stack(noises[array]),self.wcs)
-            if self.lpass:
-                observed[array] = filter_map(observed[array],mask_kspace(self.shape,self.wcs,lmin=self.lmins[array]))             
-                noises[array] = filter_map(noises[array],mask_kspace(self.shape,self.wcs,lmin=self.lmins[array]))             
-        return observed,noises
-
-
-class PolLensSplit(object):
-    def __init__(self,shape,wcs,beam,noise,nsplits,
-                 theory=None,
-                 aseed=1):
-        self.aseed = aseed
-        self.modlmap = enmap.modlmap(shape,wcs)
-        lmax = self.modlmap.max()
-        if theory is None: theory = cosmology.default_theory()
-        ells = np.arange(0,lmax,1)
-        cmb_ps = cosmology.enmap_power_from_orphics_theory(theory,ells=ells,lensed=False,dimensionless=False,orphics_dimensionless=False)
-        self.theory = theory
-        self.cseed = 0
-        self.kseed = 1
-        self.nseed = 2
-        pss = theory.gCl('kk',ells)[None,None]
-        self.kgen = MapGen((1,)+shape[-2:],wcs,pss)
-        self.cgen = MapGen((3,)+shape[-2:],wcs,cmb_ps)
-        self.shape, self.wcs = shape,wcs
-        self.nsplits = nsplits
-        tnoise = cosmology.noise_func(self.modlmap,0.,noise)
-        pnoise = cosmology.noise_func(self.modlmap,0.,noise) * 2.
-        self.ps_noise = enmap.zeros((3,3,)+self.shape[-2:])
-        self.ps_noise[0,0] = tnoise.copy()
-        self.ps_noise[1,1] = pnoise.copy()
-        self.ps_noise[2,2] = pnoise.copy()
-        self.ngen = MapGen((3,)+shape[-2:],wcs,self.ps_noise*nsplits)
-        self.kbeam =  gauss_beam(self.modlmap,beam)
-
-    def get_kappa(self,seed):
-        kmap = self.kgen.get_map(seed=(self.aseed,self.kseed,seed),scalar=True)
-        return kmap
-
-    def _lens(self,unlensed,kappa,lens_order=5):
-        from orphics import lensing
-        from pixell import lensing as enlensing
-        self.kappa = kappa
-        alpha = lensing.alpha_from_kappa(kappa,posmap=enmap.posmap(self.shape,self.wcs))
-        lensed = enlensing.displace_map(unlensed, alpha, order=lens_order)
-        return lensed
-
-    def get_sim(self,seed):
-        kappa = self.get_kappa(seed)[0]
-        unlensed = self.cgen.get_map(seed=(self.aseed,self.cseed,seed))
-        lensed = self._lens(unlensed,kappa) 
-        self.lensed = lensed.copy()
-        beamed = filter_map(lensed,self.kbeam)
-        observed = []
-        for split in range(self.nsplits):
-            noise = self.ngen.get_map(seed=(self.aseed,self.nseed,seed,split))
-            observed.append( beamed+noise )
-        observed = enmap.enmap(np.stack(observed),self.wcs)
-        return observed
-
-def change_alm_lmax(alms, lmax):
+def change_alm_lmax(alms, lmax, dtype=np.complex128):
     ilmax  = hp.Alm.getlmax(alms.shape[-1])
     olmax  = lmax
 
@@ -2857,7 +1798,7 @@ def change_alm_lmax(alms, lmax):
     oshape[-1] = hp.Alm.getsize(olmax)
     oshape     = tuple(oshape)
 
-    alms_out   = np.zeros(oshape, dtype = np.complex128)
+    alms_out   = np.zeros(oshape, dtype = dtype)
     flmax      = min(ilmax, olmax)
 
     for m in range(flmax+1):
