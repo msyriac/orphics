@@ -10,6 +10,10 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def cosine_apodize(bmask,width_deg):
+    r = width_deg * np.pi / 180.
+    return 0.5*(1-np.cos(bmask.distance_transform(rmax=r)*(np.pi/r)))
+
 
 def kspace_coadd(kcoadds,kbeams,kncovs,fkbeam=1):
     kcoadds = np.asarray(kcoadds)
