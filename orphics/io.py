@@ -187,10 +187,10 @@ def list_strings_from_config(Config,section,name):
 ### PLOTTING
 
 
-def layered_contour(imap,imap_contour,contour_levels,contour_color,contour_width=1,mask=None,filename=None,**kwargs):
+def layered_contour(imap,imap_contour,contour_levels,contour_color,contour_width=1,mask=None,filename=None,ticks=1,downgrade=1,font_size=20,**kwargs):
     from pixell import enplot
-    p1 = enplot.plot(imap,layers=True,mask=mask,**kwargs)
-    p2 = enplot.plot(imap_contour,layers=True,contours=contour_levels,contour_width=contour_width,mask=mask,contour_color=contour_color)
+    p1 = enplot.plot(imap,layers=True,mask=mask,ticks=ticks,downgrade=downgrade,font_size=font_size,**kwargs)
+    p2 = enplot.plot(imap_contour,layers=True,contours=contour_levels,contour_width=contour_width,mask=mask,contour_color=contour_color,ticks=ticks,downgrade=downgrade,font_size=font_size)
     p1 += [a for a in p2 if "cont" in a.name]
     img = enplot.merge_images([a.img for a in p1])
     if filename is not None: enplot.write(filename, img)
@@ -245,7 +245,7 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
     return ret
         
 
-def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,xsize=1200,**kwargs):
+def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,xsize=1200,grat_deg=None,**kwargs):
     '''
     mollview plot for healpix wrapper
     '''
@@ -258,6 +258,8 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         cmin =-lim
         cmax = lim
     retimg = hp.mollview(hp_map,min=cmin,max=cmax,coord=coord,return_projected_map=return_projected_map,xsize=xsize,**kwargs)
+    if grat_deg is not None:
+        hp.graticule(dpar=grat_deg,dmer=grat_deg,coord=coord)
     if filename is not None:
         plt.savefig(filename)
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
