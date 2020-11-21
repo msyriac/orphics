@@ -828,7 +828,10 @@ class TheorySpectra:
     def loadGenericCls(self,ells,Cls,keyName,lpad=9000,fill_zero=True):
         if not(fill_zero):
             fillval = Cls[ells<lpad][-1]
+            print(fillval)
+            print(ells[ells<lpad],Cls[ells<lpad])
             self._gCl[keyName] = lambda x: np.piecewise(x, [x<=lpad,x>lpad], [lambda y: interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=0.)(y),lambda y: fillval*(lpad/y)**4.])
+            print(self._gCl[keyName](ells[ells<lpad]))
 
         else:
             fillval = 0.            

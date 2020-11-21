@@ -218,7 +218,6 @@ class FisherMatrix(DataFrame):
 
 
     """
-
     
     def __init__(self,fmat,param_list,delete_params=None,prior_dict=None):#,skip_inv=False):
         """
@@ -270,13 +269,21 @@ class FisherMatrix(DataFrame):
     def __add__(self,other):
         return self._add(other,radd=False)
 
+    def __mul__(self,other):
+        return FisherMatrix(self.values*other,self.columns.tolist())
+
+    def __rmul__(self,other):
+        return FisherMatrix(self.values*other,self.columns.tolist())
+
     def _add(self,other,radd=False):
         if other is None: return self
+        F1 = pd.DataFrame(self.values,columns=self.params,index=self.params)
+        F2 = pd.DataFrame(other.values,columns=other.params,index=other.params)
         if radd:
-            new_fpd = pd.DataFrame.radd(self,other.copy(),fill_value=0)
+            new_fpd = pd.DataFrame.radd(F1,F2,fill_value=0)
         else:
-            new_fpd = pd.DataFrame.add(self,other.copy(),fill_value=0)
-        return FisherMatrix(np.nan_to_num(new_fpd.values),new_fpd.columns.tolist())
+            new_fpd = pd.DataFrame.add(F1,F2,fill_value=0)
+        return FisherMatrix(new_fpd.values,new_fpd.columns.tolist())
 
     def add_prior(self,param,prior):
         """
@@ -923,7 +930,7 @@ class bin1D:
         self.bin_edges_min = self.bin_edges.min()
         self.bin_edges_max = self.bin_edges.max()
 
-    def bin(self,ix,iy):
+    def bin(self,ix,iy,stat=np.nanmean):
         x = ix.copy()
         y = iy.copy()
         # this just prevents an annoying warning (which is otherwise informative) everytime
@@ -932,7 +939,7 @@ class bin1D:
         y[x>self.bin_edges_max] = 0
 
         # pretty sure this treats nans in y correctly, but should double-check!
-        bin_means = binnedstat(x,y,bins=self.bin_edges,statistic=np.nanmean)[0]
+        bin_means = binnedstat(x,y,bins=self.bin_edges,statistic=stat)[0]
         
         return self.cents,bin_means
 
