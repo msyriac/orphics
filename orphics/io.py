@@ -399,10 +399,14 @@ class Plotter(object):
         self.do_legend = False
 
 
-    def legend(self,loc='best',labsize=12,numpoints=1,**kwargs):
+    def legend(self,loc='best',labsize=12,numpoints=1,bbox_to_anchor=None,**kwargs):
         self.do_legend = False
         handles, labels = self._ax.get_legend_handles_labels()
-        legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=numpoints,frameon = 1,**kwargs)
+        if loc=='outside':
+            loc='center left'
+            assert bbox_to_anchor is None
+            bbox_to_anchor=(1, 0.5)
+        legend = self._ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=numpoints,frameon = 1,bbox_to_anchor=bbox_to_anchor,**kwargs)
 
         return legend
            

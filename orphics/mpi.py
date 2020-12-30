@@ -2,6 +2,10 @@ from __future__ import print_function
 import numpy as np
 import os,sys,time
 
+"""
+Copied to pyfisher
+"""
+
 try:
     disable_mpi_env = os.environ['DISABLE_MPI']
     disable_mpi = True if disable_mpi_env.lower().strip() == "true" else False
