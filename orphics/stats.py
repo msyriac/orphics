@@ -265,6 +265,7 @@ class FisherMatrix(DataFrame):
         return f
 
     def __radd__(self,other):
+        raise NotImplementedError
         return self._add(other,radd=True)
 
     def __add__(self,other):
@@ -272,17 +273,19 @@ class FisherMatrix(DataFrame):
 
     def _add(self,other,radd=False):
         if other is None: return self
-        if radd:
-            new_fpd = pd.DataFrame.radd(self,other.copy(),fill_value=0)
-        else:
-            new_fpd = pd.DataFrame.add(self,other.copy(),fill_value=0)
+        odf = pd.DataFrame(data = other.values,columns=other.columns,index=other.index)
+        tdf = pd.DataFrame(data = self.values,columns=self.columns,index=self.index)
+        new_fpd = tdf.add(odf,fill_value=0)
         return FisherMatrix(np.nan_to_num(new_fpd.values),new_fpd.columns.tolist())
 
-    def add_prior(self,param,prior):
+    def add_prior(self,param,prior,warn=True):
         """
         Adds 1-sigma value 'prior' to the parameter name specified by 'param'
         """
-        self[param][param] += 1./prior**2.
+        try:
+            self[param][param] += 1./prior**2.
+        except KeyError:
+            if warn: print(f"WARNING: skipping prior for {param} since it was not found")
         
     def sigmas(self):
         """
