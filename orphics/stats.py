@@ -6,15 +6,7 @@ import scipy
 from scipy.stats import binned_statistic as binnedstat,chi2
 from scipy.optimize import curve_fit
 import itertools
-
-try:
-    from pandas import DataFrame
-    import pandas as pd
-except:
-    import warnings
-    warnings.warn("Could not find pandas. Install using pip; FisherMatrix will not work otherwise")
-    class DataFrame:
-        pass
+from pyfisher import FisherMatrix
 
 def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh,plot_file=None):
     es = eigfunc(cmb2d[start:,start:,...].T)[0]
@@ -126,203 +118,6 @@ def solve(C,x,u=None):
     N = C.shape[0]
     s = Solver(C,u=u)
     return s.solve(x)
-
-    
-def check_fisher_sanity(fmat,param_list):
-    Ny,Nx = fmat.shape
-    assert Ny==Nx
-    assert Ny==len(param_list)
-    assert len(param_list)==len(set(param_list))
-
-def write_fisher(filename,fmat,delim=','):
-    np.savetxt(filename,fmat,header=(delim).join(fmat.params),delimiter=delim)
-
-
-def read_fisher_dataframe(csv_file):
-    df = pd.read_csv(csv_file,index_col=0)
-    params = list(df.columns)
-    return FisherMatrix(fmat = df.values,param_list = params)
-
-def read_fisher_pickle(pkl_file):
-    import cPickle as pickle
-    params,fmat = pickle.load(open(pkl_file,'rb'))
-    return FisherMatrix(fmat = fmat,param_list = params)#,skip_inv=True)
-
-def read_fisher(csv_file,delimiter=','):
-    fmat = np.loadtxt(csv_file,delimiter=delimiter)
-    with open(csv_file) as f:
-        fline = f.readline()
-    fline = fline.replace("#","")
-    columns = fline.strip().split(delimiter)
-    assert len(set(columns)) == len(columns)
-    return FisherMatrix(fmat = fmat,param_list = columns)#,skip_inv=True)
-
-def rename_fisher(fmat,pmapping):
-    old_params = fmat.params
-    new_params = list(old_params)
-    for key in pmapping.keys():
-        if key not in old_params: continue
-        i = old_params.index(key)
-        new_params[i] = pmapping[key]
-    return FisherMatrix(fmat=fmat.values,param_list=new_params)#,skip_inv=True)
-    
-class FisherMatrix(DataFrame):
-    """
-    A Fisher Matrix object that subclasses pandas.DataFrame.
-    This is essentially just a structured array that
-    has identical column and row labels.
-
-    You can initialize an empty one like:
-    >> params = ['H0','om','sigma8']
-    >> F = FisherMatrix(np.zeros((len(params),len(params))),params)
-    
-    where params is a list of parameter names. If you already have a
-    Fisher matrix 'Fmatrix' whose diagonal parameter order is specified by
-    the list 'params', then you can initialize this object as:
-    
-    >> F = FisherMatrix(Fmatrix,params)
-    
-    This makes the code 'aware' of the parameter order in a way that makes
-    handling combinations of Fishers a lot easier.
-    
-    You can set individual elements like:
-    
-    >> F['s8']['H0'] = 1.
-
-    Once you've populated the entries, you can do things like:
-    >> Ftot = F1 + F2
-    i.e. add Fisher matrices. The nice property here is that you needn't
-    have initialized these objects with the same list of parameters!
-    They can, for example, have mutually exclusive parameters, in which
-    case you end up with some reordering of a block diagonal Fisher matrix.
-    In the general case, of two overlapping parameter lists that don't
-    have the same ordering, pandas will make sure the objects are added
-    correctly.
-
-    WARNING: No other operation other than addition is overloaded. Subtraction
-    for instance will give unpredictable behaviour. (Will likely introduce
-    NaNs) But you shouldn't be subtracting Fisher matrices anyway!
-
-    You can add a gaussian prior to a parameter:
-    >> F.add_prior('H0',2.0)
-
-    You can drop an entire parameter (which removes that row and column):
-    >> F.delete('s8')
-    which does it in place.
-
-    If you want to preserve the original before modifying, you can
-    >> Forig = F.copy()
-
-    You can get marginalized errors on each parameter as a dict:
-    >> sigmas = F.sigmas()
-
-
-    """
-
-    
-    def __init__(self,fmat,param_list,delete_params=None,prior_dict=None):#,skip_inv=False):
-        """
-        fmat            -- (n,n) shape numpy array containing initial Fisher matrix for n parameters
-        param_list      -- n-element list specifying diagonal order of fmat
-        delete_params   -- list of names of parameters you would like to delete from this 
-                        Fisher matrix when you initialize it. This is useful when skip_inv=False if some
-                        of your parameters are not constrained. See skip_inv below.
-        prior_dict      -- a dictionary that maps names of parameters to 1-sigma prior values
-                        you would like to add on initialization. This can also be done later with the 
-                        add_prior function.
-        skip_inv        -- If true, this skips calculation of the inverse of the Fisher matrix
-                        when the object is initialized.
-	"""
-	
-	
-        check_fisher_sanity(fmat,param_list)
-        pd.DataFrame.__init__(self,fmat.copy(),columns=param_list,index=param_list)
-        try:
-            a = self.params
-            raise ValueError # self.params should not already exist
-        except:
-            pass
-        self.params = param_list
-            
-        cols = self.columns.tolist()
-        ind = self.index.tolist()
-        assert set(self.params)==set(cols)
-        assert set(self.params)==set(ind)
-
-        if delete_params is not None:
-            self.delete(delete_params)
-        if prior_dict is not None:
-            for prior in prior_dict.keys():
-                self.add_prior(prior,prior_dict[prior])
-
-            
-    def copy(self, order='K'):
-        """
-        >> Fnew = F.copy()
-        will create an independent Fnew that is not a view of the original.
-        """
-        f = FisherMatrix(pd.DataFrame.copy(self), list(self.params))
-        return f
-
-    def __radd__(self,other):
-        raise NotImplementedError
-        return self._add(other,radd=True)
-
-    def __add__(self,other):
-        return self._add(other,radd=False)
-
-    def _add(self,other,radd=False):
-        if other is None: return self
-        odf = pd.DataFrame(data = other.values,columns=other.columns,index=other.index)
-        tdf = pd.DataFrame(data = self.values,columns=self.columns,index=self.index)
-        new_fpd = tdf.add(odf,fill_value=0)
-        return FisherMatrix(np.nan_to_num(new_fpd.values),new_fpd.columns.tolist())
-
-    def add_prior(self,param,prior,warn=True):
-        """
-        Adds 1-sigma value 'prior' to the parameter name specified by 'param'
-        """
-        try:
-            self[param][param] += 1./prior**2.
-        except KeyError:
-            if warn: print(f"WARNING: skipping prior for {param} since it was not found")
-        
-    def sigmas(self):
-        """
-        Returns marginalized 1-sigma uncertainties on each parameter in the Fisher matrix.
-        """
-        # self._update()
-        finv = np.linalg.inv(self.values)
-        errs = np.diagonal(finv)**(0.5)
-        return dict(zip(self.params,errs))
-    
-    def delete(self,params):
-        """
-        Given a list of parameter names 'params', deletes these from the Fisher matrix.
-        """
-        self.drop(labels=params,axis=0,inplace=True)
-        self.drop(labels=params,axis=1,inplace=True)
-        self.params = self.columns.tolist()
-        assert set(self.index.tolist())==set(self.params)
-
-    def reordered(self,params):
-        # Return a reordered version of self
-        return self[params].T[params]
-
-    def marge_var_2param(self,param1,param2):
-        """
-        Returns the sub-matrix corresponding to two parameters param1 and param2.
-        Useful for contour plots.
-        """
-        # self._update()
-        finv = np.linalg.inv(self.values)
-        i = self.params.index(param1)
-        j = self.params.index(param2)
-        chi211 = finv[i,i]
-        chi222 = finv[j,j]
-        chi212 = finv[i,j]
-        
-        return np.array([[chi211,chi212],[chi212,chi222]])
 
 
 def alpha_from_confidence(c):
@@ -762,16 +557,16 @@ class Stats(object):
 
             for k,label in enumerate(self.little_stack.keys()):
                 self.stack_count[label] = self.little_stack_count[label]
-                for core in self.loopover: #range(1,self.numcores):
-                    if verbose: print("Waiting for core ", core , " / ", self.numcores)
+                for core in self.loopover: 
+                    if verbose: print(f"{label} waiting for count from core ", core , " / ", self.numcores)
                     data = self.comm.recv(source=core, tag=self.tag_start*3000+k)
                     self.stack_count[label] += data
 
             
             for k,label in enumerate(self.little_stack.keys()):
                 self.stacks[label] = self.little_stack[label]
-            for core in self.loopover: #range(1,self.numcores):
-                if verbose: print("Waiting for core ", core , " / ", self.numcores)
+            for core in self.loopover: 
+                if verbose: print(f"{label} waiting for data from core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.little_stack.keys()):
                     expected_shape = self.little_stack[label].shape
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
@@ -803,7 +598,7 @@ class Stats(object):
                 self.numobj[label] = []
                 self.numobj[label].append(np.array(self.vectors[label]).shape[0])
                 for core in self.loopover: #range(1,self.numcores):
-                    if verbose: print("Waiting for core ", core , " / ", self.numcores)
+                    if verbose: print(f"{label} waiting for size from core ", core , " / ", self.numcores)
                     data = self.comm.recv(source=core, tag=self.tag_start*2000+k)
                     self.numobj[label].append(data)
 
@@ -811,7 +606,7 @@ class Stats(object):
             for k,label in enumerate(self.vectors.keys()):
                 self.vectors[label] = np.array(self.vectors[label])
             for core in self.loopover: #range(1,self.numcores):
-                if verbose: print("Waiting for core ", core , " / ", self.numcores)
+                if verbose: print(f"{label} waiting for data from core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.vectors.keys()):
                     expected_shape = (self.numobj[label][core],)+self.columns[label]
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
@@ -926,7 +721,7 @@ class bin1D:
         self.bin_edges_min = self.bin_edges.min()
         self.bin_edges_max = self.bin_edges.max()
 
-    def bin(self,ix,iy):
+    def bin(self,ix,iy,stat=np.nanmean):
         x = ix.copy()
         y = iy.copy()
         # this just prevents an annoying warning (which is otherwise informative) everytime
@@ -935,7 +730,7 @@ class bin1D:
         y[x>self.bin_edges_max] = 0
 
         # pretty sure this treats nans in y correctly, but should double-check!
-        bin_means = binnedstat(x,y,bins=self.bin_edges,statistic=np.nanmean)[0]
+        bin_means = binnedstat(x,y,bins=self.bin_edges,statistic=stat)[0]
         
         return self.cents,bin_means
 

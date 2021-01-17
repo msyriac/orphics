@@ -23,16 +23,8 @@ from six.moves import cPickle as pickle
 
 from orphics import stats
 import os,sys
+from pyfisher import get_lensing_nl as get_nl
 
-def get_nl(exp):
-    exp = exp.strip().lower()
-    froot = os.path.dirname(__file__)+"/../data/"
-    if exp=='planck':
-        return np.loadtxt(f'{froot}planck_2018_mv_nlkk.dat',usecols=[0,1],unpack=True)
-    elif exp=='so_goal':
-        return np.loadtxt(f'{froot}so_v3_1_deproj0_goal_fsky0p4_it.dat',usecols=[0,7],unpack=True)
-    elif exp=='s4':
-        return np.loadtxt(f'{froot}s4_noise.dat',usecols=[0,7],unpack=True)
         
 
 def validate_geometry(shape,wcs,verbose=False):
@@ -71,7 +63,7 @@ def binned_nfw(mass,z,conc,cc,shape,wcs,bin_edges_arcmin,lmax=None,lmin=None,ove
         zsource = 1100
         sig = sigma_mis*utils.arcmin if sigma_mis is not None else None
         k1h = hm.kappa_1h_profiles(thetas,Ms,concs,zsource,sig_theta=sig,delta=overdensity,rho='critical' if critical else 'mean',rho_at_z=at_cluster_z)
-        k2h = hm.kappa_2h_profiles(thetas,Ms,concs,zsource,delta=overdensity,rho='critical' if critical else 'mean',rho_at_z=at_cluster_z,lmin=2,lmax=10000) if not(exclude_2h) else np.asarray(k1h).T*0
+        k2h = hm.kappa_2h_profiles(thetas,Ms,zsource,delta=overdensity,rho='critical' if critical else 'mean',rho_at_z=at_cluster_z,lmin=2,lmax=10000) if not(exclude_2h) else np.asarray(k1h).T*0
         k1h[~np.isfinite(k1h)] = 0
         k1h = np.asarray(k1h[0])
         k2h = k2h[:,0] 

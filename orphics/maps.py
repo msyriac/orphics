@@ -1,5 +1,5 @@
 from __future__ import print_function 
-from pixell import enmap, utils, resample, curvedsky as cs
+from pixell import enmap, utils, resample, curvedsky as cs, reproject
 import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
@@ -9,6 +9,18 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
+
+def mask_srcs(shape,wcs,srcs_deg,width_arcmin):
+    r = np.deg2rad(width_arcmin/60.)
+    return enmap.distance_from(shape,wcs,np.deg2rad(srcs_deg), rmax=r) >= r
+
+def grow_mask(mask,width_deg):
+    r = width_deg * np.pi / 180.
+    return  mask.distance_transform(rmax=r)>=r
+
+def cosine_apodize(bmask,width_deg):
+    r = width_deg * np.pi / 180.
+    return 0.5*(1-np.cos(bmask.distance_transform(rmax=r)*(np.pi/r)))
 
 
 def kspace_coadd(kcoadds,kbeams,kncovs,fkbeam=1):
@@ -1038,8 +1050,7 @@ def minimum_ell(shape,wcs):
 
 
 def resolution(shape,wcs):
-    res = np.min(np.abs(enmap.extent(shape,wcs))/shape[-2:])
-    return res
+    return np.abs(wcs.wcs.cdelt[1])*utils.degree
 
 
 def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
