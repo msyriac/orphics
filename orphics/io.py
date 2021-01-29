@@ -513,7 +513,7 @@ def cprint(string,color=None,bold=False,uline=False):
     if uline:
         x+=bcolors.UNDERLINE
 
-    color = color.lower()    
+    if color is not None: color = color.lower()    
     if color in ['b','blue']:
         x+=bcolors.OKBLUE
     elif color in ['r','red','f','fail']:
