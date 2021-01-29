@@ -810,8 +810,8 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
 
 
-def default_theory(lpad=9000):
-    cambRoot = os.path.dirname(__file__)+"/../data/cosmo2017_10K_acc3"
+def default_theory(lpad=9000,root="cosmo2017_10K_acc3"):
+    cambRoot = os.path.dirname(__file__)+f"/../data/{root}"
     return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lpad,get_dimensionless=False)
 
 def planck_theory(ells,ellmax=2000):
@@ -946,9 +946,13 @@ class LensForecast:
         self._haveKK = True
         
 
-    def loadGG(self,ellsCls,Cls,ngal,lpad=30000):
+    def loadGG(self,ellsCls,Cls,ngal=None,lpad=30000,ells_n=None,nells=None):
         self.ngalForeground = ngal
-        self.Nls['gg'] = lambda x: x*0.+1./(self.ngalForeground*1.18e7)
+        if ells_n is None:
+            self.Nls['gg'] = lambda x: x*0.+1./(self.ngalForeground*1.18e7)
+        else:
+            from scipy.interpolate import interp1d
+            self.Nls['gg'] = lambda x: interp1d(ells_n,nells,bounds_error=True)(x)
         self.theory.loadGenericCls(ellsCls,Cls,'gg',lpad=lpad)
     
         self._haveGG = True
