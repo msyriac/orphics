@@ -36,9 +36,9 @@ class InverseTransformSampling(object):
         # inverse CDF
         self.icdf = interp1d(self.cdf,self.xs,bounds_error=False)
         
-    def generate(self,size,zero_mean=False):
+    def generate(self,nsamples):
         # CDF^{-1} ( U(0,1) )
-        return self.icdf(np.random.uniform(0,1,size=size))
+        return self.icdf(np.random.uniform(0,1,size=nsamples))
 
 
 
