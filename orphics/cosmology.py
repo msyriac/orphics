@@ -810,8 +810,8 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
 
 
-def default_theory(lpad=9000):
-    cambRoot = os.path.dirname(__file__)+"/../data/cosmo2017_10K_acc3"
+def default_theory(lpad=9000,root="cosmo2017_10K_acc3"):
+    cambRoot = os.path.dirname(__file__)+f"/../data/{root}"
     return loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False,TCMB = 2.7255e6,lpad=lpad,get_dimensionless=False)
 
 def planck_theory(ells,ellmax=2000):

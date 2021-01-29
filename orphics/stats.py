@@ -8,6 +8,74 @@ from scipy.optimize import curve_fit
 import itertools
 from pyfisher import FisherMatrix
 
+
+class InverseTransformSampling(object):
+    # Sample from an arbitrary 1d PDF
+    def __init__(self,xvals,pdf_vals):
+        from scipy.interpolate import interp1d
+        
+        # spacing between x-values
+        dxs = np.diff(xvals)
+        if not( np.all(np.isclose(dxs,dxs[0])) ):
+            # It might not have to be, but I haven't tested beyond equi-spaced.
+            raise Exception("The PDF domain has to be equi-spaced.")
+        
+        # Normalize
+        norm = np.trapz(pdf_vals,xvals)
+        self.xs = xvals
+        self.pdf = pdf_vals/norm
+
+        # CDF
+        self.cdf = np.cumsum(self.pdf)*dxs[0]
+        # Make it sensible. The discreteness will make the behaviour in
+        # the tails not quite right.
+        self.cdf[0] = 0
+        self.cdf[self.cdf>1] = 1
+        if not(np.all(self.cdf>=0)): raise Exception
+        if not(np.all(self.cdf<=1)): raise Exception
+        # inverse CDF
+        self.icdf = interp1d(self.cdf,self.xs,bounds_error=False)
+        
+    def generate(self,size,zero_mean=False):
+        # CDF^{-1} ( U(0,1) )
+        return self.icdf(np.random.uniform(0,1,size=size))
+
+
+
+class InverseTransformSampling2D(object):
+    # Sample from an arbitrary 2d PDF
+    def __init__(self,ys,xs,updf,bounds_error=False):
+        self.ys = ys
+        
+        # Normalize PDF p(y,x)
+        norm = np.trapz(np.trapz(updf,xs),ys)
+        pdf = updf / norm
+        self.pdf = pdf
+
+        # Marginal PDF p(y)
+        mpdf_y = np.trapz(pdf,xs)
+        # Prepare to sample from p(y)
+        self.its = InverseTransformSampling(ys,mpdf_y)
+
+        # Conditional density p(x | y)
+        cpdf = (pdf.T / mpdf_y).T
+
+        # Prepare to sample from p(x | y) for all y
+        self.allits = []
+        for i in range(len(ys)):
+            self.allits.append(InverseTransformSampling(xs,cpdf[i,:]) )
+
+    def generate(self,nsamples):
+        # Sample from p(y)
+        ysamples = np.asarray(self.its.generate(nsamples))
+        # Find index in ys corresponding to sampled y
+        # and sample x from corresponding p(x | y)
+        diff = np.abs(self.ys-ysamples[:,None])
+        inds = np.argmin(diff,axis=1)
+        xsamples = np.asarray([self.allits[ind].generate(1)[0] for ind in inds])
+        return ysamples,xsamples
+
+
 def eig_analyze(cmb2d,start=0,eigfunc=np.linalg.eigh,plot_file=None):
     es = eigfunc(cmb2d[start:,start:,...].T)[0]
     print(start,es.min(),np.any(es<0.))
