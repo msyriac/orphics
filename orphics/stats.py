@@ -634,7 +634,7 @@ class Stats(object):
             for k,label in enumerate(self.little_stack.keys()):
                 self.stacks[label] = self.little_stack[label]
             for core in self.loopover: 
-                if verbose: print(f"{label} waiting for data from core ", core , " / ", self.numcores)
+                if verbose: print(f"Waiting for data from core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.little_stack.keys()):
                     expected_shape = self.little_stack[label].shape
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
@@ -674,7 +674,7 @@ class Stats(object):
             for k,label in enumerate(self.vectors.keys()):
                 self.vectors[label] = np.array(self.vectors[label])
             for core in self.loopover: #range(1,self.numcores):
-                if verbose: print(f"{label} waiting for data from core ", core , " / ", self.numcores)
+                if verbose: print(f"Waiting for data from core ", core , " / ", self.numcores)
                 for k,label in enumerate(self.vectors.keys()):
                     expected_shape = (self.numobj[label][core],)+self.columns[label]
                     data_vessel = np.empty(expected_shape, dtype=np.float64)
@@ -845,14 +845,7 @@ def get_stats(binned_vectors):
     if arr.shape[1]==1:
         ret['corr'] = 1.
     else:
-
-        # ???
-        d = np.diag(ret['cov'])
-        stddev = np.sqrt(d)
-        ret['corr'] = ret['cov'] / stddev[:, None]
-        ret['corr'] = ret['cov'] / stddev[None, :]
-        np.clip(ret['corr'], -1, 1, out=ret['corr'])
-        #ret['corr'] = cov2corr(ret['cov'])
+        ret['corr'] = cov2corr(ret['cov'])
     
 
         
