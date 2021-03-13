@@ -31,7 +31,8 @@ class fakeMpiComm:
     A Simple Fake MPI implementation
     """
     def __init__(self):
-        pass
+        self.size = self.Get_size()
+        self.rank = self.Get_rank()
     def Get_rank(self):
         return 0
     def Get_size(self):

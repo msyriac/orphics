@@ -265,7 +265,7 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,noshow=False,**kwargs):
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
@@ -283,7 +283,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
             ay = np.linspace(-arc_width/2., arc_width/2., ny)
             x,y = np.meshgrid(ax, ay)
             q = pl._ax.quiver(x,y,quiver[1],quiver[0])
-        pl.done(filename,verbose=verbose)
+        pl.done(filename,verbose=verbose,noshow=noshow)
 
 
 
@@ -488,16 +488,16 @@ class Plotter(object):
     def vline(self,x=0.,ls="--",alpha=0.5,color="k",**kwargs):
         self._ax.axvline(x=x,ls=ls,alpha=alpha,color=color,**kwargs)
 
-    def done(self,filename=None,verbose=True,**kwargs):
+    def done(self,filename=None,verbose=True,noshow=False,**kwargs):
         if self.do_legend: self.legend()
 
         if filename is not None:
             self._fig.savefig(filename,bbox_inches='tight',**kwargs)
             if verbose: cprint("Saved plot to "+ filename,"g")
         else:
-            plt.show()
+            if not(noshow): plt.show()
 
-        plt.close(self._fig)
+        if not(noshow): plt.close(self._fig)
     
 
 
@@ -513,7 +513,7 @@ def cprint(string,color=None,bold=False,uline=False):
     if uline:
         x+=bcolors.UNDERLINE
 
-    color = color.lower()    
+    if color is not None: color = color.lower()    
     if color in ['b','blue']:
         x+=bcolors.OKBLUE
     elif color in ['r','red','f','fail']:
