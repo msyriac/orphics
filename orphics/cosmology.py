@@ -2,7 +2,7 @@ from __future__ import print_function
 import warnings
 from math import pi
 import numpy as np
-
+from pyfisher import TheorySpectra
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 import itertools
@@ -808,114 +808,6 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
 
 
 
-class TheorySpectra:
-    '''
-    Essentially just an interpolator that takes a CAMB-like
-    set of discrete Cls and provides lensed and unlensed Cl functions
-    for use in integrals
-    '''
-    
-
-    def __init__(self):
-
-        self.always_unlensed = False
-        self.always_lensed = False
-        self._uCl={}
-        self._lCl={}
-        self._gCl = {}
-
-
-    def loadGenericCls(self,ells,Cls,keyName,lpad=9000,fill_zero=True):
-        if not(fill_zero):
-            fillval = Cls[ells<lpad][-1]
-            self._gCl[keyName] = lambda x: np.piecewise(x, [x<=lpad,x>lpad], [lambda y: interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=0.)(y),lambda y: fillval*(lpad/y)**4.])
-
-        else:
-            fillval = 0.            
-            self._gCl[keyName] = interp1d(ells[ells<lpad],Cls[ells<lpad],bounds_error=False,fill_value=fillval)
-        
-
-        
-
-    def gCl(self,keyName,ell):
-
-        if len(keyName)==3:
-            # assume uTT, lTT, etc.
-            ultype = keyName[0].lower()
-            if ultype=="u":
-                return self.uCl(keyName[1:],ell)
-            elif ultype=="l":
-                return self.lCl(keyName[1:],ell)
-            else:
-                raise ValueError
-        
-        try:
-            return self._gCl[keyName](ell)
-        except:
-            return self._gCl[keyName[::-1]](ell)
-        
-    def loadCls(self,ell,Cl,XYType="TT",lensed=False,interporder="linear",lpad=9000,fill_zero=True):
-
-        # Implement ellnorm
-
-        mapXYType = XYType.upper()
-        validateMapType(mapXYType)
-
-
-        if not(fill_zero):
-            fillval = Cl[ell<lpad][-1]
-            f = lambda x: np.piecewise(x, [x<=lpad,x>lpad], [lambda y: interp1d(ell[ell<lpad],Cl[ell<lpad],bounds_error=False,fill_value=0.)(y),lambda y: fillval*(lpad/y)**4.])
-
-        else:
-            fillval = 0.            
-            f = interp1d(ell[ell<lpad],Cl[ell<lpad],bounds_error=False,fill_value=fillval)
-                    
-        if lensed:
-            self._lCl[XYType]=f
-        else:
-            self._uCl[XYType]=f
-
-    def _Cl(self,XYType,ell,lensed=False):
-
-            
-        mapXYType = XYType.upper()
-        validateMapType(mapXYType)
-
-        if mapXYType=="ET": mapXYType="TE"
-        ell = np.array(ell)
-
-        try:
-            if lensed:    
-                retlist = np.array(self._lCl[mapXYType](ell))
-                return retlist
-            else:
-                retlist = np.array(self._uCl[mapXYType](ell))
-                return retlist
-
-        except:
-            zspecs = ['EB','TB']
-            if (XYType in zspecs) or (XYType[::-1] in zspecs):
-                return ell*0.
-            else:
-                raise
-
-    def uCl(self,XYType,ell):
-        if self.always_lensed:
-            assert not(self.always_unlensed)
-            return self.lCl(XYType,ell)
-        return self._Cl(XYType,ell,lensed=False)
-    def lCl(self,XYType,ell):
-        if self.always_unlensed:
-            assert not(self.always_lensed)
-            return self.uCl(XYType,ell)
-        return self._Cl(XYType,ell,lensed=True)
-    
-
-
-def validateMapType(mapXYType):
-    assert not(re.search('[^TEB]', mapXYType)) and (len(mapXYType)==2), \
-      bcolors.FAIL+"\""+mapXYType+"\" is an invalid map type. XY must be a two" + \
-      " letter combination of T, E and B. e.g TT or TE."+bcolors.ENDC
 
 
 def default_theory(lpad=9000):
