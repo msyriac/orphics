@@ -1,7 +1,6 @@
 """
-Utilities for source counts and associated power spectra.
+Utilities for ILC noise, source counts and associated power spectra, etc..
 
-These are based on the model in Lagache et al 2019.
 """
 
 import glob,os,sys
@@ -10,7 +9,7 @@ from scipy.interpolate import interp1d
 from orphics import maps, cosmology
 
 
-# From tilec/fg.py [with J. Colin Hill]
+# Helpers from tilec/fg.py [with J. Colin Hill]
 
 ######################################
 # global constants
