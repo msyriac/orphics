@@ -95,19 +95,20 @@ def fcov_to_rcorr(shape,wcs,p2d,N):
 
 # Inpainting routines
 
-def ncov_from_ivar(ivar):
+def ncov_from_ivar(ivar,ncomp=3):
     n = ivar.shape[0]
     assert n==ivar.shape[1]
     var = 1./ivar
     var[~np.isfinite(var)] = 1./ivar[ivar>0].max() # this is wrong! but needed to prevent singular matrices?!
     ncov = np.diag(var.reshape(-1))
-    ncov_IQU = np.zeros((3,3,n*n,n*n))
+    ncov_IQU = np.zeros((ncomp,ncomp,n*n,n*n))
     ncov_IQU[0,0] = ncov.copy()
-    ncov_IQU[1,1] = ncov.copy() * 2.
-    ncov_IQU[2,2] = ncov.copy() * 2.
+    if ncomp>1:
+        ncov_IQU[1,1] = ncov.copy() * 2.
+        ncov_IQU[2,2] = ncov.copy() * 2.
     return ncov_IQU
 
-def scov_from_theory(modlmap,cmb_theory_fn,beam_fn,iau=False):
+def scov_from_theory(modlmap,cmb_theory_fn,beam_fn,iau=False,ncomp=3):
     """
     Get a pixel covariance matrix for a stamp around a given location
     from the white noise inverse variance map and theory and beam
@@ -115,13 +116,14 @@ def scov_from_theory(modlmap,cmb_theory_fn,beam_fn,iau=False):
     """
     n = modlmap.shape[0]
     assert n==modlmap.shape[1]
-    cmb2d_TEB = np.zeros((3,3,n,n))
+    cmb2d_TEB = np.zeros((ncomp,ncomp,n,n))
     theory = cmb_theory_fn
     cmb2d_TEB[0,0] = theory('TT',modlmap)
-    cmb2d_TEB[1,1] = theory('EE',modlmap)
-    cmb2d_TEB[2,2] = theory('BB',modlmap)
-    cmb2d_TEB[0,1] = theory('TE',modlmap)
-    cmb2d_TEB[1,0] = theory('TE',modlmap)
+    if ncomp>1:
+        cmb2d_TEB[1,1] = theory('EE',modlmap)
+        cmb2d_TEB[2,2] = theory('BB',modlmap)
+        cmb2d_TEB[0,1] = theory('TE',modlmap)
+        cmb2d_TEB[1,0] = theory('TE',modlmap)
     beam2d = beam_fn(modlmap)
     tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,modlmap.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
     return tcov
@@ -212,10 +214,9 @@ def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=No
     # Get the pix-pix covariance on the stamp geometry given CMB theory, beam and 2D noise on the big map
     if pcov is None:
         if tot_pow2d is not None:
-                pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
+            pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
         else:
-                pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d_IQU,beam2d=beam2d,iau=iau)
-
+            pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d_IQU,beam2d=beam2d,iau=iau)
 
     # Do we have polarization?
     ncomp = pcov.shape[0]
@@ -437,3 +438,63 @@ def get_geometry_regions(ncomp,n,res,hole_radius):
     m1 = np.where(amodrmap.reshape(-1)<hole_radius)[0]
     m2 = np.where(amodrmap.reshape(-1)>=hole_radius)[0]
     return m1,m2
+
+
+"""
+
+A good inpainting solution will have the following properties:
+
+1. allows variations in the white noise level -- this is the thing that is most position dependent
+2. doesn't require inputs that are expensive to calculate, like the power spectrum of the map
+3. perhaps has some way to still account for correlated / atmospheric noise
+4. uses a CMB + noise model to find the mean inpaint solution
+5. but 
+
+"""
+
+def get_geometry(mask=None,lpower_total=None,lpower_cmb=None,
+                 beam_fn=None,ivar=None,
+                 geometry=None):
+    pass
+
+
+def cinv_inpaint(imap,
+                 mask=None,lpower_total=None,lpower_cmb=None,
+                 beam_fn=None,ivar=None,
+                 geometry=None,
+                 add_noise=True):
+    """
+    Inpaint a small map. You can specify a pre-calculated
+    geometry object, or you can specify a mask
+    and power specification. The power can be
+    the total power in harmonic space lpower_total
+    or the CMB power, beam and inverse variance
+    pixel maps.
+    """
+
+    if geometry is None:
+        geometry = get_geometry(mask,lpower_total,lpower_cmb,beam_fn,ivar)
+
+
+    cov_root = geometry['covsqrt']
+    mean_mul = geometry['meanmul']
+    Npix = geometry['n']
+    m1 = geometry['m1']  # hole
+    m2 = geometry['m2']  # context
+    ncomp = geometry['ncomp']
+
+    # Set the masked region to be zero
+    cstamp = imap.copy().reshape(-1)
+    cstamp[m1] = 0.
+
+    # Get the mean infill
+    sim = np.dot(mean_mul,cstamp[m2])
+    if add_noise:
+        # Get a random realization (this could be moved outside the loop)
+        r = np.random.normal(0.,1.,size=(m1.size))
+        rand = np.dot(cov_root,r)
+        sim = sim + rand
+
+    # Paste into returned map
+    rstamp = paste(stamp,m1,sim)
+    stamp[:,:,:] = rstamp[:,:,:]
