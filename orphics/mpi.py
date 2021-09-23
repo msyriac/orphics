@@ -77,7 +77,7 @@ def mpi_distribute(num_tasks,avail_cores,allow_empty=False):
 
 
 def distribute(njobs,verbose=True,**kwargs):
-    comm = COMM_WORLD
+    comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     numcores = comm.Get_size()
     num_each,each_tasks = mpi_distribute(njobs,numcores,**kwargs)
