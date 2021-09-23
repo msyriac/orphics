@@ -239,7 +239,7 @@ class CatMapper(object):
         return delta
     
 
-def load_boss(boss_files,zmin,zmax,do_weights,sys_weights=True):
+def load_boss(boss_files,zmin,zmax,do_weights,sys_weights=True,verbose=False):
     ras = []
     decs = []
     zs = []
@@ -254,6 +254,7 @@ def load_boss(boss_files,zmin,zmax,do_weights,sys_weights=True):
         decs += cat.data['DEC'].tolist()
         zs += cat.data['Z'].tolist()
         f.close()
+        if verbose: print(boss_file)
     ras = np.asarray(ras)
     decs = np.asarray(decs)
     zs = np.asarray(zs)
