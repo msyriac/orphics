@@ -361,69 +361,74 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
     to make each unique geometry object.
     """
 
-    shape,wcs = imap.shape,imap.wcs
-    Nobj = coords_deg.shape[1]
-    Ny,Nx = shape[-2:]
-    assert coords_deg.ndim==2, "Wrong shape for coordinates."
-    assert imap.ndim==3, "Input maps have to be of shape (ncomp,Ny,Nx)"
-    
-    if (geometry_tags is None) or (geometry_dicts is None):
-        geometry_tags = ['basic']*Nobj
-        geometry_dicts = {}
-        geometry_dicts['basic'] = make_geometry(shape,wcs,np.deg2rad(hole_radius_arcmin/60.),cmb2d_TEB=cmb2d_TEB,n2d_IQU=n2d_IQU,context_width=None,n=npix_context,beam2d=beam2d,deproject=deproject,iau=iau,res=np.deg2rad(resolution_arcmin),tot_pow2d=tot_pow2d,store_pcov=False)
+    from enlib import bench
 
-    omap = imap.copy()
-    pixs = imap.sky2pix(np.deg2rad(coords_deg),corner=False)
-    fround = lambda x : int(np.round(x))
-    pad = 1
+    with bench.show("prep"):
+
+        shape,wcs = imap.shape,imap.wcs
+        Nobj = coords_deg.shape[1]
+        Ny,Nx = shape[-2:]
+        assert coords_deg.ndim==2, "Wrong shape for coordinates."
+        assert imap.ndim==3, "Input maps have to be of shape (ncomp,Ny,Nx)"
+        
+        if (geometry_tags is None) or (geometry_dicts is None):
+            geometry_tags = ['basic']*Nobj
+            geometry_dicts = {}
+            geometry_dicts['basic'] = make_geometry(shape,wcs,np.deg2rad(hole_radius_arcmin/60.),cmb2d_TEB=cmb2d_TEB,n2d_IQU=n2d_IQU,context_width=None,n=npix_context,beam2d=beam2d,deproject=deproject,iau=iau,res=np.deg2rad(resolution_arcmin),tot_pow2d=tot_pow2d,store_pcov=False)
+
+        omap = imap.copy()
+        pixs = imap.sky2pix(np.deg2rad(coords_deg),corner=False)
+        fround = lambda x : int(np.round(x))
+        pad = 1
 
     skipped = 0
     for i in range(Nobj):
 
-        # Get geometry for this object
-        geotag = geometry_tags[i]
-        geometry = geometry_dicts[geotag]
-        cov_root = geometry['covsqrt']
-        mean_mul = geometry['meanmul']
-        Npix = geometry['n']
-        m1 = geometry['m1']  # hole
-        m2 = geometry['m2']  # context
-        ncomp = geometry['ncomp']
+        with bench.show("each"):
+            # Get geometry for this object
+            geotag = geometry_tags[i]
+            geometry = geometry_dicts[geotag]
+            cov_root = geometry['covsqrt']
+            mean_mul = geometry['meanmul']
+            Npix = geometry['n']
+            m1 = geometry['m1']  # hole
+            m2 = geometry['m2']  # context
+            ncomp = geometry['ncomp']
 
-        if ncomp==1 or ncomp==3:
-            polslice = np.s_[:ncomp,...]
-        elif ncomp==2:
-            #polslice = np.s_[1:,...]
-            raise NotImplementedError
-        else:
-            raise ValueError
+            if ncomp==1 or ncomp==3:
+                polslice = np.s_[:ncomp,...]
+            elif ncomp==2:
+                #polslice = np.s_[1:,...]
+                raise NotImplementedError
+            else:
+                raise ValueError
 
-        # Slice out stamp
-        iy,ix = pixs[:,i]
-        if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad):
-            skipped += 1
-            continue
-        stamp = omap[polslice][:,fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
-        if stamp.shape!=(ncomp,Npix,Npix):
-            skipped += 1
-            continue
+            # Slice out stamp
+            iy,ix = pixs[:,i]
+            if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad):
+                skipped += 1
+                continue
+            stamp = omap[polslice][:,fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
+            if stamp.shape!=(ncomp,Npix,Npix):
+                skipped += 1
+                continue
 
-    
-        # Set the masked region to be zero
-        cstamp = stamp.copy().reshape(-1)
-        cstamp[m1] = 0.
+        
+            # Set the masked region to be zero
+            cstamp = stamp.copy().reshape(-1)
+            cstamp[m1] = 0.
 
-        # Get the mean infill
-        mean = np.dot(mean_mul,cstamp[m2])
-        # Get a random realization (this could be moved outside the loop)
-        r = np.random.normal(0.,1.,size=(m1.size))
-        rand = np.dot(cov_root,r)
-        # Total
-        sim = mean + rand
+            # Get the mean infill
+            mean = np.dot(mean_mul,cstamp[m2])
+            # Get a random realization (this could be moved outside the loop)
+            r = np.random.normal(0.,1.,size=(m1.size))
+            rand = np.dot(cov_root,r)
+            # Total
+            sim = mean + rand
 
-        # Paste into returned map
-        rstamp = paste(stamp,m1,sim)
-        stamp[:,:,:] = rstamp[:,:,:]
+            # Paste into returned map
+            rstamp = paste(stamp,m1,sim)
+            stamp[:,:,:] = rstamp[:,:,:]
 
     if verbose: print("Objects skipped due to edges ", skipped , " / ",Nobj)
     return omap

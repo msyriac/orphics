@@ -178,9 +178,27 @@ def parse_Kij_file():
     return Kijs
 
 
+def compton_y_power(ells,h=0.67556,ombh2=0.022032,omch2=0.12038,As=2.215e-9,tau=0.0925,YHe=0.246,mfun='T10'):
+    from classy_sz import Class
+
+    common_settings = {
+        # LambdaCDM parameters
+        'h':h,
+        'omega_b':ombh2,
+        'omega_cdm':omch2,
+        'A_s':As,
+        'tau_reio':tau,
+        # Take fixed value for primordial Helium (instead of automatic BBN adjustment)
+        'YHe':YHe,
+        'mass function' : mfun, #T10 is tinker et al 2010 @ M200m
+    }
+
+
+
+
 # Quick and dirty ILC noise
 
-def ilc_power(beams,noises,freqs,flux_limits_mJy):
+def ilc_power(beams,noises,freqs,flux_limits_mJy,inv_noise_weighting=False,total=False,include_fg=True):
     from szar import foregrounds as fg
     beams = np.asarray(beams)
     noises = (np.asarray(noises)*np.pi/180./60.)**2.
@@ -211,11 +229,19 @@ def ilc_power(beams,noises,freqs,flux_limits_mJy):
     theory = cosmology.default_theory(lpad=ellmax)
     cltt = theory.lCl("TT",ells)
 
-    components = ['cibc','tsz','ksz','radps' ,'cibp']
+    components = ['cibc','tsz','ksz','radps' ,'cibp'] if include_fg else []
     
-    cov = np.rollaxis(maps.ilc_cov(ells,cltt,kbeams,freqs,noises,components,fdict=fdict,ellmaxes=None,data=False,fgmax=None,narray=None),2,0)
-    cinv = np.rollaxis(np.linalg.inv(cov),0,3)
-    nell = np.nan_to_num(maps.silc_noise(cinv,response=None) - cltt)
+    cov = np.rollaxis(maps.ilc_cov(ells,cltt,kbeams,freqs,noises,components,fdict=fdict,ellmaxes=None,data=False,fgmax=None,narray=None,noise_only=False),2,0)
+    if inv_noise_weighting:
+        ncov = np.rollaxis(maps.ilc_cov(ells,cltt,kbeams,freqs,noises,components,fdict=fdict,ellmaxes=None,data=False,fgmax=None,narray=None,noise_only=True),2,0)
+        ninv = np.linalg.inv(ncov)
+        ntot = np.sum(ninv,axis=(-2,-1))
+        nout = np.sum(np.einsum('lij,ljk->lik',np.einsum('lij,ljk->lik',ninv,cov),ninv),axis=(-2,-1))/ntot**2
+    else:
+        cinv = np.rollaxis(np.linalg.inv(cov),0,3)
+        nout = maps.silc_noise(cinv,response=None)
+    csub = 0 if total else cltt
+    nell = np.nan_to_num(nout - csub)
     nell[ells<2] = 0
 
     return ells,nell

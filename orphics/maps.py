@@ -10,6 +10,19 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
+    if theory is None: theory = cosmology.default_theory()
+    ells = np.arange(lmax)
+    ps = np.zeros((3,3,lmax))
+    clfunc = lambda spec: theory.lCl(spec,ells) if lensed else lambda spec: theory.uCl(spec,ells)
+    ps[0,0] = clfunc('TT')
+    ps[0,1] = clfunc('TE')
+    ps[1,0] = ps[0,1].copy()
+    ps[1,1] = clfunc('EE')
+    ps[2,2] = clfunc('BB')
+    if len(shape)==2: shape = (3,)+shape
+    return cs.rand_map(shape,wcs,ps,lmax=lmax,dtype=dtype,seed=seed)
+
 def mask_srcs(shape,wcs,srcs_deg,width_arcmin):
     r = np.deg2rad(width_arcmin/60.)
     return enmap.distance_from(shape,wcs,np.deg2rad(srcs_deg), rmax=r) >= r
@@ -955,7 +968,8 @@ def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method
 
 def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
             plot_save=None,ellmaxes=None,data=True,fgmax=None,
-            narray=None,fdict=None,verbose=True,analysis_beam=1.,lmins=None,lmaxs=None):
+            narray=None,fdict=None,verbose=True,analysis_beam=1.,lmins=None,lmaxs=None,
+            noise_only=False):
     """
     ells -- either 1D or 2D fourier wavenumbers
     cmb_ps -- Theory C_ell_TT in 1D or 2D fourier space
@@ -977,6 +991,9 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
         raise ValueError
 
     Covmat = np.tile(cmb_ps,cshape)*analysis_beam**2.
+    if noise_only: 
+        Covmat = Covmat * 0.
+        components = []
 
     for i,freq1 in enumerate(freqs):
         for j,freq2 in enumerate(freqs):
@@ -989,6 +1006,7 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
                     noise1 = noises[i]
                     instnoise = np.nan_to_num(noise1*analysis_beam**2./kbeam1**2.) 
                     Covmat[i,j,...] += instnoise
+
 
             for component in components:
                 if fdict is None:
