@@ -9,6 +9,15 @@ import itertools
 from pyfisher import FisherMatrix
 
 
+# Get PTE from samples drawn from a covariance matrix
+def sim_pte(data,covmat,nsamples):
+    cinv = np.linalg.inv(covmat)
+    chisquare = np.dot(data,np.dot(cinv,data))
+    samples = np.random.multivariate_normal(data*0,covmat,nsamples)
+    chisquares = np.einsum('ik,ik->i', np.einsum('ij,jk->ik',samples,cinv),samples)
+    pte = chisquares[chisquare<chisquares].size / chisquares.size
+    return pte
+
 class InverseTransformSampling(object):
     # Sample from an arbitrary 1d PDF
     def __init__(self,xvals,pdf_vals):
