@@ -204,9 +204,10 @@ def power_crop(p2d,N,fname,ftrans=True,**kwargs):
     pimg = maps.crop_center(pmap,N,int(N*Nx/Ny))
     plot_img(pimg,fname,aspect='auto',**kwargs)
 
-def fplot(img,savename=None,verbose=True,**kwargs):
+def fplot(img,savename=None,verbose=True,log=True,**kwargs):
     from pixell import enmap
-    hplot(enmap.samewcs(np.fft.fftshift(np.log10(img)),img),savename=savename,verbose=verbose,**kwargs)
+    lfunc = np.log10 if log else lambda x: x
+    hplot(enmap.samewcs(np.fft.fftshift(lfunc(img)),img),savename=savename,verbose=verbose,**kwargs)
 
 def mplot(img,savename=None,verbose=True,**kwargs):
     from pixell import enmap
