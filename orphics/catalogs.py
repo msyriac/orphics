@@ -195,7 +195,7 @@ class CatMapper(object):
 
         if not(skip_init):
             self.counts = self.get_map(weights=weights)
-            if weights is None: 
+            if not(weights is None): 
                 self.rcounts = self.get_map(weights=None)
             else:
                 self.rcounts = self.counts
