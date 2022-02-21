@@ -1,6 +1,7 @@
 from __future__ import print_function
 import numpy as np
-from pixell import enmap,utils
+from pixell import enmap,utils,mpi
+from enlib import bench
 
 """
 Utilities that manipulate pixel-pixel covariance
@@ -21,6 +22,7 @@ def corrfun_thumb(corr, n):
     return np.roll(np.roll(tmp, -n, -1), -n, -2)
 
 def corr_to_mat(corr, n):
+    print ("N:", n)
     res = enmap.zeros([n,n,n,n],dtype=corr.dtype)
     for i in range(n):
         tmp = np.roll(corr, i, 0)[:n,:]
@@ -76,6 +78,7 @@ def stamp_pixcov_from_theory(N,cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False,return_p
 
     if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,cmb2d,iau=iau,inverse=True)
     p2d = cmb2d*beam2d**2.+n2d
+    print("shape: ", shape)
     if not(return_pow): return fcov_to_rcorr(shape,wcs,p2d,N)
     return fcov_to_rcorr(shape,wcs,p2d,N), cmb2d
 
@@ -111,21 +114,22 @@ def ncov_from_ivar(ivar,ncomp=3):
 def scov_from_theory(modlmap,cmb_theory_fn,beam_fn,iau=False,ncomp=3):
     """
     Get a pixel covariance matrix for a stamp around a given location
-    from the white noise inverse variance map and theory and beam
-    functions.
+    from the theory and beam functions.
     """
-    n = modlmap.shape[0]
-    assert n==modlmap.shape[1]
-    cmb2d_TEB = np.zeros((ncomp,ncomp,n,n))
-    theory = cmb_theory_fn
-    cmb2d_TEB[0,0] = theory('TT',modlmap)
-    if ncomp>1:
-        cmb2d_TEB[1,1] = theory('EE',modlmap)
-        cmb2d_TEB[2,2] = theory('BB',modlmap)
-        cmb2d_TEB[0,1] = theory('TE',modlmap)
-        cmb2d_TEB[1,0] = theory('TE',modlmap)
-    beam2d = beam_fn(modlmap)
-    tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,modlmap.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
+    with bench.show("prep"):
+        n = modlmap.shape[0]
+        assert n==modlmap.shape[1]
+        cmb2d_TEB = np.zeros((ncomp,ncomp,n,n))
+        theory = cmb_theory_fn
+        cmb2d_TEB[0,0] = theory('TT',modlmap)
+        if ncomp>1:
+            cmb2d_TEB[1,1] = theory('EE',modlmap)
+            cmb2d_TEB[2,2] = theory('BB',modlmap)
+            cmb2d_TEB[0,1] = theory('TE',modlmap)
+            cmb2d_TEB[1,0] = theory('TE',modlmap)
+        beam2d = beam_fn(modlmap)
+    with bench.show("pcov"):
+        tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,modlmap.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
     return tcov
 
 
@@ -361,74 +365,69 @@ def inpaint(imap,coords_deg,hole_radius_arcmin=5.,npix_context=60,resolution_arc
     to make each unique geometry object.
     """
 
-    from enlib import bench
+    shape,wcs = imap.shape,imap.wcs
+    Nobj = coords_deg.shape[1]
+    Ny,Nx = shape[-2:]
+    assert coords_deg.ndim==2, "Wrong shape for coordinates."
+    assert imap.ndim==3, "Input maps have to be of shape (ncomp,Ny,Nx)"
 
-    with bench.show("prep"):
+    if (geometry_tags is None) or (geometry_dicts is None):
+        geometry_tags = ['basic']*Nobj
+        geometry_dicts = {}
+        geometry_dicts['basic'] = make_geometry(shape,wcs,np.deg2rad(hole_radius_arcmin/60.),cmb2d_TEB=cmb2d_TEB,n2d_IQU=n2d_IQU,context_width=None,n=npix_context,beam2d=beam2d,deproject=deproject,iau=iau,res=np.deg2rad(resolution_arcmin),tot_pow2d=tot_pow2d,store_pcov=False)
 
-        shape,wcs = imap.shape,imap.wcs
-        Nobj = coords_deg.shape[1]
-        Ny,Nx = shape[-2:]
-        assert coords_deg.ndim==2, "Wrong shape for coordinates."
-        assert imap.ndim==3, "Input maps have to be of shape (ncomp,Ny,Nx)"
-        
-        if (geometry_tags is None) or (geometry_dicts is None):
-            geometry_tags = ['basic']*Nobj
-            geometry_dicts = {}
-            geometry_dicts['basic'] = make_geometry(shape,wcs,np.deg2rad(hole_radius_arcmin/60.),cmb2d_TEB=cmb2d_TEB,n2d_IQU=n2d_IQU,context_width=None,n=npix_context,beam2d=beam2d,deproject=deproject,iau=iau,res=np.deg2rad(resolution_arcmin),tot_pow2d=tot_pow2d,store_pcov=False)
-
-        omap = imap.copy()
-        pixs = imap.sky2pix(np.deg2rad(coords_deg),corner=False)
-        fround = lambda x : int(np.round(x))
-        pad = 1
+    omap = imap.copy()
+    pixs = imap.sky2pix(np.deg2rad(coords_deg),corner=False)
+    fround = lambda x : int(np.round(x))
+    pad = 1
 
     skipped = 0
     for i in range(Nobj):
 
-        with bench.show("each"):
-            # Get geometry for this object
-            geotag = geometry_tags[i]
-            geometry = geometry_dicts[geotag]
-            cov_root = geometry['covsqrt']
-            mean_mul = geometry['meanmul']
-            Npix = geometry['n']
-            m1 = geometry['m1']  # hole
-            m2 = geometry['m2']  # context
-            ncomp = geometry['ncomp']
+        # Get geometry for this object
+        geotag = geometry_tags[i]
+        geometry = geometry_dicts[geotag]
+        cov_root = geometry['covsqrt']
+        mean_mul = geometry['meanmul']
+        Npix = geometry['n']
+        m1 = geometry['m1']  # hole
+        m2 = geometry['m2']  # context
+        ncomp = geometry['ncomp']
 
-            if ncomp==1 or ncomp==3:
-                polslice = np.s_[:ncomp,...]
-            elif ncomp==2:
-                #polslice = np.s_[1:,...]
-                raise NotImplementedError
-            else:
-                raise ValueError
+        if ncomp==1 or ncomp==3:
+            polslice = np.s_[:ncomp,...]
+        elif ncomp==2:
+            #polslice = np.s_[1:,...]
+            raise NotImplementedError
+        else:
+            raise ValueError
 
-            # Slice out stamp
-            iy,ix = pixs[:,i]
-            if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad):
-                skipped += 1
-                continue
-            stamp = omap[polslice][:,fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
-            if stamp.shape!=(ncomp,Npix,Npix):
-                skipped += 1
-                continue
+        # Slice out stamp
+        iy,ix = pixs[:,i]
+        if fround(iy-Npix/2)<pad or fround(ix-Npix/2)<pad or fround(iy+Npix/2)>(Ny-pad) or fround(ix+Npix/2)>(Nx-pad):
+            skipped += 1
+            continue
+        stamp = omap[polslice][:,fround(iy-Npix/2.+0.5):fround(iy+Npix/2.+0.5),fround(ix-Npix/2.+0.5):fround(ix+Npix/2.+0.5)]
+        if stamp.shape!=(ncomp,Npix,Npix):
+            skipped += 1
+            continue
 
-        
-            # Set the masked region to be zero
-            cstamp = stamp.copy().reshape(-1)
-            cstamp[m1] = 0.
 
-            # Get the mean infill
-            mean = np.dot(mean_mul,cstamp[m2])
-            # Get a random realization (this could be moved outside the loop)
-            r = np.random.normal(0.,1.,size=(m1.size))
-            rand = np.dot(cov_root,r)
-            # Total
-            sim = mean + rand
+        # Set the masked region to be zero
+        cstamp = stamp.copy().reshape(-1)
+        cstamp[m1] = 0.
 
-            # Paste into returned map
-            rstamp = paste(stamp,m1,sim)
-            stamp[:,:,:] = rstamp[:,:,:]
+        # Get the mean infill
+        mean = np.dot(mean_mul,cstamp[m2])
+        # Get a random realization (this could be moved outside the loop)
+        r = np.random.normal(0.,1.,size=(m1.size))
+        rand = np.dot(cov_root,r)
+        # Total
+        sim = mean + rand
+
+        # Paste into returned map
+        rstamp = paste(stamp,m1,sim)
+        stamp[:,:,:] = rstamp[:,:,:]
 
     if verbose: print("Objects skipped due to edges ", skipped , " / ",Nobj)
     return omap
@@ -503,3 +502,68 @@ def cinv_inpaint(imap,
     # Paste into returned map
     rstamp = paste(stamp,m1,sim)
     stamp[:,:,:] = rstamp[:,:,:]
+
+
+
+def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,theory_fn=None,beam_fn=None,include_signal=True,pol=True,mlmax=None,context_fraction=2./3.,comm=None):
+    """
+    This MPI-parallelized function will pre-calculate quantities required to inpaint a map with circular holes.
+    The results will be saved to disk in output_dir. The MPI parallelization is done over the number of sources.
+
+    Arguments
+    ---------
+
+    coords: (N,2) array-like, float
+    Array containing the (dec,ra) coordinates in radians for N sources to be inpainted.
+
+    hole_radius: float
+    Each source will be inpainted with a hole of this radius in radians.
+
+    ivar: ndmap
+    (Ny,Nx) or (3,Ny,Nx) ndmap containing II or II,QQ,UU inverse variance per pixel.
+    If QQ and UU are not provided, they will be assumed to be half of II.
+
+    output_dir: string
+    Directory to save results to. Specify this for the inpaint_from_saved_geometries function.
+
+    theory_fn: function
+    Function such that theory_fn(string,ells) returns the CMB+foreground power spectrum where string
+    can be TT,TE,EE,BB.
+
+    beam_fn: function
+    Function such that beam_fn(ells) returns the beam transfer function.
+
+    include_signal: bool, optional
+    Whether to assume the CMB+foregrounds are present in the map. Set to False when inpainting
+    split differences.
+
+    pol: bool, optional
+    Whether to jointly inpaint I/Q/U maps or only assume I maps.
+
+    mlmax: bool, optional
+    Whether to enforce a band-limit. If True, the map is assumed to have no power above multipole
+    mlmax. Useful for inpainting reprojected Planck maps.
+
+    context_fraction: float
+    The ratio of the width of the context region around the hole to the diameter of the hole.
+    Larger fractions result in more informed inpainting, but takes longer time and memory.
+
+    comm: MPI communicator object
+
+    
+
+    """
+
+    rtot = hole_radius * (1 + context_fraction)
+    pixboxes = enmap.neighborhood_pixboxes(ivar.shape[-2:], ivar.wcs, coords, rtot)
+
+    for task in my_tasks:
+        pixbox = pixboxes[task]
+        ithumb = imap.extract_pixbox(pixbox)
+
+
+def inpaint_uncorrelated_from_saved_geometries(imap,output_dir):
+    """
+    Inpaint an ndmap imap with pre-calculated quantities from the directory output_dir.
+    """
+    pass

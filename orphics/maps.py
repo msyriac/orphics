@@ -10,6 +10,16 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def fsky(mask,threshold=0.5):
+    return area(mask,threshold)/4./np.pi
+
+def area(mask,threshold=0.5):
+    return (binary_mask(mask,threshold)*mask.pixsizemap()).sum()
+
+def area_sqdeg(mask,threshold=0.5):
+    return area(mask,threshold)/utils.degree**2.
+    
+
 def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
     if theory is None: theory = cosmology.default_theory()
     ells = np.arange(lmax)
@@ -28,6 +38,9 @@ def mask_srcs(shape,wcs,srcs_deg,width_arcmin):
     return enmap.distance_from(shape,wcs,np.deg2rad(srcs_deg), rmax=r) >= r
 
 def grow_mask(mask,width_deg):
+    """
+    Grow the masked (zeroed) region by width_deg in degrees.
+    """
     r = width_deg * np.pi / 180.
     return  mask.distance_transform(rmax=r)>=r
 
@@ -36,16 +49,42 @@ def cosine_apodize(bmask,width_deg):
     return 0.5*(1-np.cos(bmask.distance_transform(rmax=r)*(np.pi/r)))
 
 
-def kspace_coadd(kcoadds,kbeams,kncovs,fkbeam=1):
-    kcoadds = np.asarray(kcoadds)
+def kspace_coadd(kmaps,kbeams,kncovs,fkbeam=1):
+    """
+    kmaps are the individual maps, *not* beam deconvolved
+    kbeams are the beams
+    kncovs are the noise spectra for weighting, *not* beam deconvolved
+    fkbeam is the final beam applied
+    """
+
+    kmaps = np.asarray(kmaps)
     kbeams = np.asarray(kbeams)
     kncovs = np.asarray(kncovs)
-    numer = np.sum(kcoadds * kbeams * fkbeam / kncovs,axis=0)
+    numer = np.sum(kmaps * kbeams * fkbeam / kncovs,axis=0)
     numer[~np.isfinite(numer)] = 0
     denom = np.sum(kbeams**2 / kncovs,axis=0)
     f = numer/denom
     f[~np.isfinite(f)] = 0
     return f
+
+def kspace_coadd_alms(kmaps,kbeams,kncovs,fkbeam=1):
+    """
+    kmaps are the individual maps, *not* beam deconvolved
+    kbeams are the beams
+    kncovs are the noise spectra for weighting, *not* beam deconvolved
+    fkbeam is the final beam applied
+    """
+
+    kmaps = np.asarray(kmaps)
+    kbeams = np.asarray(kbeams)
+    kncovs = np.asarray(kncovs)
+    weight = kbeams * fkbeam / kncovs / np.sum(kbeams**2 / kncovs,axis=0)
+    weight[~np.isfinite(weight)] = 0
+    f = 0
+    for i in range(kmaps.shape[0]):
+        f = f + cs.almxfl(kmaps[i],weight[i])
+    return f
+
 
 def atm_factor(ells,lknee,alpha):
     with np.errstate(divide='ignore', invalid='ignore',over='ignore'):
@@ -90,17 +129,17 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
         return rms_from_ivar(ivar,parea=parea,cylindrical=cylindrical) * smap *np.pi / 180./ 60.
 
 
-def galactic_mask(shape,wcs,nside,theta1,theta2):
+def galactic_mask(shape,wcs,nside,theta1,theta2,order=0):
     npix = hp.nside2npix(nside)
     orig = np.ones(npix)
     orig[hp.query_strip(nside,theta1,theta2)] = 0
-    return reproject.ivar_hp_to_cyl(orig, shape, wcs, rot=True,do_mask=False,extensive=False)
+    return reproject.healpix2map(orig, shape, wcs, rot='gal,equ',method='spline',order=order,extensive=False)
 
-def north_galactic_mask(shape,wcs,nside):
-    return galactic_mask(shape,wcs,nside,0,np.deg2rad(90))
+def north_galactic_mask(shape,wcs,nside,order=0):
+    return galactic_mask(shape,wcs,nside,0,np.deg2rad(90),order=order)
 
-def south_galactic_mask(shape,wcs,nside):
-    return galactic_mask(shape,wcs,nside,np.deg2rad(90),np.deg2rad(180))
+def south_galactic_mask(shape,wcs,nside,order=0):
+    return galactic_mask(shape,wcs,nside,np.deg2rad(90),np.deg2rad(180),order=order)
 
 
 def rms_from_ivar(ivar,parea=None,cylindrical=True):
@@ -201,6 +240,7 @@ def binary_mask(mask,threshold=0.5):
         
 
 def area_from_mask(mask):
+    raise NotImplementedError("This function is not accurate for non-equal-area pixel maps. Use maps.area_sqdeg().")
     m = binary_mask(mask)
     frac = m.sum()*1./np.prod(m.shape[-2:])
     return frac*mask.area()*(180./np.pi)**2., frac
