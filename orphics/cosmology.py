@@ -1647,3 +1647,7 @@ def get_lss_cls(windows,lmax,nonlinear=True,params=None):
         odict[f'{ow1}x{ow2}'] = cls[key] * mul
         
     return odict
+
+
+def phi2kappa(ls):
+    return ls*(ls+1.)/2.
