@@ -175,7 +175,7 @@ def filter_alms(alms,lmin,lmax):
     return hp.almxfl(alms,fs)
 
 
-def rotate_pol_power(shape,wcs,cov,iau=True,inverse=False):
+def rotate_pol_power(shape,wcs,cov,iau=False,inverse=False):
     """Rotate a 2D power spectrum from TQU to TEB (inverse=False) or
     back (inverse=True). cov is a (3,3,Ny,Nx) 2D power spectrum.
     WARNING: This function is duplicated in orphics.pixcov to make 
@@ -459,7 +459,7 @@ class MapGen(object):
                             self.covsqrt = enmap.spec2flat(shape, wcs, cov, 0.5, mode="constant",smooth=smooth)
 
 
-        def get_map(self,seed=None,scalar=False,iau=True,real=False,harm=False):
+        def get_map(self,seed=None,scalar=False,iau=False,real=False,harm=False):
                 if seed is not None: np.random.seed(seed)
                 rand = enmap.fft(enmap.rand_gauss(self.shape, self.wcs)) if real else enmap.rand_gauss_harm(self.shape, self.wcs)
                 data = enmap.map_mul(self.covsqrt, rand)
@@ -483,7 +483,7 @@ class FourierCalc(object):
     to speed up fourier transforms and power spectra.
     """
 
-    def __init__(self,shape,wcs,iau=True):
+    def __init__(self,shape,wcs,iau=False):
         """Initialize with a geometry shape and wcs."""
         
         self.shape = shape
@@ -1486,7 +1486,7 @@ class Purify(object):
         self.windict = init_deriv_window(window,px)
         lxMap,lyMap,self.modlmap,self.angLMap,lx,ly = get_ft_attributes(shape,wcs)
 
-    def lteb_from_iqu(self,imap,method='pure',flip_q=True,iau=True):
+    def lteb_from_iqu(self,imap,method='pure',flip_q=True,iau=False):
         """
         maps must  have window applied!
         """
@@ -1521,7 +1521,7 @@ def init_deriv_window(window,px):
 
 
 
-def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure',iau=True):
+def iqu_to_pure_lteb(T_map,Q_map,U_map,modLMap,angLMap,windowDict,method='pure',iau=False):
     """
     maps must  have window applied!
     """
