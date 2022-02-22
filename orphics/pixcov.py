@@ -1,7 +1,8 @@
 from __future__ import print_function
 import numpy as np
-from pixell import enmap,utils,mpi
+from pixell import enmap,utils
 from enlib import bench
+
 
 """
 Utilities that manipulate pixel-pixel covariance
@@ -17,22 +18,23 @@ Applications include:
 # These have been copied from enlib.jointmap since that module
 # requires compilation (but these functions don't)
 def map_ifft(x): return enmap.ifft(x).real
-def corrfun_thumb(corr, n):
-    tmp = np.roll(np.roll(corr, n, -1)[...,:2*n], n, -2)[...,:2*n,:]
-    return np.roll(np.roll(tmp, -n, -1), -n, -2)
+def corrfun_thumb(corr, ny, nx=None):
+    tmp = np.roll(np.roll(corr, nx, -1)[...,:2*nx], ny, -2)[...,:2*ny,:]
+    return np.roll(np.roll(tmp, -nx, -1), -ny, -2)
 
-def corr_to_mat(corr, n):
-    print ("N:", n)
-    res = enmap.zeros([n,n,n,n],dtype=corr.dtype)
-    for i in range(n):
-        tmp = np.roll(corr, i, 0)[:n,:]
-        for j in range(n):
-            res[i,j] = np.roll(tmp, j, 1)[:,:n]
+def corr_to_mat(corr, ny,nx=None):
+    if nx is None: nx = ny
+    res = enmap.zeros([ny,nx,ny,nx],dtype=corr.dtype)
+    for i in range(ny):
+        tmp = np.roll(corr, i, 0)[:ny,:]
+        for j in range(nx):
+            res[i,j] = np.roll(tmp, j, 1)[:,:nx]
     return res
-def ps2d_to_mat(ps2d, n):
+def ps2d_to_mat(ps2d, ny,nx):
+    if nx is None: nx = ny
     corrfun = map_ifft(ps2d+0j)/(ps2d.shape[-2]*ps2d.shape[-1])**0.5
-    thumb   = corrfun_thumb(corrfun, n)
-    mat     = corr_to_mat(thumb, n)
+    thumb   = corrfun_thumb(corrfun, ny, nx)
+    mat     = corr_to_mat(thumb, ny, nx)
     return mat
 
 ###########
@@ -62,35 +64,36 @@ def resolution(shape,wcs):
 # General pixcov routines
 
 
-def stamp_pixcov_from_theory(N,cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False,return_pow=False):
+def stamp_pixcov_from_theory(cmb2d_TEB,n2d_IQU=0.,beam2d=1.,iau=False,return_pow=False):
     """Return the pixel covariance for a stamp N pixels across given the 2D IQU CMB power spectrum,
     2D beam template and 2D IQU noise power spectrum.
     """
     n2d = n2d_IQU
     cmb2d = cmb2d_TEB
-    assert cmb2d.ndim==4
+    if not( cmb2d.ndim==4): raise ValueError
     ncomp = cmb2d.shape[0]
-    assert cmb2d.shape[1]==ncomp
-    assert ncomp==3 or ncomp==1
+    if not( cmb2d.shape[1]==ncomp): raise ValueError
+    if not( ncomp==3 or ncomp==1): raise ValueError
     
     wcs = cmb2d.wcs
     shape = cmb2d.shape[-2:]
 
     if ncomp==3: cmb2d = rotate_pol_power(shape,wcs,cmb2d,iau=iau,inverse=True)
     p2d = cmb2d*beam2d**2.+n2d
-    print("shape: ", shape)
-    if not(return_pow): return fcov_to_rcorr(shape,wcs,p2d,N)
-    return fcov_to_rcorr(shape,wcs,p2d,N), cmb2d
+    Ny,Nx = shape
+    if not(return_pow): return fcov_to_rcorr(shape,wcs,p2d,Ny,Nx)
+    return fcov_to_rcorr(shape,wcs,p2d,Ny,Nx), cmb2d
 
-def fcov_to_rcorr(shape,wcs,p2d,N):
+def fcov_to_rcorr(shape,wcs,p2d,Ny,Nx=None):
     """Convert a 2D PS into a pix-pix covariance
     """
+    if Nx is None: Nx = Ny
     ncomp = p2d.shape[0]
     p2d *= np.prod(shape[-2:])/enmap.area(shape,wcs)
-    ocorr = enmap.zeros((ncomp,ncomp,N*N,N*N),wcs)
+    ocorr = enmap.zeros((ncomp,ncomp,Ny*Nx,Ny*Nx),wcs)
     for i in range(ncomp):
         for j in range(i,ncomp):
-            dcorr = ps2d_to_mat(p2d[i,j].copy(), N).reshape((N*N,N*N))
+            dcorr = ps2d_to_mat(p2d[i,j].copy(), Ny,Nx).reshape((Ny*Nx,Ny*Nx))
             ocorr[i,j] = dcorr.copy()
             if i!=j: ocorr[j,i] = dcorr.copy()
     return ocorr
@@ -99,12 +102,12 @@ def fcov_to_rcorr(shape,wcs,p2d,N):
 # Inpainting routines
 
 def ncov_from_ivar(ivar,ncomp=3):
-    n = ivar.shape[0]
-    assert n==ivar.shape[1]
+    if not(ivar.ndim==2): raise ValueError
+    Ny,Nx = ivar.shape
     var = 1./ivar
-    var[~np.isfinite(var)] = 1./ivar[ivar>0].max() # this is wrong! but needed to prevent singular matrices?!
+    var[~np.isfinite(var)] = 1./ivar[ivar>0].max() # this is not ideal; but needed to prevent singular matrices
     ncov = np.diag(var.reshape(-1))
-    ncov_IQU = np.zeros((ncomp,ncomp,n*n,n*n))
+    ncov_IQU = np.zeros((ncomp,ncomp,Ny*Nx,Ny*Nx))
     ncov_IQU[0,0] = ncov.copy()
     if ncomp>1:
         ncov_IQU[1,1] = ncov.copy() * 2.
@@ -116,20 +119,17 @@ def scov_from_theory(modlmap,cmb_theory_fn,beam_fn,iau=False,ncomp=3):
     Get a pixel covariance matrix for a stamp around a given location
     from the theory and beam functions.
     """
-    with bench.show("prep"):
-        n = modlmap.shape[0]
-        assert n==modlmap.shape[1]
-        cmb2d_TEB = np.zeros((ncomp,ncomp,n,n))
-        theory = cmb_theory_fn
-        cmb2d_TEB[0,0] = theory('TT',modlmap)
-        if ncomp>1:
-            cmb2d_TEB[1,1] = theory('EE',modlmap)
-            cmb2d_TEB[2,2] = theory('BB',modlmap)
-            cmb2d_TEB[0,1] = theory('TE',modlmap)
-            cmb2d_TEB[1,0] = theory('TE',modlmap)
-        beam2d = beam_fn(modlmap)
-    with bench.show("pcov"):
-        tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,modlmap.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
+    Ny,Nx = modlmap.shape
+    cmb2d_TEB = np.zeros((ncomp,ncomp,Ny,Nx))
+    theory = cmb_theory_fn
+    cmb2d_TEB[0,0] = theory('TT',modlmap)
+    if ncomp>1:
+        cmb2d_TEB[1,1] = theory('EE',modlmap)
+        cmb2d_TEB[2,2] = theory('BB',modlmap)
+        cmb2d_TEB[0,1] = theory('TE',modlmap)
+        cmb2d_TEB[1,0] = theory('TE',modlmap)
+    beam2d = beam_fn(modlmap)
+    tcov = stamp_pixcov_from_theory(enmap.enmap(cmb2d_TEB,modlmap.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
     return tcov
 
 
@@ -452,8 +452,6 @@ A good inpainting solution will have the following properties:
 2. doesn't require inputs that are expensive to calculate, like the power spectrum of the map
 3. perhaps has some way to still account for correlated / atmospheric noise
 4. uses a CMB + noise model to find the mean inpaint solution
-5. but 
-
 """
 
 def get_geometry(mask=None,lpower_total=None,lpower_cmb=None,
@@ -504,8 +502,19 @@ def cinv_inpaint(imap,
     stamp[:,:,:] = rstamp[:,:,:]
 
 
+def get_regions(ncomp,modrmap,hole_radius):
+    # Select the hole (m1) and context(m2) across all components
+    if not(modrmap.ndim==2): raise ValueError
+    modrmap = np.repeat(modrmap[None,...],ncomp,0)
+    m1 = np.where(modrmap.reshape(-1)<hole_radius)[0]
+    m2 = np.where(modrmap.reshape(-1)>=hole_radius)[0]
+    return m1,m2
+    
 
-def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,theory_fn=None,beam_fn=None,include_signal=True,pol=True,mlmax=None,context_fraction=2./3.,comm=None):
+def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
+                                         theory_fn=None,beam_fn=None,include_signal=True,
+                                         pol=True,mlmax=None,context_fraction=2./3.,
+                                         deproject=True,verbose_every_nsrcs=1,comm=None):
     """
     This MPI-parallelized function will pre-calculate quantities required to inpaint a map with circular holes.
     The results will be saved to disk in output_dir. The MPI parallelization is done over the number of sources.
@@ -520,8 +529,8 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,theo
     Each source will be inpainted with a hole of this radius in radians.
 
     ivar: ndmap
-    (Ny,Nx) or (3,Ny,Nx) ndmap containing II or II,QQ,UU inverse variance per pixel.
-    If QQ and UU are not provided, they will be assumed to be half of II.
+    (Ny,Nx) ndmap containing II inverse variance per pixel.
+    QQ and UU will be assumed to be half of II, and QU to be zero.
 
     output_dir: string
     Directory to save results to. Specify this for the inpaint_from_saved_geometries function.
@@ -553,9 +562,12 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,theo
     
 
     """
-
+    import h5py
+    from . import mpi,io
+    
     if not(coords.ndim==2): raise ValueError
     if not(coords.shape[1]==2): raise ValueError
+    if not(ivar.ndim==2): raise ValueError
     nsrcs = coords.shape[0]
 
     if not(comm is None):
@@ -564,22 +576,150 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,theo
         num_each,each_tasks = mpi.mpi_distribute(nsrcs,numcores)
         my_tasks = each_tasks[rank]
     else:
-        rank = 0
-        numcores = 1
+        comm = mpi.MPI.COMM_WORLD
         my_tasks = range(nsrcs)
+
+    if pol:
+        ncomp = 3
+    else:
+        ncomp = 1
         
 
     rtot = hole_radius * (1 + context_fraction)
     pixboxes = enmap.neighborhood_pixboxes(ivar.shape[-2:], ivar.wcs, coords, rtot)
 
-    for task in my_tasks:
+    def skip_warning(task): print(f"Skipped source {task}.")
+
+    ocoords = []
+    oinds = []
+
+    for ind,task in enumerate(my_tasks):
+
         pixbox = pixboxes[task]
         ithumb = ivar.extract_pixbox(pixbox)
-        print(ithumb.shape)
+        if ithumb is None:
+            skip_warning(task)
+            continue
+        if not(ithumb.ndim==2): raise ValueError
+        if np.any(np.asarray(ithumb.shape)<=1):
+            skip_warning(task)
+            continue
+        Ny,Nx = ithumb.shape
+
+        modlmap = ithumb.modlmap()
+        modrmap = ithumb.modrmap()
+
+        if include_signal:
+            scov = scov_from_theory(modlmap,theory_fn,beam_fn,iau=False,ncomp=ncomp)
+        else:
+            scov = 0
+
+        ncov = ncov_from_ivar(ithumb,ncomp=3)
+        pcov = scov + ncov
+
+        m1,m2 = get_regions(ncomp,modrmap,hole_radius)
+
+        # --- Make sure that the pcov is in the right order vector(I,Q,U) ---
+        # It is currently in (ncomp,ncomp,n,n) order
+        # We transpose it to (ncomp,n,ncomp,n) order
+        # so that when it is reshaped into a 2D array, a row/column will correspond to an (I,Q,U) vector
+        pcov = np.transpose(pcov,(0,2,1,3))
+        pcov = pcov.reshape((ncomp*Ny*Nx,ncomp*Ny*Nx))
+
+        # Invert
+        Cinv = np.linalg.inv(pcov)
+
+        # Woodbury deproject common mode
+        if deproject:
+            # Deproject I,Q,U common mode separately
+            u = np.zeros((Ny*Nx*ncomp,ncomp))
+            for i in range(ncomp):
+                u[i*Ny*Nx:(i+1)*Ny*Nx,i] = 1
+            #u = np.ones((ncomp*n**2,1)) # Deproject mode common to all of I,Q,U
+            Cinvu = np.linalg.solve(pcov,u)
+            precalc = np.dot(Cinvu,np.linalg.solve(np.dot(u.T,Cinvu),u.T))
+            correction = np.dot(precalc,Cinv)
+            Cinv -= correction
+
+        # Get matrices for maxlike solution Eq 3 of arXiv:1109.0286
+        cslice = Cinv[m1][:,m1]
+        mul2 = Cinv[m1][:,m2]
+        mean_mul = -np.linalg.solve(cslice,mul2)
+        cov = np.linalg.inv(Cinv[m1][:,m1])
+        cov_root = utils.eigpow(cov,0.5)
+
+        geometry = {}
+        geometry['covsqrt'] = cov_root
+        geometry['meanmul'] = mean_mul
+        geometry['shape'] = np.asarray((Ny,Nx))
+        geometry['m1'] = m1
+        geometry['m2'] = m2
+
+        with h5py.File(f'{output_dir}/source_inpaint_geometry_{task}.hdf','w') as f:
+            for key in geometry:
+                f.create_dataset(key,data=geometry[key])
+
+        ocoords.append(coords[task])
+        oinds.append(task)
+
+        if verbose_every_nsrcs:
+            if (ind+1)%verbose_every_nsrcs==0: print(f"Done with {ind+1} / {len(my_tasks)}...")
 
 
-def inpaint_uncorrelated_from_saved_geometries(imap,output_dir):
+    ocoords = utils.allgatherv(ocoords,comm)
+    oinds = utils.allgatherv(oinds,comm)
+    io.save_cols(f'{output_dir}/source_inpaint_coords.txt',ocoords.swapaxes(0,1),header='Dec,RA')
+    np.savetxt(f'{output_dir}/source_inpaint_task_indices.txt',oinds,fmt='%d')
+    np.savetxt(f'{output_dir}/source_inpaint_attributes.txt',np.asarray([[ncomp,hole_radius,context_fraction],]),fmt='%d,%f,%f',header='ncomp,hole_radius')
+            
+
+def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,verbose_every_nsrcs=100):
     """
     Inpaint an ndmap imap with pre-calculated quantities from the directory output_dir.
     """
-    pass
+    import h5py
+
+    if not(inplace): imap = imap.copy()
+    
+    coords = np.loadtxt(f'{output_dir}/source_inpaint_coords.txt')
+    tasks = np.loadtxt(f'{output_dir}/source_inpaint_task_indices.txt').astype(int)
+
+    ncomp,hole_radius,context_fraction = np.loadtxt(f'{output_dir}/source_inpaint_attributes.txt',unpack=True,delimiter=',')
+    rtot = hole_radius * (1 + context_fraction)
+    pixboxes = enmap.neighborhood_pixboxes(imap.shape[-2:], imap.wcs, coords, rtot)
+    
+    for i,task in enumerate(tasks):
+        pixbox = pixboxes[task]
+        ithumb = imap.extract_pixbox(pixbox)
+        Ny,Nx = ithumb.shape[-2:]
+
+        oshape = ithumb.shape
+
+        with h5py.File(f'{output_dir}/source_inpaint_geometry_{task}.hdf','r') as f:
+            cov_root = f['covsqrt'][:]
+            mean_mul = f['meanmul'][:]
+            shape = f['shape'][:]
+            m1 = f['m1'][:]
+            m2 = f['m2'][:]
+
+        if not(Ny==shape[0]) or not(Nx==shape[1]): raise ValueError
+
+        # # Get the mean infill
+        cstamp = ithumb.reshape(-1)
+        mean = np.dot(mean_mul,cstamp[m2])
+        # Get a random realization (this could be moved outside the loop)
+        r = np.random.normal(0.,1.,size=(m1.size)) # FIXME: seed?
+        rand = np.dot(cov_root,r)
+        # Total
+        sim = mean + rand
+
+
+        ithumb.reshape(-1)[m1] = sim
+        ithumb.reshape(oshape)
+
+        imap = enmap.insert_at(imap,pixbox,ithumb)
+
+        if verbose_every_nsrcs:
+            if (i+1)%verbose_every_nsrcs==0: print(f"Done with {i+1} / {len(tasks)}...")
+
+    return imap

@@ -41,6 +41,8 @@ class fakeMpiComm:
         pass
     def Abort(self,dummy):
         pass
+    def allgatherv(self,x):
+        return x
 
 
 
