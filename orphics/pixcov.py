@@ -554,12 +554,28 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,theo
 
     """
 
+    if not(coords.ndim==2): raise ValueError
+    if not(coords.shape[1]==2): raise ValueError
+    nsrcs = coords.shape[0]
+
+    if not(comm is None):
+        rank = comm.Get_rank()
+        numcores = comm.Get_size()
+        num_each,each_tasks = mpi.mpi_distribute(nsrcs,numcores)
+        my_tasks = each_tasks[rank]
+    else:
+        rank = 0
+        numcores = 1
+        my_tasks = range(nsrcs)
+        
+
     rtot = hole_radius * (1 + context_fraction)
     pixboxes = enmap.neighborhood_pixboxes(ivar.shape[-2:], ivar.wcs, coords, rtot)
 
     for task in my_tasks:
         pixbox = pixboxes[task]
-        ithumb = imap.extract_pixbox(pixbox)
+        ithumb = ivar.extract_pixbox(pixbox)
+        print(ithumb.shape)
 
 
 def inpaint_uncorrelated_from_saved_geometries(imap,output_dir):
