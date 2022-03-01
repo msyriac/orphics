@@ -513,7 +513,7 @@ def get_regions(ncomp,modrmap,hole_radius):
 
 def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
                                          theory_fn=None,beam_fn=None,include_signal=True,
-                                         pol=True,mlmax=None,context_fraction=2./3.,
+                                         pol=True,context_fraction=2./3.,
                                          deproject=True,verbose_every_nsrcs=1,comm=None):
     """
     This MPI-parallelized function will pre-calculate quantities required to inpaint a map with circular holes.
@@ -548,10 +548,6 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
 
     pol: bool, optional
     Whether to jointly inpaint I/Q/U maps or only assume I maps.
-
-    mlmax: bool, optional
-    Whether to enforce a band-limit. If True, the map is assumed to have no power above multipole
-    mlmax. Useful for inpainting reprojected Planck maps.
 
     context_fraction: float
     The ratio of the width of the context region around the hole to the diameter of the hole.
@@ -617,10 +613,11 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
         else:
             scov = 0
 
-        ncov = ncov_from_ivar(ithumb,ncomp=3)
+        ncov = ncov_from_ivar(ithumb,ncomp=ncomp)
         pcov = scov + ncov
 
         m1,m2 = get_regions(ncomp,modrmap,hole_radius)
+
 
         # --- Make sure that the pcov is in the right order vector(I,Q,U) ---
         # It is currently in (ncomp,ncomp,n,n) order
@@ -679,8 +676,10 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
 def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,verbose_every_nsrcs=100):
     """
     Inpaint an ndmap imap with pre-calculated quantities from the directory output_dir.
+
     """
     import h5py
+    from . import maps
 
     if not(inplace): imap = imap.copy()
     
@@ -713,6 +712,8 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
         # Get a random realization (this could be moved outside the loop)
         r = np.random.normal(0.,1.,size=(m1.size)) # FIXME: seed?
         rand = np.dot(cov_root,r)
+
+        
         # Total
         sim = mean + rand
 
@@ -726,3 +727,10 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
             if (i+1)%verbose_every_nsrcs==0: print(f"Done with {i+1} / {len(tasks)}...")
 
     return imap
+
+def extract_cutouts(imap,coords,radius):
+    pixboxes = enmap.neighborhood_pixboxes(imap.shape[-2:], imap.wcs, coords, radius)    
+    for pixbox in pixboxes:
+        ithumb = imap.extract_pixbox(pixbox)
+        yield ithumb
+    
