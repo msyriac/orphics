@@ -631,6 +631,6 @@ def df_from_fits(filename,columns=None,rename=None):
     from astropy.table import Table
     table = Table.read(filename)
     df = table.to_pandas()
-    if columns is not None: df.drop(df.columns.difference(columns), 1, inplace=True)
-    if rename is not None: df.rename(columns=dict(zip(columns, rename)) , inplace=True)
+    if not(columns is None): df.drop(df.columns.difference(columns), 1, inplace=True)
+    if not(rename is None): df.rename(columns=dict(zip(columns, rename)) , inplace=True)
     return df

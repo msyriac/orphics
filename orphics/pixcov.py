@@ -604,6 +604,9 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
         if np.any(np.asarray(ithumb.shape)<=1):
             skip_warning(task)
             continue
+        if np.all(ithumb<=0):
+            skip_warning(task)
+            continue
         Ny,Nx = ithumb.shape
 
         modlmap = ithumb.modlmap()
