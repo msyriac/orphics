@@ -582,6 +582,9 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
         
 
     rtot = hole_radius * (1 + context_fraction)
+
+    np.savetxt(f'{output_dir}/source_inpaint_attributes.txt',np.asarray([[ncomp,hole_radius,context_fraction],]),fmt='%d,%.15f,%.15f',header='ncomp,hole_radius,context_fraction')
+
     pixboxes = enmap.neighborhood_pixboxes(ivar.shape[-2:], ivar.wcs, coords, rtot)
 
     def skip_warning(task): print(f"Skipped source {task}.")
@@ -671,7 +674,6 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
     oinds = utils.allgatherv(oinds,comm)
     io.save_cols(f'{output_dir}/source_inpaint_coords.txt',ocoords.swapaxes(0,1),header='Dec,RA')
     np.savetxt(f'{output_dir}/source_inpaint_task_indices.txt',oinds,fmt='%d')
-    np.savetxt(f'{output_dir}/source_inpaint_attributes.txt',np.asarray([[ncomp,hole_radius,context_fraction],]),fmt='%d,%f,%f',header='ncomp,hole_radius')
             
 
 def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,verbose_every_nsrcs=100):
@@ -710,7 +712,10 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
         if not(Ny==shape[0]) or not(Nx==shape[1]): 
             print(shape)
             print(Ny,Nx)
-            print(task, coords[task]/utils.degree)
+            print(task, i, coords[i]/utils.degree)
+            print(imap.wcs)
+            print(imap.shape)
+            print(pixbox)
             raise ValueError
 
         # # Get the mean infill
