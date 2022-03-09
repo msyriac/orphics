@@ -643,6 +643,7 @@ def merge_duplicates(ras,decs, rlim=1*utils.arcmin):
     duplicates if they are within rlim of each other. Merging uses averaging always. 
     rlim should be adjusted
     to fit the exerpiment beam. The default is appropriate for ACT."""
+    from scipy import spatial
     # Normalize positions first. This could miss some mergers on the edge.
     ras = utils.rewind(ras, 0)
     pos    = np.array([ras*np.cos(decs),decs]).T
