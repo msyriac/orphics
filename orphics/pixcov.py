@@ -582,6 +582,9 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
         
 
     rtot = hole_radius * (1 + context_fraction)
+
+    np.savetxt(f'{output_dir}/source_inpaint_attributes.txt',np.asarray([[ncomp,hole_radius,context_fraction],]),fmt='%d,%.15f,%.15f',header='ncomp,hole_radius,context_fraction')
+
     pixboxes = enmap.neighborhood_pixboxes(ivar.shape[-2:], ivar.wcs, coords, rtot)
 
     def skip_warning(task): print(f"Skipped source {task}.")
@@ -600,6 +603,10 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
         if np.any(np.asarray(ithumb.shape)<=1):
             skip_warning(task)
             continue
+        if np.all(ithumb<=0):
+            skip_warning(task)
+            continue
+
         Ny,Nx = ithumb.shape
 
         modlmap = ithumb.modlmap()
@@ -667,7 +674,6 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
     oinds = utils.allgatherv(oinds,comm)
     io.save_cols(f'{output_dir}/source_inpaint_coords.txt',ocoords.swapaxes(0,1),header='Dec,RA')
     np.savetxt(f'{output_dir}/source_inpaint_task_indices.txt',oinds,fmt='%d')
-    np.savetxt(f'{output_dir}/source_inpaint_attributes.txt',np.asarray([[ncomp,hole_radius,context_fraction],]),fmt='%d,%f,%f',header='ncomp,hole_radius')
             
 
 def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,verbose_every_nsrcs=100):
@@ -683,12 +689,14 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
     coords = np.loadtxt(f'{output_dir}/source_inpaint_coords.txt')
     tasks = np.loadtxt(f'{output_dir}/source_inpaint_task_indices.txt').astype(int)
 
+    if len(coords)!=len(tasks): raise ValueError
+
     ncomp,hole_radius,context_fraction = np.loadtxt(f'{output_dir}/source_inpaint_attributes.txt',unpack=True,delimiter=',')
     rtot = hole_radius * (1 + context_fraction)
     pixboxes = enmap.neighborhood_pixboxes(imap.shape[-2:], imap.wcs, coords, rtot)
     
     for i,task in enumerate(tasks):
-        pixbox = pixboxes[task]
+        pixbox = pixboxes[i]
         ithumb = imap.extract_pixbox(pixbox)
         Ny,Nx = ithumb.shape[-2:]
 
@@ -701,7 +709,14 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
             m1 = f['m1'][:]
             m2 = f['m2'][:]
 
-        if not(Ny==shape[0]) or not(Nx==shape[1]): raise ValueError
+        if not(Ny==shape[0]) or not(Nx==shape[1]): 
+            print(shape)
+            print(Ny,Nx)
+            print(task, i, coords[i]/utils.degree)
+            print(imap.wcs)
+            print(imap.shape)
+            print(pixbox)
+            raise ValueError
 
         # # Get the mean infill
         cstamp = ithumb.reshape(-1)
