@@ -44,6 +44,10 @@ def nostdout():
 def no_context():
     yield None
 
+def dateversion():
+    from datetime import datetime
+    return datetime.now().strftime("%Y%m%d")
+    
 ## PARSING
 
 def but_her_emails(string=None,filename=None):
