@@ -4,7 +4,7 @@ Utilities for dealing with galaxy catalogs, projecting catalogs into pixelated m
 
 
 import numpy as np
-from pixell import enmap
+from pixell import enmap,utils
 import healpy as hp
 from astropy.io import fits
 from orphics import maps
@@ -634,3 +634,36 @@ def df_from_fits(filename,columns=None,rename=None):
     if columns is not None: df.drop(df.columns.difference(columns), 1, inplace=True)
     if rename is not None: df.rename(columns=dict(zip(columns, rename)) , inplace=True)
     return df
+
+
+def merge_duplicates(ras,decs, rlim=1*utils.arcmin):
+    """Modified from Sigurd's enlib.dory. Given a point source catalog 
+    which might contain duplicates, detect these duplicates
+    and merge them to produce a single catalog with no duplicates. Sources are considered
+    duplicates if they are within rlim of each other. Merging uses averaging always. 
+    rlim should be adjusted
+    to fit the exerpiment beam. The default is appropriate for ACT."""
+    # Normalize positions first. This could miss some mergers on the edge.
+    ras = utils.rewind(ras, 0)
+    pos    = np.array([ras*np.cos(decs),decs]).T
+    tree   = spatial.cKDTree(pos)
+    groups = tree.query_ball_tree(tree, rlim)
+    done   = np.zeros(len(ras),bool)
+    ocat   = []
+    for gi, group in enumerate(groups):
+        # Remove everything that's done
+        group = np.array(group)
+        group = group[~done[group]]
+        if len(group) == 0: continue
+        # Nothing to do for groups with only one member
+        if len(group) == 1:
+            done[group[0]] = True
+            ocat.append((ras[group[0]],decs[group[0]]))
+        else:
+            gras  = ras[group]
+            gdecs  = decs[group]
+            era = gras.mean()
+            edec = gdecs.mean()
+            ocat.append((era,edec))
+            done[group] = True
+    return np.array(ocat)
