@@ -9,6 +9,102 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
+from enlib import bench
+
+def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
+    """
+    Approximate correction to an n-point function for the loss of power
+    due to the application of a mask.
+
+    For an n-point function using SHTs, this is the ratio of 
+    area weighted by the nth power of the mask to the full sky area 4 pi.
+    This simplifies to mean(mask**n) for equal area pixelizations like
+    healpix. For SHTs on CAR, it is sum(mask**n * pixel_area_map) / 4pi.
+    When using FFTs, it is the area weighted by the nth power normalized
+    to the area of the map. This also simplifies to mean(mask**n)
+    for equal area pixels. For CAR, it is sum(mask**n * pixel_area_map) 
+    / sum(pixel_area_map).
+
+    If not, it does an expensive calculation of the map of pixel areas. If this has
+    been pre-calculated, it can be provided as the pmap argument.
+    
+    """
+    assert mask.ndim==1 or mask.ndim==2
+    if pmap is None: 
+        if equal_area:
+            npix = mask.size
+            pmap = 4*np.pi / npix if sht else enmap.area(mask.shape,mask.wcs) / npix
+        else:
+            pmap = enmap.pixsizemap(mask.shape,mask.wcs)
+    return np.sum((mask**n)*pmap) /np.pi / 4. if sht else np.sum((mask**n)*pmap) / np.sum(pmap)
+
+
+def cosine_taper(ls,lstart,lwidth):
+    # Cosine taper filter (low-pass) for multipoles ls starting at multipole lstart and extending for lwidth multipoles
+    fl = ls*0 + 1.
+    fl[ls>lstart] = 1-0.5*(1-np.cos(-np.pi*(ls[ls>lstart]-lstart)/lwidth))
+    fl[ls>lstart+lwidth] = 0
+    return fl
+
+def cosine_stitch(alm1,map2,lstitch=5200,lcosine=80,mlmax=6000):
+    # Stitch a band-limited map with a real-space map
+    ls = np.arange(mlmax+2)
+    fl1 = cosine_taper(ls,lstitch,lcosine)
+    fl2 = np.sqrt(1.-fl1**2.)
+    alm1 = change_alm_lmax(alm1,mlmax)
+    with bench.show("shts"):
+        omap2 = map2 - cs.alm2map( cs.almxfl(cs.map2alm(map2,lmax=mlmax),1.-fl2),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype))
+        omap = cs.alm2map(hp.almxfl(alm1,fl1),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype)) + omap2
+    return omap
+
+def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-4,flmin = 700):
+    """
+    Stitch constant (homogenous) white-noise to a band-limited noise
+    sim realization.
+
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the output noise map to be generated.
+    wcs : `astropy.wcs.WCS`
+        WCS object describing the output noise map.
+    alm : `numpy.ndarray`
+        The alms of the band-limited noise sim.
+    lstitch : int
+        The multipole at which to begin tapering off the alm noise sim.
+    lcosine : int
+        The width of the cosine taper to apply to the alm noise sim at its tail end.
+    mlmax : int
+        The maximum multipole up to which to do SHTs; this can just be a bit larger than the band-limit of the alm noise sim.
+
+    Returns
+    -------
+    noise : `numpy.ndarray`
+        The stitched noise map.
+    """
+    from scipy.optimize import curve_fit as cfit
+    from enlib import bench
+    
+    with bench.show("fit"):
+        # Get noise power of input alm
+        w2 = wfactor(2,mask)
+        wcls = cs.alm2cl(alm)/w2
+        ls = np.arange(wcls.size)
+        # Fit to red+white noise
+        rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
+        popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
+        rms = popt[0]
+
+    with bench.show("white noise"):
+        # Generate white noise map
+        wmap = white_noise(shape,wcs,rms)
+        wmap[~mask] = 0
+
+    # Stitch noise
+    omap = cosine_stitch(alm1=alm,map2=wmap,lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
+    omap[~mask] = 0
+    return omap
+
 
 def fsky(mask,threshold=0.5):
     return area(mask,threshold)/4./np.pi
