@@ -758,3 +758,27 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
         plt.savefig(save_file, bbox_inches='tight',format='png')
         print(bcolors.OKGREEN+"Saved plot to", save_file+bcolors.ENDC)
     return fig,ax
+
+
+# class rpyplot(object):
+#     """
+#     This wrapper interface provides a way to quickly create fig and axs
+#     matplotlib objects for displaying data in a one or two panel plot
+#     where the second panel shows residuals. Boring stuff like titles, axes and
+#     labels are wrapped neatly.
+#     """
+
+#     def __init__(self,):
+#         pass
+
+
+#     def plot(self,x,y,xerr=None,yerr=None,label=None,rtag=None,scatter=False):
+#         pass
+
+#     def addres(self,tag1,tag2,rerr=None):
+#         pass
+
+#     def done(self,filename=None):
+        
+
+

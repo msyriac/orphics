@@ -178,20 +178,75 @@ def parse_Kij_file():
     return Kijs
 
 
-def compton_y_power(ells,h=0.67556,ombh2=0.022032,omch2=0.12038,As=2.215e-9,tau=0.0925,YHe=0.246,mfun='T10'):
+def compton_y_power(lmin=2, lmax=4000, Mmin_msun = 1.3e12,
+                    Mmax_msun = 1e16,
+                    Omega_M = 0.31,
+                    Omega_B = 0.049,
+                    Omega_L = 0.69,
+                    h = 0.68,
+                    sigma_8 = 0.81,
+                    n_s = 0.965,
+                    tau = 0.0543,
+                    z_min = 0.0113,
+                    z_max = 5.1433,
+                    mfun='T08'):
+    # copied from : https://github.com/simonsobs/websky_model/blob/a93bbf758432a936c0ec2b59775683b695d3d191/websky_model/websky.py#L55
+
+    # h/t Boris Bolliet for this code
+
     from classy_sz import Class
 
     common_settings = {
-        # LambdaCDM parameters
-        'h':h,
-        'omega_b':ombh2,
-        'omega_cdm':omch2,
-        'A_s':As,
-        'tau_reio':tau,
-        # Take fixed value for primordial Helium (instead of automatic BBN adjustment)
-        'YHe':YHe,
-        'mass function' : mfun, #T10 is tinker et al 2010 @ M200m
+        'mass function' : mfun, 
     }
+
+    cosmo = {
+        'omega_b': Omega_B*h**2.,
+        'omega_cdm': (Omega_M-Omega_B)*h**2.,
+        'h': h,
+        'tau_reio': tau,
+        'sigma8': sigma_8,
+        'n_s': n_s, 
+        'use_websky_m200m_to_m200c_conversion': 1
+    }
+
+    M = Class()
+    M.set(common_settings)
+    M.set(cosmo)
+    M.set({# class_sz parameters:
+        'output':'tSZ_1h,tSZ_2h',
+        'pressure profile': 'B12',  # check source/input.c for default parameter values of Battaglia et al profile (B12)
+        'concentration parameter': 'D08',  # B13: Bhattacharya et al 2013  
+        'ell_max' : lmax,
+        'ell_min' : lmin,
+        'dlogell': 0.1,
+        'z_min': z_min,
+        'z_max': z_max,
+        'M_min':Mmin_msun*h, # all masses in Msun/h
+        'M_max':Mmax_msun*h,
+        'units for tSZ spectrum': 'dimensionless',
+        'n_ell_pressure_profile' : 100,
+        'n_m_pressure_profile' : 100,
+        'n_z_pressure_profile' : 100,
+        'x_outSZ': 4.,
+        'truncate_wrt_rvir':0,
+        'hm_consistency':0,
+        'pressure_profile_epsrel':1e-3,
+        'pressure_profile_epsabs':1e-40,
+        'redshift_epsrel': 1e-4,
+        'redshift_epsabs': 1e-100,
+        'mass_epsrel':1e-4,
+        'mass_epsabs':1e-100,
+    })
+
+    M.compute()
+    cl_sz = M.cl_sz()
+    M.struct_cleanup()
+    M.empty()
+    ells = cl_sz['ell']
+    cl_sz['1h'] = cl_sz['1h'] * 1e-12 / ells / (ells+1.) * 2. * np.pi
+    cl_sz['2h'] = cl_sz['2h'] * 1e-12 / ells / (ells+1.) * 2. * np.pi
+    return cl_sz
 
 
 
