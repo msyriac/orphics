@@ -679,7 +679,7 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
             open(empty_file,'w').close()
             
 
-def preload_geometries(output_dir):
+def preload_geometries(output_dir,verbose_every_nsrcs=100):
     """
     Pre-load geometries from disk.
 
@@ -695,6 +695,9 @@ def preload_geometries(output_dir):
     output_dir: string
     Directory to load saved geometries from. 
 
+    verbose_every_nsrcs: int, optional
+    Show progress after this many sources are processed.
+
     Returns
     -------
 
@@ -705,6 +708,7 @@ def preload_geometries(output_dir):
 
 
     """
+    import h5py
 
     coords = np.loadtxt(f'{output_dir}/source_inpaint_coords.txt')
     tasks = np.loadtxt(f'{output_dir}/source_inpaint_task_indices.txt').astype(int)
@@ -719,6 +723,10 @@ def preload_geometries(output_dir):
             geometries[task]['shape'] = f['shape'][:]
             geometries[task]['m1'] = f['m1'][:]
             geometries[task]['m2'] = f['m2'][:]
+
+        if verbose_every_nsrcs:
+            if (i+1)%verbose_every_nsrcs==0: print(f"Done with {i+1} / {len(tasks)}...")
+
 
     return geometries
     
