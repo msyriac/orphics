@@ -2,7 +2,8 @@ from __future__ import print_function
 import numpy as np
 from pixell import enmap,utils
 from enlib import bench
-
+import os,sys
+from time import time
 
 """
 Utilities that manipulate pixel-pixel covariance
@@ -454,12 +455,6 @@ A good inpainting solution will have the following properties:
 4. uses a CMB + noise model to find the mean inpaint solution
 """
 
-def get_geometry(mask=None,lpower_total=None,lpower_cmb=None,
-                 beam_fn=None,ivar=None,
-                 geometry=None):
-    pass
-
-
 def cinv_inpaint(imap,
                  mask=None,lpower_total=None,lpower_cmb=None,
                  beam_fn=None,ivar=None,
@@ -583,7 +578,11 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
 
     rtot = hole_radius * (1 + context_fraction)
 
-    np.savetxt(f'{output_dir}/source_inpaint_attributes.txt',np.asarray([[ncomp,hole_radius,context_fraction],]),fmt='%d,%.15f,%.15f',header='ncomp,hole_radius,context_fraction')
+    if rank==0:
+        empty_file = f'{output_dir}/empty_catalog'
+        np.savetxt(f'{output_dir}/source_inpaint_attributes.txt',np.asarray([[ncomp,hole_radius,context_fraction],]),fmt='%d,%.15f,%.15f',header='ncomp,hole_radius,context_fraction')
+        if os.path.isfile(empty_file):
+            os.remove_file(empty_file)
 
     pixboxes = enmap.neighborhood_pixboxes(ivar.shape[-2:], ivar.wcs, coords, rtot)
 
@@ -672,19 +671,102 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
 
     ocoords = utils.allgatherv(ocoords,comm)
     oinds = utils.allgatherv(oinds,comm)
-    io.save_cols(f'{output_dir}/source_inpaint_coords.txt',ocoords.swapaxes(0,1),header='Dec,RA')
-    np.savetxt(f'{output_dir}/source_inpaint_task_indices.txt',oinds,fmt='%d')
+    if rank==0:
+        if len(oinds)>0:
+            io.save_cols(f'{output_dir}/source_inpaint_coords.txt',ocoords.swapaxes(0,1),header='Dec,RA')
+            np.savetxt(f'{output_dir}/source_inpaint_task_indices.txt',oinds,fmt='%d')
+        else:
+            open(empty_file,'w').close()
             
 
-def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,verbose_every_nsrcs=100):
+def preload_geometries(output_dir):
+    """
+    Pre-load geometries from disk.
+
+    The output dictionary will be used for pre-calculated geometries instead
+    of loading each source geometry file from disk in the inpaint_uncorrelated_from_saved_geometries
+    function. This can be much faster if
+    many maps (e.g. simulations) need to be inpainted with the same geometries.
+    However, the geometry dictionary may be very large in memory. 
+
+    Arguments
+    ---------
+
+    output_dir: string
+    Directory to load saved geometries from. 
+
+    Returns
+    -------
+
+    geometries: dict
+    This dictionary will contain pre-calculated geometries for all sources. 
+    It may be very large in memory. geometries[task_number] is a dictionary
+    with keys 'covsqrt', 'meanmul', 'shape', 'm1', 'm2'.
+
+
+    """
+
+    coords = np.loadtxt(f'{output_dir}/source_inpaint_coords.txt')
+    tasks = np.loadtxt(f'{output_dir}/source_inpaint_task_indices.txt').astype(int)
+    if len(coords)!=len(tasks): raise ValueError
+
+    geometries = {}
+    for i,task in enumerate(tasks):
+        geometries[task] = {}
+        with h5py.File(f'{output_dir}/source_inpaint_geometry_{task}.hdf','r') as f:
+            geometries[task]['covsqrt'] = f['covsqrt'][:]
+            geometries[task]['meanmul'] = f['meanmul'][:]
+            geometries[task]['shape'] = f['shape'][:]
+            geometries[task]['m1'] = f['m1'][:]
+            geometries[task]['m2'] = f['m2'][:]
+
+    return geometries
+    
+
+def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,verbose_every_nsrcs=100,geometries=None):
     """
     Inpaint an ndmap imap with pre-calculated quantities from the directory output_dir.
+
+    Arguments
+    ---------
+
+    imap: ndmap
+    (...,Ny,Nx) ndmap typically containing I,Q,U maps. (The shape/polarization will correspond to 
+    the saved geometries)
+
+    output_dir: string
+    Directory to load saved geometries from. 
+
+    inplace: bool, optional
+    Whether to inpaint the provided map (if True) or to inpaint a copy (if False).
+
+    verbose_every_nsrcs: int, optional
+    Show progress after this many sources are processed.
+
+    geometries: dict, optional
+    If provided, this dictionary will be used for pre-calculated geometries instead
+    of loading each source geometry file from disk. This can be much faster if
+    many maps (e.g. simulations) need to be inpainted with the same geometries.
+    However, the geometry dictionary may be very large in memory. This object
+    can be pre-loaded using the preload_geometries function.
+
+    Returns
+    -------
+
+    imap: ndmap
+    (...,Ny,Nx) inpainted ndmap typically containing I,Q,U maps. (The shape/polarization will correspond to 
+    the saved geometries)
+
 
     """
     import h5py
     from . import maps
 
     if not(inplace): imap = imap.copy()
+    empty_file = f'{output_dir}/empty_catalog'
+    if os.path.isfile(empty_file):
+        print("WARNING: Empty catalog detected. Skipping and returning original map.")
+        return imap
     
     coords = np.loadtxt(f'{output_dir}/source_inpaint_coords.txt')
     tasks = np.loadtxt(f'{output_dir}/source_inpaint_task_indices.txt').astype(int)
@@ -694,7 +776,7 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
     ncomp,hole_radius,context_fraction = np.loadtxt(f'{output_dir}/source_inpaint_attributes.txt',unpack=True,delimiter=',')
     rtot = hole_radius * (1 + context_fraction)
     pixboxes = enmap.neighborhood_pixboxes(imap.shape[-2:], imap.wcs, coords, rtot)
-    
+
     for i,task in enumerate(tasks):
         pixbox = pixboxes[i]
         ithumb = imap.extract_pixbox(pixbox)
@@ -702,14 +784,22 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
 
         oshape = ithumb.shape
 
-        with h5py.File(f'{output_dir}/source_inpaint_geometry_{task}.hdf','r') as f:
-            cov_root = f['covsqrt'][:]
-            mean_mul = f['meanmul'][:]
-            shape = f['shape'][:]
-            m1 = f['m1'][:]
-            m2 = f['m2'][:]
+        if geometries is None:
+            with h5py.File(f'{output_dir}/source_inpaint_geometry_{task}.hdf','r') as f:
+                cov_root = f['covsqrt'][:]
+                mean_mul = f['meanmul'][:]
+                shape = f['shape'][:]
+                m1 = f['m1'][:]
+                m2 = f['m2'][:]
+        else:
+            cov_root = geometries[task]['covsqrt']
+            mean_mul = geometries[task]['meanmul']
+            shape = geometries[task]['shape']
+            m1 = geometries[task]['m1']
+            m2 = geometries[task]['m2']
 
         if not(Ny==shape[0]) or not(Nx==shape[1]): 
+            print(f'{output_dir}/source_inpaint_geometry_{task}.hdf')
             print(shape)
             print(Ny,Nx)
             print(task, i, coords[i]/utils.degree)
