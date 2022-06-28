@@ -178,7 +178,7 @@ def parse_Kij_file():
     return Kijs
 
 
-def compton_y_power(lmin=2, lmax=4000, Mmin_msun = 1.3e12,
+def compton_y_cib_powers(freqs_ghz,flux_limits_mJy,lmin=2, lmax=4000, Mmin_msun = 1.e10,
                     Mmax_msun = 1e16,
                     Omega_M = 0.31,
                     Omega_B = 0.049,
@@ -190,8 +190,12 @@ def compton_y_power(lmin=2, lmax=4000, Mmin_msun = 1.3e12,
                     z_min = 0.0113,
                     z_max = 5.1433,
                     mfun='T08'):
-    # copied from : https://github.com/simonsobs/websky_model/blob/a93bbf758432a936c0ec2b59775683b695d3d191/websky_model/websky.py#L55
-
+    """
+    This returns the following:
+    yy (dimensionless)
+    CIB-CIB (MJy/sr)^2
+    y-CIB (MJy/sr)
+    """
     # h/t Boris Bolliet for this code
 
     from classy_sz import Class
@@ -214,7 +218,7 @@ def compton_y_power(lmin=2, lmax=4000, Mmin_msun = 1.3e12,
     M.set(common_settings)
     M.set(cosmo)
     M.set({# class_sz parameters:
-        'output':'tSZ_1h,tSZ_2h',
+        'output':'tSZ_1h,tSZ_2h,cib_cib_1h,cib_cib_2h,tSZ_cib_1h,tSZ_cib_2h',
         'pressure profile': 'B12',  # check source/input.c for default parameter values of Battaglia et al profile (B12)
         'concentration parameter': 'D08',  # B13: Bhattacharya et al 2013  
         'ell_max' : lmax,
@@ -239,13 +243,78 @@ def compton_y_power(lmin=2, lmax=4000, Mmin_msun = 1.3e12,
         'mass_epsabs':1e-100,
     })
 
+
+    # ~ model 2 of https://arxiv.org/pdf/1208.5049.pdf (Table 5)
+    # more exactly:
+    # shang_zplat  = 2.0
+    # shang_Td     = 20.7
+    # shang_beta   = 1.6
+    # shang_eta    = 1.28
+    # shang_alpha  = 0.2
+    # shang_Mpeak  = 10.**12.3
+    # shang_sigmaM = 0.3
+
+    # centrals is Ncen = 1 for all halos with mass bigger than websky's m_min
+    # subhalo mass function is eq. 3.9 of the websky paper 
+    # it is F. Jiang and F. C. van den Bosch, Generating merger trees for dark matter haloes: a comparison of
+    # methods, MNRAS 440 (2014) 193 [1311.5225].
+
+    L0_websky = 4.461102571695613e-07
+    websky_cib_params = {
+
+        'Redshift evolution of dust temperature' :  0.2,
+        'Dust temperature today in Kelvins' : 20.7,
+        'Emissivity index of sed' : 1.6,
+        'Power law index of SED at high frequency' : 1.7, # not given in WebSky paper, actually not relevant since we dont use high freqs in websky.
+        'Redshift evolution of L − M normalisation' : 1.28,
+        'Most efficient halo mass in Msun' : 10.**12.3,
+        'Normalisation of L − M relation in [Jy MPc2/Msun]' : L0_websky,  # not given in WebSky paper
+        'Size of of halo masses sourcing CIB emission' : 0.3,
+        'z_plateau_cib' : 2.,
+        
+        # M_min_HOD is the threshold above which nc = 1:
+        # 'M_min_HOD' : 10.**10.1, # not used here
+        'use_nc_1_for_all_halos_cib_HOD': 1,
+        
+        'sub_halo_mass_function' : 'JvdB14',
+        'M_min_subhalo_in_Msun' : 1e11,
+        'use_redshift_dependent_M_min': 1,
+        # 'full_path_to_redshift_dependent_M_min':'/home/r/rbond/msyriac/repos/class_sz/sz_auxiliary_files/websky_halo_mass_completion_z_Mmin_in_Msun_over_h.txt',
+        # 'full_path_to_redshift_dependent_M_min':'/home/r/rbond/msyriac/repos/class_sz/sz_auxiliary_files/websky_halo_mass_completion_z_Mmin_in_Msun_over_hwrong.txt',
+        #'M_min' : 1e10*websky_cosmo['h'], # not used
+        # 'M_max' : 1e16*websky_cosmo['h'],
+        # 'z_min' : 5e-3,
+        # 'z_max' : 4.6,
+        'cib_frequency_list_num' : len(freqs_ghz),
+        'cib_frequency_list_in_GHz' : ','.join([str(x) for x in freqs_ghz]),  
+        #for the monopole computation:
+        # 'freq_min': 2e1,
+        # 'freq_max': 4e3,
+        # 'dlogfreq' : 0.05,
+        'cib_Snu_cutoff_list [mJy]':','.join([str(x) for x in flux_limits_mJy]),
+        'has_cib_flux_cut': 1
+    }
+
+    M.set(websky_cib_params)
     M.compute()
     cl_sz = M.cl_sz()
+    cl_cib_cib = M.cl_cib_cib()
+    cl_tsz_cib = M.cl_tSZ_cib()
+
+    print(cl_sz.keys())
+    print(cl_cib_cib.keys())
+    print(cl_tsz_cib.keys())
+
+    # print(cl_sz)
+    # print(cl_cib_cib)
+    # print(cl_tsz_cib)
+
     M.struct_cleanup()
     M.empty()
+    cl_sz['ell'] = np.asarray(cl_sz['ell'])
     ells = cl_sz['ell']
-    cl_sz['1h'] = cl_sz['1h'] * 1e-12 / ells / (ells+1.) * 2. * np.pi
-    cl_sz['2h'] = cl_sz['2h'] * 1e-12 / ells / (ells+1.) * 2. * np.pi
+    cl_sz['1h'] = np.asarray(cl_sz['1h']) * 1e-12 / ells / (ells+1.) * 2. * np.pi
+    cl_sz['2h'] = np.asarray(cl_sz['2h']) * 1e-12 / ells / (ells+1.) * 2. * np.pi
     return cl_sz
 
 
