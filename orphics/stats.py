@@ -493,15 +493,6 @@ def sm_update(Ainv, u, v=None):
     ans = Ainv - (np.dot(Ainv, np.dot(np.dot(u,vT), Ainv)) / det_update)
     return ans, det_update
 
-def cov2corr_legacy(cov):
-    # slow and stupid! see cov2corr
-    d = np.diag(cov)
-    stddev = np.sqrt(d)
-    corr = cov.copy()*0.
-    for i in range(cov.shape[0]):
-        for j in range(cov.shape[0]):
-            corr[i,j] = cov[i,j]/stddev[i]/stddev[j]
-    return corr
 
 def cov2corr(mat):
     diags = np.diagonal(mat).T
@@ -773,6 +764,7 @@ class bin2D(object):
             assert not(get_count)
             return self.centers,res,std
         return self.centers,res
+
 
 
 class bin1D:

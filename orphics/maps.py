@@ -1522,26 +1522,37 @@ def cutout_gnomonic(map,rot=None,coord=None,
 
 ### STACKING
 
+def flux(thumbs,aperture_radius,annulus_width=None,modrmap=None,pixsizemap=None):
+    """
+    Flux from aperture photometry.
 
-def aperture_photometry(instamp,aperture_radius,annulus_width,modrmap=None):
-    # inputs in radians, outputs in arcmin^2
-    stamp = instamp.copy()
-    if modrmap is None: modrmap = stamp.modrmap()
-    mean = stamp[np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean()
-    stamp -= mean
-    pix_scale=resolution(stamp.shape,stamp.wcs)*(180*60)/np.pi
-    flux = stamp[modrmap<aperture_radius].sum()*pix_scale**2
-    return flux #* enmap.area(stamp.shape,stamp.wcs )/ np.prod(stamp.shape[-2:])**2.  *((180*60)/np.pi)**2.
+    Parameters
+    ----------
+    thumb : ndmap
+        An (...,Ny,Nx) ndmap (i.e. a pixell enmap) containing the thumbnails.
+    aperture_radius : float
+        Aperture inner radius in radians
+    annulus_width : float
+        Annulus width for mean subtraction in radians. 
+        Defaults to sqrt(2)-1 times the aperture inner radius.
+    modrmap : ndmap, optional
+        An (Ny,Nx) ndmap containing distances of each pixel from the center in radians.
+    modrmap : ndmap, optional
+        An (Ny,Nx) ndmap containing pixel areas in steradians.
 
-def aperture_photometry2(instamp,aperture_radius,modrmap=None):
-    # inputs in radians, outputs in arcmin^2
-    stamp = instamp.copy()
-    if modrmap is None: modrmap = stamp.modrmap()
-    annulus_out = np.sqrt(2.) * aperture_radius
-    flux = stamp[modrmap<aperture_radius].mean() - stamp[np.logical_and(modrmap>aperture_radius,modrmap<(annulus_out))].mean()
-    return flux 
+    Returns
+    -------
+    flux : ndarray
+        (...,) array of aperture photometry fluxes.
 
-
+    """
+    if modrmap is None: modrmap = thumbs.modrmap()
+    if annulus_width is None: annulus_width = (np.sqrt(2.)-1.) * aperture_radius
+    # Get the mean background level from the annulus
+    mean = thumbs[...,np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean()
+    if pixsizemap is None: pixsizemap = thumbs.pixsizemap()
+    # Subtract the mean, multiply by pixel areas and sum
+    return (((thumbs-mean)*pixsizemap)[...,modrmap<=aperture_radius]).sum(axis=-1)
 
 
 
