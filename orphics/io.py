@@ -270,14 +270,15 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,noshow=False,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,noshow=False,extent=None,dpi=None,skip_plot=False,**kwargs):
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
         if cmap is None: cmap = "planck"
         high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,cmap=cmap,**kwargs)
     else:
-        extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
+        if extent is None:
+            extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
         pl = Plotter(ftsize=ftsize,xlabel=xlabel,ylabel=ylabel,figsize=figsize,projection=projection)
         pl.plot2d(array,extent=extent,cm=cmap,label=label,**kwargs)
 
@@ -288,7 +289,10 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
             ay = np.linspace(-arc_width/2., arc_width/2., ny)
             x,y = np.meshgrid(ax, ay)
             q = pl._ax.quiver(x,y,quiver[1],quiver[0])
-        pl.done(filename,verbose=verbose,noshow=noshow)
+        if not(skip_plot):
+            pl.done(filename,verbose=verbose,noshow=noshow,dpi=dpi)
+        else:
+            return pl
 
 
 

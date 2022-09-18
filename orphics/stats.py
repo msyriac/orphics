@@ -131,7 +131,7 @@ def fit_cltt_power(ells,cls,cltt_func,w0,sigma2,ell0=0,alpha=1,fix_knee=False):
     return lambda x : cltt_func(x) + sum([ coeff*f(x)  for coeff,f in zip(X,funcs)])
         
 
-def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True,Cinv=None,Cy=None):
+def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=False,Cinv=None,Cy=None):
     """
     Given measurements with known uncertainties, this function fits those to a linear model:
     y = a0*funcs[0](x) + a1*funcs[1](x) + ...
