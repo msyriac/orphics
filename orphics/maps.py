@@ -9,7 +9,6 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
-from enlib import bench
 
 def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     """
@@ -52,9 +51,8 @@ def cosine_stitch(alm1,map2,lstitch=5200,lcosine=80,mlmax=6000):
     fl1 = cosine_taper(ls,lstitch,lcosine)
     fl2 = np.sqrt(1.-fl1**2.)
     alm1 = change_alm_lmax(alm1,mlmax)
-    with bench.show("shts"):
-        omap2 = map2 - cs.alm2map( cs.almxfl(cs.map2alm(map2,lmax=mlmax),1.-fl2),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype))
-        omap = cs.alm2map(hp.almxfl(alm1,fl1),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype)) + omap2
+    omap2 = map2 - cs.alm2map( cs.almxfl(cs.map2alm(map2,lmax=mlmax),1.-fl2),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype))
+    omap = cs.alm2map(hp.almxfl(alm1,fl1),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype)) + omap2
     return omap
 
 def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-4,flmin = 700):
@@ -83,22 +81,19 @@ def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-
         The stitched noise map.
     """
     from scipy.optimize import curve_fit as cfit
-    from enlib import bench
     
-    with bench.show("fit"):
-        # Get noise power of input alm
-        w2 = wfactor(2,mask)
-        wcls = cs.alm2cl(alm)/w2
-        ls = np.arange(wcls.size)
-        # Fit to red+white noise
-        rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
-        popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
-        rms = popt[0]
+    # Get noise power of input alm
+    w2 = wfactor(2,mask)
+    wcls = cs.alm2cl(alm)/w2
+    ls = np.arange(wcls.size)
+    # Fit to red+white noise
+    rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
+    popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
+    rms = popt[0]
 
-    with bench.show("white noise"):
-        # Generate white noise map
-        wmap = white_noise(shape,wcs,rms)
-        wmap[~mask] = 0
+    # Generate white noise map
+    wmap = white_noise(shape,wcs,rms)
+    wmap[~mask] = 0
 
     # Stitch noise
     omap = cosine_stitch(alm1=alm,map2=wmap,lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
