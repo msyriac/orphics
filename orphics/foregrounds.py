@@ -199,6 +199,7 @@ def compton_y_cib_powers(freqs_ghz,flux_limits_mJy,lmin=2, lmax=4000, Mmin_msun 
     # h/t Boris Bolliet for this code
 
     from classy_sz import Class
+    from tilec import fg
 
     common_settings = {
         'mass function' : mfun, 
@@ -311,10 +312,23 @@ def compton_y_cib_powers(freqs_ghz,flux_limits_mJy,lmin=2, lmax=4000, Mmin_msun 
 
     M.struct_cleanup()
     M.empty()
-    cl_sz['ell'] = np.asarray(cl_sz['ell'])
+
     ells = cl_sz['ell']
-    cl_sz['1h'] = np.asarray(cl_sz['1h']) * 1e-12 / ells / (ells+1.) * 2. * np.pi
-    cl_sz['2h'] = np.asarray(cl_sz['2h']) * 1e-12 / ells / (ells+1.) * 2. * np.pi
+    ls = np.arange(lmin,max(ells))
+    print(ls.shape)
+    # cls = 
+    finterp = lambda y: interp1d(ells,y,bounds_error=True)(ls)
+    cl_sz['ell'] = np.asarray(cl_sz['ell'])
+    cl_sz['1h'] = finterp(np.asarray(cl_sz['1h'])) * 1e-12 / ls / (ls+1.) * 2. * np.pi
+    cl_sz['2h'] = finterp(np.asarray(cl_sz['2h'])) * 1e-12 / ls / (ls+1.) * 2. * np.pi
+   
+
+ 
+    cl_sz = cl_sz['1h']+cl_sz['2h']
+    f = fg.get_mix(freqs_ghz,'tSZ')
+    print(f**2)
+    print(cl_cib_cib['90x90'].keys())
+    
     return cl_sz
 
 
