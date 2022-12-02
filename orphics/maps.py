@@ -133,8 +133,31 @@ def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=No
     if len(shape)==2: shape = (3,)+shape
     return cs.rand_map(shape,wcs,ps,lmax=lmax,dtype=dtype,seed=seed)
 
-def mask_srcs(shape,wcs,srcs_deg,width_arcmin):
-    r = np.deg2rad(width_arcmin/60.)
+def mask_srcs(shape,wcs,srcs_deg,radius_arcmin):
+    """
+    Create a mask of circular holes in rectangular pixelization given 
+    a set of coordinates and a hole radius.
+
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the output mask to be generated.
+    wcs : `astropy.wcs.WCS`
+        WCS object describing the output mask.
+    srcs_deg : float `numpy.ndarray` of shape (2, Nobj) 
+        An array of Nobj coordinates in (Dec,RA) order and in degrees.
+    radius_arcmin : float
+        The radius of the circular hole to mask with zeros at each
+        object location.
+
+    Returns
+    -------
+    mask : `pixell.enmap.ndmap`
+        A boolean pixell enmap with geometry (shape,wcs) and False
+        inside the circular holes and True outside.
+
+    """
+    r = np.deg2rad(radius_arcmin/60.)
     return enmap.distance_from(shape,wcs,np.deg2rad(srcs_deg), rmax=r) >= r
 
 def grow_mask(mask,width_deg):
