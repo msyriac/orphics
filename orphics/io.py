@@ -786,10 +786,10 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
         
 
 class WhiskerPlot(object):
-    def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',blind=True):
+    def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',blind=True,xwidth=4):
         N = len(errs)
         if colors is None: colors = ['k']*N
-        figsize=(4,0.8*N/2.)
+        figsize=(xwidth,0.8*N/2.)
         ydec=0.01
         f= plt.figure(figsize=figsize)
         ax=f.add_subplot(111)
@@ -815,6 +815,6 @@ class WhiskerPlot(object):
         self.fig = f
         self.ax = ax
 
-    def savefig(self,ofname,dpi=200):
+    def savefig(self,ofname,dpi=200,**kwargs):
         plt.tight_layout()
-        plt.savefig(ofname,dpi=dpi)
+        plt.savefig(ofname,dpi=dpi,**kwargs)
