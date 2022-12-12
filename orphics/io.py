@@ -250,7 +250,7 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
     return ret
         
 
-def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,xsize=1200,grat_deg=None,**kwargs):
+def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,xsize=1200,grat_deg=None,dpi=None,grat_color='gray',grat_alpha=0.5,**kwargs):
     '''
     mollview plot for healpix wrapper
     '''
@@ -264,9 +264,9 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         cmax = lim
     retimg = hp.mollview(hp_map,min=cmin,max=cmax,coord=coord,return_projected_map=return_projected_map,xsize=xsize,**kwargs)
     if grat_deg is not None:
-        hp.graticule(dpar=grat_deg,dmer=grat_deg,coord=coord)
+        hp.graticule(dpar=grat_deg,dmer=grat_deg,coord=coord,color=grat_color,alpha=grat_alpha)
     if filename is not None:
-        plt.savefig(filename)
+        plt.savefig(filename,dpi=dpi)
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 

@@ -509,7 +509,7 @@ def get_regions(ncomp,modrmap,hole_radius):
 def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
                                          theory_fn=None,beam_fn=None,include_signal=True,
                                          pol=True,context_fraction=2./3.,
-                                         deproject=True,verbose_every_nsrcs=1,comm=None):
+                                         deproject=True,verbose_every_nsrcs=1,comm=None,skip_zero_ivar=False):
     """
     This MPI-parallelized function will pre-calculate quantities required to inpaint a map with circular holes.
     The results will be saved to disk in output_dir. The MPI parallelization is done over the number of sources.
@@ -586,7 +586,7 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
 
     pixboxes = enmap.neighborhood_pixboxes(ivar.shape[-2:], ivar.wcs, coords, rtot)
 
-    def skip_warning(task): print(f"Skipped source {task}.")
+    def skip_warning(task,extra=""): print(f"Skipped source {task}{extra}.")
 
     ocoords = []
     oinds = []
@@ -596,15 +596,20 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
         pixbox = pixboxes[task]
         ithumb = ivar.extract_pixbox(pixbox)
         if ithumb is None:
-            skip_warning(task)
+            skip_warning(task," because ithumb is None")
             continue
         if not(ithumb.ndim==2): raise ValueError
         if np.any(np.asarray(ithumb.shape)<=1):
-            skip_warning(task)
+            skip_warning(task," because the ithumb shape is weird")
             continue
         if np.all(ithumb<=0):
-            skip_warning(task)
+            skip_warning(task," because all the ithumb values are non-positive")
             continue
+
+        if skip_zero_ivar:
+            if np.any(ithumb<=0):
+                skip_warning(task," because some ithumb values are non-positive and skip_zero_ivar is True")
+                continue
 
         Ny,Nx = ithumb.shape
 
@@ -731,7 +736,7 @@ def preload_geometries(output_dir,verbose_every_nsrcs=100):
     return geometries
     
 
-def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,verbose_every_nsrcs=100,geometries=None):
+def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,verbose_every_nsrcs=100,geometries=None,do_random=True):
     """
     Inpaint an ndmap imap with pre-calculated quantities from the directory output_dir.
 
@@ -821,7 +826,7 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
         mean = np.dot(mean_mul,cstamp[m2])
         # Get a random realization (this could be moved outside the loop)
         r = np.random.normal(0.,1.,size=(m1.size)) # FIXME: seed?
-        rand = np.dot(cov_root,r)
+        rand = np.dot(cov_root,r) if do_random else 0.
 
         
         # Total
