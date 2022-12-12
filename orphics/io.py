@@ -785,4 +785,36 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
 #     def done(self,filename=None):
         
 
+class WhiskerPlot(object):
+    def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',blind=True):
+        N = len(errs)
+        if colors is None: colors = ['k']*N
+        figsize=(4,0.8*N/2.)
+        ydec=0.01
+        f= plt.figure(figsize=figsize)
+        ax=f.add_subplot(111)
+        ypos_start = 1
+        ypos = ypos_start
+        for mean, err,label,color in zip(means,errs,labels,colors):
+            ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
+            ax.text( 1.01, ypos+(0.2*ydec), label, fontsize=13,color=color)
+            ypos -= ydec
 
+        ax.tick_params(axis='x',which='minor',top='on',direction='in')
+        ax.tick_params(axis='y',which='minor',right=False,left=False,direction='in',labelbottom=False,labelleft=False)
+        ax.tick_params(axis='x',which='major',top='on',direction='in')
+        ax.tick_params(axis='y',which='major',right=False,left=False,direction='in',labelbottom=False,labelleft=False)
+        ax.minorticks_on()
+        ax.set_xlim(xmin,xmax)
+        ax.set_ylim(ypos_start+ydec,ypos-ydec*0.05)
+        ax.set_xlabel(xlabel, fontsize=18)
+
+        # Turn off tick labels
+        ax.set_yticklabels([])
+        if blind: ax.set_xticklabels([])
+        self.fig = f
+        self.ax = ax
+
+    def savefig(self,ofname,dpi=200):
+        plt.tight_layout()
+        plt.savefig(ofname,dpi=dpi)
