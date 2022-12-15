@@ -250,7 +250,7 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
     return ret
         
 
-def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,xsize=1200,grat_deg=None,**kwargs):
+def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_projected_map=False,xsize=1200,grat_deg=None,dpi=None,grat_color='gray',grat_alpha=0.5,**kwargs):
     '''
     mollview plot for healpix wrapper
     '''
@@ -264,20 +264,21 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         cmax = lim
     retimg = hp.mollview(hp_map,min=cmin,max=cmax,coord=coord,return_projected_map=return_projected_map,xsize=xsize,**kwargs)
     if grat_deg is not None:
-        hp.graticule(dpar=grat_deg,dmer=grat_deg,coord=coord)
+        hp.graticule(dpar=grat_deg,dmer=grat_deg,coord=coord,color=grat_color,alpha=grat_alpha)
     if filename is not None:
-        plt.savefig(filename)
+        plt.savefig(filename,dpi=dpi)
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,noshow=False,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,noshow=False,extent=None,dpi=None,skip_plot=False,**kwargs):
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
         if cmap is None: cmap = "planck"
         high_res_plot_img(array,filename,verbose=verbose,down=down,crange=crange,cmap=cmap,**kwargs)
     else:
-        extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
+        if extent is None:
+            extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
         pl = Plotter(ftsize=ftsize,xlabel=xlabel,ylabel=ylabel,figsize=figsize,projection=projection)
         pl.plot2d(array,extent=extent,cm=cmap,label=label,**kwargs)
 
@@ -288,7 +289,10 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
             ay = np.linspace(-arc_width/2., arc_width/2., ny)
             x,y = np.meshgrid(ax, ay)
             q = pl._ax.quiver(x,y,quiver[1],quiver[0])
-        pl.done(filename,verbose=verbose,noshow=noshow)
+        if not(skip_plot):
+            pl.done(filename,verbose=verbose,noshow=noshow,dpi=dpi)
+        else:
+            return pl
 
 
 
@@ -783,4 +787,36 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
 #     def done(self,filename=None):
         
 
+class WhiskerPlot(object):
+    def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',blind=True,xwidth=4):
+        N = len(errs)
+        if colors is None: colors = ['k']*N
+        figsize=(xwidth,0.8*N/2.)
+        ydec=0.01
+        f= plt.figure(figsize=figsize)
+        ax=f.add_subplot(111)
+        ypos_start = 1
+        ypos = ypos_start
+        for mean, err,label,color in zip(means,errs,labels,colors):
+            ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
+            ax.text( 1.01, ypos+(0.2*ydec), label, fontsize=13,color=color)
+            ypos -= ydec
 
+        ax.tick_params(axis='x',which='minor',top='on',direction='in')
+        ax.tick_params(axis='y',which='minor',right=False,left=False,direction='in',labelbottom=False,labelleft=False)
+        ax.tick_params(axis='x',which='major',top='on',direction='in')
+        ax.tick_params(axis='y',which='major',right=False,left=False,direction='in',labelbottom=False,labelleft=False)
+        ax.minorticks_on()
+        ax.set_xlim(xmin,xmax)
+        ax.set_ylim(ypos_start+ydec,ypos-ydec*0.05)
+        ax.set_xlabel(xlabel, fontsize=18)
+
+        # Turn off tick labels
+        ax.set_yticklabels([])
+        if blind: ax.set_xticklabels([])
+        self.fig = f
+        self.ax = ax
+
+    def savefig(self,ofname,dpi=200,**kwargs):
+        plt.tight_layout()
+        plt.savefig(ofname,dpi=dpi,**kwargs)

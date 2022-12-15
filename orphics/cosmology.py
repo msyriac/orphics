@@ -1655,3 +1655,25 @@ def get_lss_cls(windows,lmax,nonlinear=True,params=None):
 
 def phi2kappa(ls):
     return ls*(ls+1.)/2.
+
+# copied from szar.foregrounds
+def dl_filler(ells,ls,dls,fill_type="extrapolate",fill_positive=False,silence=False):
+    ells = np.asarray(ells)
+    if not(silence):
+        if ells.max()>ls.max() and fill_type=="extrapolate":
+            warnings.warn("Warning: Requested ells go higher than available." + \
+                  " Extrapolating above highest ell.")
+        elif ells.max()>ls.max() and fill_type=="constant_dl":
+            warnings.warn("Warning: Requested ells go higher than available." + \
+                  " Filling with constant ell^2C_ell above highest ell.")
+    if fill_type=="constant_dl":
+        fill_value = (0,dls[-1])
+    elif fill_type=="extrapolate":
+        fill_value = "extrapolate"
+    elif fill_type=="zeros":
+        fill_value = 0
+    else:
+        raise ValueError
+    odls = interp1d(ls,dls,bounds_error=False,fill_value=fill_value)(ells)
+    if fill_positive: odls[odls<0] = 0
+    return odls

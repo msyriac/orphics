@@ -9,13 +9,16 @@ import itertools
 from pyfisher import FisherMatrix
 
 
+def get_pte(chisquare_data,chisquares_sims):
+    return chisquares_sims[chisquare_data<chisquares_sims].size / chisquares_sims.size
+
 # Get PTE from samples drawn from a covariance matrix
 def sim_pte(data,covmat,nsamples):
     cinv = np.linalg.inv(covmat)
     chisquare = np.dot(data,np.dot(cinv,data))
     samples = np.random.multivariate_normal(data*0,covmat,nsamples)
     chisquares = np.einsum('ik,ik->i', np.einsum('ij,jk->ik',samples,cinv),samples)
-    pte = chisquares[chisquare<chisquares].size / chisquares.size
+    pte = get_pte(chisquare,chisquares)
     return pte
 
 class InverseTransformSampling(object):
@@ -131,7 +134,7 @@ def fit_cltt_power(ells,cls,cltt_func,w0,sigma2,ell0=0,alpha=1,fix_knee=False):
     return lambda x : cltt_func(x) + sum([ coeff*f(x)  for coeff,f in zip(X,funcs)])
         
 
-def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True,Cinv=None,Cy=None):
+def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=False,Cinv=None,Cy=None):
     """
     Given measurements with known uncertainties, this function fits those to a linear model:
     y = a0*funcs[0](x) + a1*funcs[1](x) + ...
@@ -151,10 +154,21 @@ def fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=True,Cinv=None,Cy=None):
     YAX = y - np.dot(A,X)
     CYAX = s(C,YAX) if Cinv is None else np.dot(Cinv,YAX)
     chisquare = np.dot(YAX.T,CYAX)
-    dofs = len(x)-len(funcs)-1 if dofs is None else dofs
+    dofs = len(x)-len(funcs) if dofs is None else dofs
     pte = 1 - chi2.cdf(chisquare, dofs)    
     return X,cov,chisquare/dofs,pte
-    
+
+def fit_linear_model_pte_from_sims(x,y,ycov,funcs,y_fiducial,nsims=100000,deproject=False,Cinv=None,Cy=None):
+    X_data,cov_data,chisquare_data,_ = fit_linear_model(x,y,ycov,funcs,dofs=None,deproject=False)
+    samples = y_fiducial + np.random.multivariate_normal(y_fiducial*0,ycov,nsims)
+    chisquares_sims = []
+    for i in range(nsims):
+        _,_,chisq,_ = fit_linear_model(x,samples[i],ycov,funcs,dofs=None,deproject=deproject,Cinv=Cinv,Cy=Cy)
+        chisquares_sims.append(chisq)
+    chisquares_sims = np.asarray(chisquares_sims)
+    pte = get_pte(chisquare_data,chisquares_sims)
+    return X_data,cov_data,chisquare_data,pte 
+
 def fit_gauss(x,y,mu_guess=None,sigma_guess=None):
     ynorm = np.trapz(y,x)
     ynormalized = y/ynorm

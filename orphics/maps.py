@@ -9,7 +9,15 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
-from enlib import bench
+
+
+def generate_correlated_alm(input_alm_f1,Clf1f1,Clf2f2,Clf1f2,seed=None):
+    correlated = hp.almxfl(input_alm_f1,Clf1f2/Clf1f1)
+    ps_noise = Clf2f2 - np.nan_to_num(Clf1f2**2/Clf1f1)
+    assert np.all(ps_noise>=0)
+    if seed is not None: np.random.seed(seed)
+    noise = hp.synalm(ps_noise,lmax=hp.Alm.getlmax(input_alm_f1.size))
+    return correlated + noise
 
 def wfactor(n,mask,sht=True,pmap=None,equal_area=False):
     """
@@ -52,9 +60,8 @@ def cosine_stitch(alm1,map2,lstitch=5200,lcosine=80,mlmax=6000):
     fl1 = cosine_taper(ls,lstitch,lcosine)
     fl2 = np.sqrt(1.-fl1**2.)
     alm1 = change_alm_lmax(alm1,mlmax)
-    with bench.show("shts"):
-        omap2 = map2 - cs.alm2map( cs.almxfl(cs.map2alm(map2,lmax=mlmax),1.-fl2),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype))
-        omap = cs.alm2map(hp.almxfl(alm1,fl1),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype)) + omap2
+    omap2 = map2 - cs.alm2map( cs.almxfl(cs.map2alm(map2,lmax=mlmax),1.-fl2),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype))
+    omap = cs.alm2map(hp.almxfl(alm1,fl1),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype)) + omap2
     return omap
 
 def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-4,flmin = 700):
@@ -83,22 +90,19 @@ def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-
         The stitched noise map.
     """
     from scipy.optimize import curve_fit as cfit
-    from enlib import bench
     
-    with bench.show("fit"):
-        # Get noise power of input alm
-        w2 = wfactor(2,mask)
-        wcls = cs.alm2cl(alm)/w2
-        ls = np.arange(wcls.size)
-        # Fit to red+white noise
-        rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
-        popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
-        rms = popt[0]
+    # Get noise power of input alm
+    w2 = wfactor(2,mask)
+    wcls = cs.alm2cl(alm)/w2
+    ls = np.arange(wcls.size)
+    # Fit to red+white noise
+    rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
+    popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
+    rms = popt[0]
 
-    with bench.show("white noise"):
-        # Generate white noise map
-        wmap = white_noise(shape,wcs,rms)
-        wmap[~mask] = 0
+    # Generate white noise map
+    wmap = white_noise(shape,wcs,rms)
+    wmap[~mask] = 0
 
     # Stitch noise
     omap = cosine_stitch(alm1=alm,map2=wmap,lstitch=lstitch,lcosine=lcosine,mlmax=mlmax)
@@ -129,8 +133,31 @@ def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=No
     if len(shape)==2: shape = (3,)+shape
     return cs.rand_map(shape,wcs,ps,lmax=lmax,dtype=dtype,seed=seed)
 
-def mask_srcs(shape,wcs,srcs_deg,width_arcmin):
-    r = np.deg2rad(width_arcmin/60.)
+def mask_srcs(shape,wcs,srcs_deg,radius_arcmin):
+    """
+    Create a mask of circular holes in rectangular pixelization given 
+    a set of coordinates and a hole radius.
+
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the output mask to be generated.
+    wcs : `astropy.wcs.WCS`
+        WCS object describing the output mask.
+    srcs_deg : float `numpy.ndarray` of shape (2, Nobj) 
+        An array of Nobj coordinates in (Dec,RA) order and in degrees.
+    radius_arcmin : float
+        The radius of the circular hole to mask with zeros at each
+        object location.
+
+    Returns
+    -------
+    mask : `pixell.enmap.ndmap`
+        A boolean pixell enmap with geometry (shape,wcs) and False
+        inside the circular holes and True outside.
+
+    """
+    r = np.deg2rad(radius_arcmin/60.)
     return enmap.distance_from(shape,wcs,np.deg2rad(srcs_deg), rmax=r) >= r
 
 def grow_mask(mask,width_deg):
