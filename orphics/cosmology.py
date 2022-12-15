@@ -41,27 +41,31 @@ defaultConstants = {'TCMB': 2.7255
 
 }
 
-# Planck TT,TE,EE+lowP 2015 cosmology but with updated tau and minimal neutrino mass
-defaultCosmology = {'omch2': 0.1198
-                    ,'ombh2': 0.02225
-                    ,'H0': 67.3
-                    ,'ns': 0.9645
-                    ,'As': 2.2e-9
-                    ,'mnu': 0.06
-                    ,'w0': -1.0
-                    ,'tau':0.06
-                    ,'nnu':3.046
-                    ,'wa': 0.
-                    ,'Ysig': 0.127
-                    ,'gammaYsig': 0.
-                    ,'betaYsig': 0.
-                    ,'Y_star': 2.42e-10
-                    ,'alpha_ym': 1.79
-                    ,'b_ym': 0.8
-                    ,'beta_ym': 0.0
-                    ,'b_wl': 1.
-                    ,'gamma_ym': 0.0
+# Originally was Planck TT,TE,EE+lowP 2015 cosmology but with updated tau and minimal neutrino mass
+# Switched to DR4 / Erminia Cosmology
+defaultCosmology = {
+    'omch2': 0.1203058
+    ,'ombh2': 0.02219218
+    ,'H0': 67.02393
+    ,'ns': 0.9625356
+    ,'As': 2.15086031154146e-9
+    ,'mnu': 0.06
+    ,'w0': -1.0
+    ,'tau':0.06574325
+    ,'nnu':3.046
+    ,'wa': 0.
+    ,'Ysig': 0.127
+    ,'gammaYsig': 0.
+    ,'betaYsig': 0.
+    ,'Y_star': 2.42e-10
+    ,'alpha_ym': 1.79
+    ,'b_ym': 0.8
+    ,'beta_ym': 0.0
+    ,'b_wl': 1.
+    ,'gamma_ym': 0.0
 }
+
+
 
 
 class Cosmology(object):
