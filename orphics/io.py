@@ -502,6 +502,7 @@ class Plotter(object):
 
         if filename is not None:
             self._fig.savefig(filename,bbox_inches='tight',**kwargs)
+            # self._fig.savefig(filename,**kwargs)
             if verbose: cprint("Saved plot to "+ filename,"g")
         else:
             if not(noshow): plt.show()
@@ -659,7 +660,8 @@ class FisherPlots(object):
         legend = ax.legend(handles, labels,loc=loc,prop={'size':labsize},numpoints=1,frameon = 0,**kwargs)
 
     def done(self,saveFile):
-        plt.savefig(saveFile, bbox_inches='tight',format='png')
+        #plt.savefig(saveFile, bbox_inches='tight',format='png')
+        plt.savefig(saveFile,format='png')
         print(bcolors.OKGREEN+"Saved plot to", saveFile+bcolors.ENDC)
 
 
