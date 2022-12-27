@@ -786,10 +786,10 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
         
 
 class WhiskerPlot(object):
-    def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',blind=True,xwidth=4):
+    def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',blind=True,xwidth=4,spacing=0.8,xoffset=1.01):
         N = len(errs)
         if colors is None: colors = ['k']*N
-        figsize=(xwidth,0.8*N/2.)
+        figsize=(xwidth,spacing*N/2.)
         ydec=0.01
         f= plt.figure(figsize=figsize)
         ax=f.add_subplot(111)
@@ -797,7 +797,7 @@ class WhiskerPlot(object):
         ypos = ypos_start
         for mean, err,label,color in zip(means,errs,labels,colors):
             ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
-            ax.text( 1.01, ypos+(0.2*ydec), label, fontsize=13,color=color)
+            ax.text( xoffset, ypos+(0.2*ydec), label, fontsize=13,color=color)
             ypos -= ydec
 
         ax.tick_params(axis='x',which='minor',top='on',direction='in')
