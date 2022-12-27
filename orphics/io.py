@@ -433,7 +433,7 @@ class Plotter(object):
         return self._ax.hist(data,**kwargs)
     
         
-    def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",color=None,elinewidth=2,markersize=4,label=None,mulx=1.,addx=0.,edgecolor=None,**kwargs):
+    def add_err(self,x,y,yerr,ls='none',band=False,alpha=1.,marker="o",color=None,elinewidth=2,markersize=4,capsize=5,label=None,mulx=1.,addx=0.,edgecolor=None,**kwargs):
         x = np.asarray(x)
         y = np.asarray(y)
         yerr = np.asarray(yerr)
@@ -444,7 +444,7 @@ class Plotter(object):
             self._ax.plot(x*mulx+addx,yc,ls=ls,marker=marker,label=label,markersize=markersize,color=color,**kwargs)
             self._ax.fill_between(x*mulx+addx, yc-yerrc, y+yerrc, alpha=alpha,color=color,edgecolor=edgecolor)
         else:
-            self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,color=color,**kwargs)
+            self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,color=color,capsize=capsize,**kwargs)
         if label is not None: self.do_legend = True
 
     def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,disable_grid=False,**kwargs):
