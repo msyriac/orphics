@@ -65,6 +65,15 @@ defaultCosmology = {
     ,'gamma_ym': 0.0
 }
 
+class quickCamb(object):
+    def __init__(self,params=None):
+        if params is None: params = defaultCosmology
+        pars = camb.CAMBparams()
+        pars.set_dark_energy(w=params['w0'],wa=params['wa'])
+        pars.set_cosmology(H0=params['H0'],ombh2=params['ombh2'], omch2=params['omch2'], mnu=params['mnu'], tau=params['tau'],nnu=params['nnu'])
+        pars.InitPower.set_params(ns=params['ns'],As=params['As'])
+        pars.WantTransfer = False
+        self.results= camb.get_background(pars)
 
 
 
