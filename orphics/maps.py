@@ -9,7 +9,29 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
+import itertools
 
+
+
+def get_indices_for_cls_list(N: int):
+    '''
+    This function returns the indices for the cls list useful for generating spectra in healpy with new order
+
+    Parameters
+    ----------
+    N : int
+        Number of fields
+    Returns
+    -------
+    indices : tuple
+        Tuple of two lists, one for the first field and one for the second field
+    '''
+
+    xs = [x for x in itertools.chain(*[[i for i in range(N-j)] for j in range(N)])]
+    ys = [x for x in itertools.chain(*[[i+j for i in range(N-j)] for j in range(N)])]
+    indices = (xs, ys)
+
+    return indices
 
 
 class ConditionedSims(object):
@@ -32,7 +54,7 @@ class ConditionedSims(object):
 
         self.Nfields = Nfields
         self.get_AB = get_AB
-        indices = utils.get_indices_for_cls_list(Nfields) #indices for the extra Nfields
+        indices = get_indices_for_cls_list(Nfields) #indices for the extra Nfields
 
         self.filter_correlated, self.filter_uncorrelated = self.procesess_cls_list(Nfields, indices, get_AB, realized_field_index)
 
