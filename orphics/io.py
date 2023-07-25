@@ -327,7 +327,10 @@ class Plotter(object):
     Fast, easy, and pretty publication-quality plots
     '''
 
-    def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,minor_tick_size=3,scalefn = None,projection=None,**kwargs):
+    def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",
+                 yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,
+                 minor_tick_size=3,scalefn = None,projection=None,
+                 secax_fns=None,secax_label=None,**kwargs):
         self.scalefn = None
         if scheme is not None:
             if scheme=='Dell' or scheme=='Dl':
@@ -403,9 +406,17 @@ class Plotter(object):
 
         if labsize is None: labsize=ftsize-2
         if projection is None:
-            plt.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)#,size=labsize)
-            plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)#,size=labsize)
+            plt.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)
+            plt.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)
         self.do_legend = False
+
+        if secax_fns is not None:
+            secax = self._ax.secondary_xaxis('top', functions=secax_fns)
+            secax.set_xlabel(secax_label,fontsize=ftsize)
+            secax.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)
+            secax.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)
+            self._secax = secax
+
 
 
     def legend(self,loc='best',labsize=12,numpoints=1,bbox_to_anchor=None,**kwargs):
