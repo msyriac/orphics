@@ -15,6 +15,7 @@ import time, re, os
 from scipy.integrate import odeint
 from orphics.io import bcolors
 import camb
+from camb import model
 
 
 defaultConstants = {'TCMB': 2.7255
@@ -65,17 +66,34 @@ defaultCosmology = {
     ,'gamma_ym': 0.0
 }
 
-class quickCamb(object):
-    def __init__(self,params=None):
+class CAMB(object):
+    def __init__(self,params=None,perturbations=False,redshifts=[0.],
+                 nonlinear=True,kmax=2.,lmax=2000,lens_potential_accuracy=1):
         if params is None: params = defaultCosmology
+        required_params = defaultCosmology.keys()
+        for p in required_params:
+            if p not in params.keys():
+                params[p] = defaultCosmology[p]
         pars = camb.CAMBparams()
         pars.set_dark_energy(w=params['w0'],wa=params['wa'])
         pars.set_cosmology(H0=params['H0'],ombh2=params['ombh2'], omch2=params['omch2'], mnu=params['mnu'], tau=params['tau'],nnu=params['nnu'])
-        pars.InitPower.set_params(ns=params['ns'],As=params['As'])
-        pars.WantTransfer = False
+        if perturbations:
+            pars.InitPower.set_params(ns=params['ns'],As=params['As'])
+            pars.WantTransfer = True 
+            if nonlinear:
+                pars.NonLinear = model.NonLinear_both
+            else:
+                pars.NonLinear = model.NonLinear_none
+            pars.set_accuracy(AccuracyBoost=1.0, lSampleBoost=1.0, lAccuracyBoost=1.0)
+            if nonlinear: lens_potential_accuracy = 0
+            pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=lens_potential_accuracy)
+            pars.set_matter_power(redshifts=redshifts,kmax=kmax)
+        else:
+            pars.WantTransfer = False
         self.results= camb.get_background(pars)
-
-
+        if perturbations:
+            self.results.calc_transfers(pars)
+            self.results.calc_power_spectra(pars)
 
 class Cosmology(object):
     '''
@@ -139,7 +157,7 @@ class Cosmology(object):
             assert np.abs(self.wa)<1e-3, "Non-zero wa requires PPF, which requires devel version of pycamb to be installed."
             print("WARNING: Could not use PPF dark energy model with pycamb. Falling back to non-PPF. Please install the devel branch of pycamb.")
             self.pars.set_dark_energy(w=self.w0)
-        
+
         try:
             theta = cosmo['theta100']/100.
             H0 = None

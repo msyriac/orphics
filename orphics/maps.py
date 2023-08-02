@@ -10,6 +10,64 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def rescale(imap,factor,**kwargs):
+    """
+    Rescale an enmap by a scale factor using interpolation.
+    This can be used to zoom in and zoom out of thumbnails
+    to enhance signals when stacking objects of different
+    sizes or at different redshifts. Scale factors less than
+    1 should be avoided since they will cause information loss.
+    The transfer function associated with the interpolation
+    could be substantial, and should be characterized
+    separately.  The output stamp's WCS should not be 
+    taken seriously. The output has the same shape as the input map.
+    If the scale factor is greater than one, parts of the 
+    input map will lie outside the rescaled map and be
+    lost. If the scale factor is less than one, the rescaled
+    map will be padded with values decided by what is
+    passed through kwargs to enmap.project (default: zeroes).
+
+    Parameters
+    ----------
+    imap : (...,Ny,Nx) pixell enmap to rescale
+
+    factor : float scale factor
+
+    Returns
+    -------
+    omap : (...,Ny,Nx) rescaled map with the same shape
+
+    """
+    wmap = imap.copy()
+    wmap.wcs.wcs.cdelt *= factor
+    omap = wmap.project(imap.shape, imap.wcs,**kwargs)
+    return omap
+
+def rotate(imap,angle,reshape=False,**kwargs):
+    """
+    Rotate an enmap by an angle in radians using interpolation.
+    The output stamp's WCS should not be taken seriously beyond
+    pixel scale.
+    The output has the same shape as the input map by default
+    (reshape=False).
+    Parts of the input map will lie outside the rotated map
+    and be lost. The rotation angle is positive in the 
+    clockwise direction.
+
+    Parameters
+    ----------
+    imap : (...,Ny,Nx) pixell enmap to rotate
+
+    angle : float rotation angle in radians
+
+    Returns
+    -------
+    omap : (...,Ny,Nx) rotated map with the same shape
+
+    """
+    from scipy.ndimage import rotate as rot
+    omap = rot(imap, angle/utils.degree,reshape=reshape,**kwargs)
+    return enmap.enmap(omap,imap.wcs)
 
 def generate_correlated_alm(input_alm_f1,Clf1f1,Clf2f2,Clf1f2,seed=None):
     correlated = hp.almxfl(input_alm_f1,Clf1f2/Clf1f1)
