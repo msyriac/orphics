@@ -25,7 +25,7 @@ def rescale(imap,factor,**kwargs):
     input map will lie outside the rescaled map and be
     lost. If the scale factor is less than one, the rescaled
     map will be padded with values decided by what is
-    passed through kwargs to enmap.project (default: zeroes).
+    passed in cval through kwargs to enmap.project (default: zeroes).
 
     Parameters
     ----------

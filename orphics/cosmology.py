@@ -76,7 +76,14 @@ class CAMB(object):
                 params[p] = defaultCosmology[p]
         pars = camb.CAMBparams()
         pars.set_dark_energy(w=params['w0'],wa=params['wa'])
-        pars.set_cosmology(H0=params['H0'],ombh2=params['ombh2'], omch2=params['omch2'], mnu=params['mnu'], tau=params['tau'],nnu=params['nnu'])
+        try:
+            theta = params['theta100']/100.
+            H0 = None
+            print("WARNING: Using theta100 parameterization. H0 ignored.")
+        except:
+            H0 = params['H0']
+            theta = None        
+        pars.set_cosmology(H0=H0,cosmomc_theta=theta,ombh2=params['ombh2'], omch2=params['omch2'], mnu=params['mnu'], tau=params['tau'],nnu=params['nnu'])
         if perturbations:
             pars.InitPower.set_params(ns=params['ns'],As=params['As'])
             pars.WantTransfer = True 
@@ -94,6 +101,7 @@ class CAMB(object):
         if perturbations:
             self.results.calc_transfers(pars)
             self.results.calc_power_spectra(pars)
+        self.pars = pars
 
 class Cosmology(object):
     '''
