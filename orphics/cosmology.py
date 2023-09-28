@@ -2,6 +2,7 @@ from __future__ import print_function
 import warnings
 from math import pi
 import numpy as np
+import pyfisher
 from pyfisher import TheorySpectra
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
@@ -10,6 +11,10 @@ try:
     import cPickle as pickle
 except:
     import pickle
+try:
+    from cobaya.likelihoods.base_classes import InstallableLikelihood
+except:
+    InstallableLikelihood = object
 
 import time, re, os
 from scipy.integrate import odeint
@@ -1712,3 +1717,120 @@ def dl_filler(ells,ls,dls,fill_type="extrapolate",fill_positive=False,silence=Fa
     odls = interp1d(ls,dls,bounds_error=False,fill_value=fill_value)(ells)
     if fill_positive: odls[odls<0] = 0
     return odls
+
+def get_limber_clkk_flat_universe(results,Pfunc,lmax,kmax,nz,zsrc=None):
+    # Adapting code from Antony Lewis' CAMB notebook
+    # Duplicated in act_dr6_lenslike
+    if zsrc is None:
+        chistar = results.conformal_time(0)- results.tau_maxvis
+    else:
+        chistar = results.comoving_radial_distance(zsrc)
+    chis = np.linspace(0,chistar,nz)
+    zs=results.redshift_at_comoving_radial_distance(chis)
+    dchis = (chis[2:]-chis[:-2])/2
+    chis = chis[1:-1]
+    zs = zs[1:-1]
+    
+    #Get lensing window function (flat universe)
+    win = ((chistar-chis)/(chis**2*chistar))**2
+    #Do integral over chi
+    ls = np.arange(0,lmax+2, dtype=np.float64)
+    cl_kappa=np.zeros(ls.shape)
+    w = np.ones(chis.shape) #this is just used to set to zero k values out of range of interpolation
+    for i, l in enumerate(ls[2:]):
+        k=(l+0.5)/chis
+        w[:]=1
+        w[k<1e-4]=0
+        w[k>=kmax]=0
+        cl_kappa[i+2] = np.dot(dchis, w*Pfunc.P(zs, k, grid=False)*win/k**4)
+    cl_kappa*= (ls*(ls+1))**2
+    return cl_kappa
+
+
+def get_camb_lens_obj(nz,kmax,zmax=None):
+    # Duplicated in act_dr6_lenslike
+    import camb
+    pars = camb.CAMBparams()
+    # This cosmology is purely to go from chis->zs for limber integration;
+    # the details do not matter
+    pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.122)
+    pars.InitPower.set_params(ns=0.965)
+    results= camb.get_background(pars)
+    nz = nz
+    if zmax is None:
+        chistar = results.conformal_time(0)- results.tau_maxvis
+    else:
+        chistar = results.comoving_radial_distance(zmax)
+    chis = np.linspace(0,chistar,nz)
+    zs=results.redshift_at_comoving_radial_distance(chis)
+    cobj = {"CAMBdata": None,
+            "Pk_interpolator": { "z": zs,
+                                 "k_max": kmax,
+                                 "nonlinear": True,
+                                 "vars_pairs": ([["Weyl", "Weyl"]])}}
+    return cobj
+
+class GenericLimberCosmicShear(InstallableLikelihood):
+
+    zsrc: float
+    ngal_arcmin2: float
+    fsky: float
+    glmin = 10
+    lmin = 10
+    lmax = 500
+    nell = 20
+    shape_std = 0.3
+    draw_noise = False
+    nz = 40
+    trim_lmax = 599
+    kmax = 10
+    cmb_noise = None
+
+    def initialize(self):
+        from . import stats
+        bin_edges = np.geomspace(self.glmin,self.lmax,self.nell)
+        bin_edges = bin_edges[bin_edges>self.lmin]
+        self.binner = stats.bin1D(bin_edges)
+        self.ls = np.arange(0,self.trim_lmax+2)
+        if self.cmb_noise is None:
+            nls_dict = {'kk': lambda x: x*0+self.shape_std**2/(2.*self.ngal_arcmin2*1.18e7)}
+        else:
+            ls,nls = pyfisher.get_lensing_nl(self.cmb_noise)
+            nls_dict = {'kk': interp1d(ls,nls,bounds_error=True)}
+        cl_kk = self.get_mock_theory()
+        cls_dict = {'kk': interp1d(self.ls,cl_kk)}
+        self.d = {}
+        self.d['data_binned_clkk'] = self.binner.bin(self.ls,cl_kk)[1]
+        cov = pyfisher.gaussian_band_covariance(bin_edges,['kk'],cls_dict,nls_dict,interpolate=False)[:,0,0] / self.fsky
+        cinv = np.diag(1./cov)
+        self.d['cinv'] = cinv
+
+    def get_mock_theory(self):
+        from camb import model
+        pars = camb.CAMBparams()
+        pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.122)
+        pars.InitPower.set_params(ns=0.965)
+        results = camb.get_background(pars)
+        PK = camb.get_matter_power_interpolator(pars, nonlinear=True, 
+                                                hubble_units=False, k_hunit=False, kmax=self.kmax,
+                                                var1=model.Transfer_Weyl,var2=model.Transfer_Weyl, zmax=self.zsrc)
+        return get_limber_clkk_flat_universe(results,PK,self.trim_lmax,self.kmax,self.nz,zsrc=self.zsrc)
+        
+
+    def get_requirements(self):
+        cobj = get_camb_lens_obj(self.nz,self.kmax,self.zsrc)
+        return cobj
+    
+    def logp(self, **params_values):
+        cl_kk = self.get_limber_clkk( **params_values)
+        bclkk = self.binner.bin(self.ls,cl_kk)[1]
+        delta = self.d['data_binned_clkk'] - bclkk
+        logp = -0.5 * np.dot(delta,np.dot(self.d['cinv'],delta))
+        self.log.debug(
+            f"Generic Cosmic Shear lnLike value = {logp} (chisquare = {-2 * logp})")
+        return logp
+    
+    def get_limber_clkk(self,**params_values):
+        Pfunc = self.theory.get_Pk_interpolator(var_pair=("Weyl", "Weyl"), nonlinear=True, extrap_kmax=30.)
+        results = self.provider.get_CAMBdata()
+        return get_limber_clkk_flat_universe(results,Pfunc,self.trim_lmax,self.kmax,self.nz,zsrc=self.zsrc)
