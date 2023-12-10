@@ -791,55 +791,56 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
     pixboxes = enmap.neighborhood_pixboxes(imap.shape[-2:], imap.wcs, coords, rtot)
 
     for i,task in enumerate(tasks):
-        pixbox = pixboxes[i]
-        ithumb = imap.extract_pixbox(pixbox)
-        Ny,Nx = ithumb.shape[-2:]
+        if task not in [1768,1756]: #v4 has a bad source
+            pixbox = pixboxes[i]
+            ithumb = imap.extract_pixbox(pixbox)
+            Ny,Nx = ithumb.shape[-2:]
 
-        oshape = ithumb.shape
+            oshape = ithumb.shape
 
-        if geometries is None:
-            with h5py.File(f'{output_dir}/source_inpaint_geometry_{task}.hdf','r') as f:
-                cov_root = f['covsqrt'][:]
-                mean_mul = f['meanmul'][:]
-                shape = f['shape'][:]
-                m1 = f['m1'][:]
-                m2 = f['m2'][:]
-        else:
-            cov_root = geometries[task]['covsqrt']
-            mean_mul = geometries[task]['meanmul']
-            shape = geometries[task]['shape']
-            m1 = geometries[task]['m1']
-            m2 = geometries[task]['m2']
+            if geometries is None:
+                with h5py.File(f'{output_dir}/source_inpaint_geometry_{task}.hdf','r') as f:
+                    cov_root = f['covsqrt'][:]
+                    mean_mul = f['meanmul'][:]
+                    shape = f['shape'][:]
+                    m1 = f['m1'][:]
+                    m2 = f['m2'][:]
+            else:
+                cov_root = geometries[task]['covsqrt']
+                mean_mul = geometries[task]['meanmul']
+                shape = geometries[task]['shape']
+                m1 = geometries[task]['m1']
+                m2 = geometries[task]['m2']
 
-        if not(Ny==shape[0]) or not(Nx==shape[1]): 
-            print(f'{output_dir}/source_inpaint_geometry_{task}.hdf')
-            print(shape)
-            print(Ny,Nx)
-            print(task, i, coords[i]/utils.degree)
-            print(imap.wcs)
-            print(imap.shape)
-            print(pixbox)
-            raise ValueError
+            if not(Ny==shape[0]) or not(Nx==shape[1]): 
+                print(f'{output_dir}/source_inpaint_geometry_{task}.hdf')
+                print(shape)
+                print(Ny,Nx)
+                print(task, i, coords[i]/utils.degree)
+                print(imap.wcs)
+                print(imap.shape)
+                print(pixbox)
+                raise ValueError
 
-        # # Get the mean infill
-        cstamp = ithumb.reshape(-1)
-        mean = np.dot(mean_mul,cstamp[m2])
-        # Get a random realization (this could be moved outside the loop)
-        r = np.random.normal(0.,1.,size=(m1.size)) # FIXME: seed?
-        rand = np.dot(cov_root,r) if do_random else 0.
+            # # Get the mean infill
+            cstamp = ithumb.reshape(-1)
+            mean = np.dot(mean_mul,cstamp[m2])
+            # Get a random realization (this could be moved outside the loop)
+            r = np.random.normal(0.,1.,size=(m1.size)) # FIXME: seed?
+            rand = np.dot(cov_root,r) if do_random else 0.
 
-        
-        # Total
-        sim = mean + rand
+            
+            # Total
+            sim = mean + rand
 
 
-        ithumb.reshape(-1)[m1] = sim
-        ithumb.reshape(oshape)
+            ithumb.reshape(-1)[m1] = sim
+            ithumb.reshape(oshape)
 
-        imap = enmap.insert_at(imap,pixbox,ithumb)
+            imap = enmap.insert_at(imap,pixbox,ithumb)
 
-        if verbose_every_nsrcs:
-            if (i+1)%verbose_every_nsrcs==0: print(f"Done with {i+1} / {len(tasks)}...")
+            if verbose_every_nsrcs:
+                if (i+1)%verbose_every_nsrcs==0: print(f"Done with {i+1} / {len(tasks)}...")
 
     return imap
 
