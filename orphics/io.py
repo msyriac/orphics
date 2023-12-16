@@ -47,7 +47,19 @@ def no_context():
 def dateversion():
     from datetime import datetime
     return datetime.now().strftime("%Y%m%d")
-    
+
+# Checksum
+
+def get_hash(file_name):
+    import hashlib
+    # Open,close, read file and calculate MD5 on its contents 
+    with open(file_name, 'rb') as file_to_check:
+        # read contents of the file
+        data = file_to_check.read()    
+        # pipe contents of the file through
+        md5_returned = hashlib.md5(data).hexdigest()
+    return md5_returned
+
 ## PARSING
 
 def but_her_emails(string=None,filename=None):
