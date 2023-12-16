@@ -68,7 +68,8 @@ defaultCosmology = {
 
 class CAMB(object):
     def __init__(self,params=None,perturbations=False,redshifts=[0.],
-                 nonlinear=True,kmax=2.,lmax=2000,lens_potential_accuracy=1):
+                 nonlinear=True,kmax=2.,lmax=2000,lens_potential_accuracy=1,
+                 raw_cl=True):
         if params is None: params = defaultCosmology
         required_params = defaultCosmology.keys()
         for p in required_params:
@@ -101,6 +102,7 @@ class CAMB(object):
         if perturbations:
             self.results.calc_transfers(pars)
             self.results.calc_power_spectra(pars)
+            self.powers = self.results.get_cmb_power_spectra(pars, CMB_unit='muK',raw_cl=raw_cl)
         self.pars = pars
 
 class Cosmology(object):

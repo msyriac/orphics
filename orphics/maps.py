@@ -1036,11 +1036,6 @@ def gauss_beam(ell,fwhm):
 def sigma_from_fwhm(fwhm):
     return fwhm/2./np.sqrt(2.*np.log(2.))
 
-def gauss_beam_real(rs,fwhm):
-    """rs in radians ; fwhm in arcmin"""
-    tht_fwhm = np.deg2rad(fwhm / 60.)
-    sigma = sigma_from_fwhm(tht_fwhm)
-    return np.exp(-(rs**2.) / 2./sigma**2.)
 
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
