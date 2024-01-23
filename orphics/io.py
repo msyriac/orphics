@@ -47,7 +47,19 @@ def no_context():
 def dateversion():
     from datetime import datetime
     return datetime.now().strftime("%Y%m%d")
-    
+
+# Checksum
+
+def get_hash(file_name):
+    import hashlib
+    # Open,close, read file and calculate MD5 on its contents 
+    with open(file_name, 'rb') as file_to_check:
+        # read contents of the file
+        data = file_to_check.read()    
+        # pipe contents of the file through
+        md5_returned = hashlib.md5(data).hexdigest()
+    return md5_returned
+
 ## PARSING
 
 def but_her_emails(string=None,filename=None):
@@ -422,6 +434,9 @@ class Plotter(object):
     def legend(self,loc='best',labsize=12,numpoints=1,bbox_to_anchor=None,**kwargs):
         self.do_legend = False
         handles, labels = self._ax.get_legend_handles_labels()
+        loc = loc.lower()
+        loc = loc.replace('top','upper')
+        loc = loc.replace('bottom','lower')
         if loc=='outside':
             loc='center left'
             assert bbox_to_anchor is None
@@ -799,18 +814,28 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
         
 
 class WhiskerPlot(object):
-    def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',blind=True,xwidth=4,spacing=0.8,xoffset=1.01):
+    def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',
+                 blind=True,xwidth=4,spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,
+                 bolds = None):
+        if spacing is None: spacing = 0.8
         N = len(errs)
+        ydec = 0.01
+        yinc=0.2
         if colors is None: colors = ['k']*N
+        if bolds is None: bolds = [None]*N
         figsize=(xwidth,spacing*N/2.)
-        ydec=0.01
         f= plt.figure(figsize=figsize)
         ax=f.add_subplot(111)
         ypos_start = 1
         ypos = ypos_start
-        for mean, err,label,color in zip(means,errs,labels,colors):
-            ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
-            ax.text( xoffset, ypos+(0.2*ydec), label, fontsize=13,color=color)
+        for mean, err,label,color,bold in zip(means,errs,labels,colors,bolds):
+            if one_sided:
+                ax.plot(err,ypos,marker='<',color=color)
+                ax.hlines(ypos,xmin=xmin,xmax=err,label=label,color=color)
+            else:
+                ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
+            if text:
+                ax.text( xoffset, ypos-(yinc*ydec), label, fontsize=13,color=color,weight=bold)
             ypos -= ydec
 
         ax.tick_params(axis='x',which='minor',top='on',direction='in')
@@ -819,8 +844,10 @@ class WhiskerPlot(object):
         ax.tick_params(axis='y',which='major',right=False,left=False,direction='in',labelbottom=False,labelleft=False)
         ax.minorticks_on()
         ax.set_xlim(xmin,xmax)
-        ax.set_ylim(ypos_start+ydec,ypos-ydec*0.05)
-        ax.set_xlabel(xlabel, fontsize=18)
+        ys = min(ypos_start+ydec,ypos-ydec*0.05)
+        ye = max(ypos_start+ydec,ypos-ydec*0.05)
+        ax.set_ylim(ys,ye)
+        ax.set_xlabel(xlabel, fontsize=fontsize)
 
         # Turn off tick labels
         ax.set_yticklabels([])
@@ -830,4 +857,4 @@ class WhiskerPlot(object):
 
     def savefig(self,ofname,dpi=200,**kwargs):
         plt.tight_layout()
-        plt.savefig(ofname,dpi=dpi,**kwargs)
+        plt.savefig(ofname,dpi=dpi,bbox_inches='tight',**kwargs)
