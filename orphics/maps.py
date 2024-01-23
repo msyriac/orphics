@@ -10,6 +10,51 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def gapfill_edge_conv_flat(map, mask, ivar=None, alpha=-3, edge_rad=1*utils.arcmin, rmin=2*utils.arcmin, tol=1e-8):
+    """Gapfill by doing a masked convolution with a profile that
+    prioritizes nearby areas but still includes further ones.
+    The mask should be 1 in bad regions and 0 in good regions.
+    
+    This version assumes a flat sky. This helps not only with speed (FFTs vs. SHTs),
+    but also with numerical stability. The cost is that the gapfilling gets
+    a bit elliptical away from the equator, but that probably isn't a big issue
+    in practice, since the gapfilling is only a rough approximation in the
+    first place.
+    
+    This method becomes numerically unstable when r**alpha becomes too
+    small. For my test case with 80 arcmin holes, alpha=-3 works while
+    alpha = -5 start breaking down. tol helps this happen more gracefully.
+    The inpainting should be valid up to a radius of tol**(1/alpha)*rmin
+    from the hole edge. For the default alpha=-3, rmin=2 and tol=1e-8, this
+    gives 15 degrees, which is more than enough for typical gapfilling."""
+    refpix = np.array(map.shape[-2:])//2
+    rmax   = tol**(1/alpha) * rmin
+    r      = enmap.shift(map.distance_from(map.pix2sky(refpix)[:,None],rmax=rmax).astype(map.dtype),-refpix,keepwcs=True)
+    r      = np.maximum(r, rmin)
+    rprof  = (r/utils.arcmin)**alpha
+    del r
+    lprof = enmap.fft(rprof)
+    del rprof
+    # Build the weight. This is the edge of the mask
+    edist  = (1-mask).distance_transform(rmax=edge_rad).astype(map.dtype)
+    weight = ((edist>0)&(edist<edge_rad))
+    del edist
+    # Do the masked convolution
+    def conv(lprof,map): return enmap.ifft(lprof*enmap.fft(map)).real
+    rhs   = conv(lprof, weight*map)
+    div   = conv(lprof, weight)
+    del weight, lprof
+    div   = np.maximum(div,np.max(div)*(tol*100))
+    omap  = rhs/div
+    del rhs, div
+    # Restore known part
+    omap[...,~mask] = map[...,~mask]
+    # Add noise
+    if not(ivar is None):
+        n = white_noise(omap.shape,omap.wcs,div=ivar)
+        omap[...,mask] = omap[...,mask] + n[...,mask]
+    return omap.astype(map.dtype)
+
 
 def generate_correlated_alm(input_alm_f1,Clf1f1,Clf2f2,Clf1f2,seed=None):
     correlated = hp.almxfl(input_alm_f1,Clf1f2/Clf1f1)
