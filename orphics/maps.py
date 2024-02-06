@@ -1,5 +1,5 @@
 from __future__ import print_function 
-from pixell import enmap, utils, resample, curvedsky as cs, reproject
+from pixell import enmap, utils, resample, curvedsky as cs, reproject,pointsrcs
 import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
@@ -9,6 +9,55 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
+
+
+def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*utils.degree,ra_max=360*utils.degree,dec_min=-90*utils.degree,dec_max=90*utils.degree):
+    """
+    Generate a map with sources distributed randomly.
+
+    Parameters:
+    shape (tuple): The shape of the output map.
+    wcs (object): The WCS object defining the coordinate system of the map.
+    nobj (int): The number of random sources to generate.
+    fwhm (float, optional): The full width at half maximum of the sources' Gaussian beam. Default is None. Alternatively, you can specify the radial profile of the sources using the profile argument.
+    profile (tuple, optional): The radial profile of the sources. Should be a tuple of two 1D arrays representing the radial distance (in radians) and the profile values. Default is None.
+    amps (array-like, optional): The amplitudes of the sources. Should be a 1D array with length equal to nobj. Default is None.
+    ra_min (float, optional): The minimum right ascension value for generating random positions. Default is 0 degrees.
+    ra_max (float, optional): The maximum right ascension value for generating random positions. Default is 360 degrees.
+    dec_min (float, optional): The minimum declination value for generating random positions. Default is -90 degrees.
+    dec_max (float, optional): The maximum declination value for generating random positions. Default is 90 degrees.
+
+    Returns:
+    poss, omap: A tuple containing the positions of the generated sources and the output source map.
+
+    """
+
+
+    if not(fwhm is None):
+        sigma = sigma_from_fwhm(fwhm)
+        r,p = pointsrcs.expand_beam(sigma)
+    else:
+        r,p = profile
+        if r.ndim!=1: raise ValueError
+        if p.ndim!=1: raise ValueError
+        if r.size != p.size: raise ValueError
+
+    poss = np.zeros((2,nobj))
+    dmin = np.cos(np.pi/2 - dec_min)
+    dmax = np.cos(np.pi/2 - dec_max)
+    print(dmin,dmax)
+    poss[0,:] = np.pi/2. - np.arccos(np.random.uniform(dmin,dmax,nobj))
+    poss[1,:] = np.random.uniform(ra_min,ra_max,nobj)
+
+    if amps is None:
+        amps = np.ones(nobj)
+    else:        
+        if amps.ndim!=1: raise ValueError
+        if amps.size!=nobj: raise ValueError
+
+    omap = pointsrcs.sim_objects(shape,wcs,poss,amps,((r,p)))
+    return poss,omap
+
 
 def rescale(imap,factor,**kwargs):
     """
