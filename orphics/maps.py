@@ -45,7 +45,6 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*
     poss = np.zeros((2,nobj))
     dmin = np.cos(np.pi/2 - dec_min)
     dmax = np.cos(np.pi/2 - dec_max)
-    print(dmin,dmax)
     poss[0,:] = np.pi/2. - np.arccos(np.random.uniform(dmin,dmax,nobj))
     poss[1,:] = np.random.uniform(ra_min,ra_max,nobj)
 
