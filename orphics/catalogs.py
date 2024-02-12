@@ -78,7 +78,7 @@ class Pow2Cat(object):
         sampled = np.random.poisson(ngalmap).astype(np.float64)
         Ny,Nx = self.shape[-2:]
         pixmap = (enmap.pixmap(self.shape,self.wcs)).reshape(2,Ny*Nx)
-        nobjs = sampled.reshape(-1).astype(np.int)
+        nobjs = sampled.reshape(-1).astype(int)
         cat = np.repeat(pixmap,nobjs,-1).astype(np.float64)
         jitter = np.random.uniform(-0.5,0.5,size=cat.shape) if add_jitter else 0.
         cat += jitter
@@ -494,7 +494,7 @@ def select_based_on_mask(ras,decs,mask,threshold=0.99):
     Filters ra,dec based on whether it falls within a mask
     """
     coords = np.vstack((decs,ras))*np.pi/180.
-    pixs = enmap.sky2pix(mask.shape,mask.wcs,coords).astype(np.int)
+    pixs = enmap.sky2pix(mask.shape,mask.wcs,coords).astype(int)
     # First select those that fall within geometry
     sel = np.logical_and.reduce([pixs[0]>=0,pixs[1]>=0,pixs[0]<mask.shape[0],pixs[1]<mask.shape[1]])
     pixs = pixs[:,sel]
@@ -587,7 +587,7 @@ def hp_from_mangle(weight_ply_files,nside=None,veto_ply_files=None,hp_coords='eq
 
     if coords is None:
         npix = hp.nside2npix(nside)
-        pixs = np.arange(npix,dtype=np.int)
+        pixs = np.arange(npix,dtype=int)
         if verbose: print("Converting healpix pixels to coordinates.")
         ra,dec = hp.pix2ang(nside,pixs,lonlat=True)
 

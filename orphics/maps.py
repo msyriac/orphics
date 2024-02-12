@@ -656,7 +656,7 @@ def cutup(shape,numy,numx,pad=0):
     boxes[:,0,1][boxes[:,0,1]<0] = 0
     boxes[:,1,1] = np.repeat(pixs_x[1:],numy) + pad
     boxes[:,1,1][boxes[:,1,1]>(Nx-1)] = Nx-1
-    boxes = boxes.astype(np.int)
+    boxes = boxes.astype(int)
 
     return boxes
 
@@ -728,7 +728,7 @@ def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=F
         dshape = np.array(cov.shape)
         dshape[-2] /= ndown[0]
         dshape[-1] /= ndown[1]
-        cov_low = resample.resample_fft(afftshift(cov), dshape.astype(np.int))
+        cov_low = resample.resample_fft(afftshift(cov), dshape.astype(int))
     else:
         cov_low = enmap.downgrade(afftshift(cov), ndown)
     if not(fft_up):
@@ -1131,7 +1131,7 @@ def sigma_from_fwhm(fwhm):
 
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
-    output = enmap.ones(shape[-2:],wcs, dtype = np.int)
+    output = enmap.ones(shape[-2:],wcs, dtype = int)
     if (lmin is not None) or (lmax is not None): modlmap = enmap.modlmap(shape, wcs)
     if (lxcut is not None) or (lycut is not None): ly, lx = enmap.laxes(shape, wcs, oversample=1)
     if lmin is not None:
@@ -1462,7 +1462,7 @@ def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
         alpha=delta_new/(np.inner(d,q))
         x=x+alpha*d
         
-        if i/50.<np.int(i/50):
+        if i/50.<int(i/50):
             
             r=b-apply_px_c_inv_px(x)
         else:
