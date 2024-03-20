@@ -9,6 +9,34 @@ import healpy as hp
 from astropy.io import fits
 from orphics import maps
 
+def get_random_catalog(nobj,dec_min=-np.pi/2,dec_max=np.pi/2,ra_min=0,ra_max=2.*np.pi):
+    """
+    Generate a random catalog of nobj objects with uniform distribution in on the sphere.
+
+    Args:
+    nobj: int
+        Number of objects to generate
+    dec_min: float
+        Minimum declination in radians
+    dec_max: float
+        Maximum declination in radians
+    ra_min: float
+        Minimum right ascension in radians
+    ra_max: float   
+        Maximum right ascension in radians
+
+    Returns:
+    poss: (2,nobj) array
+        Array of dec,ra coordinates in radians    
+    """
+    poss = np.zeros((2,nobj))
+    dmin = np.cos(np.pi/2 - dec_min)
+    dmax = np.cos(np.pi/2 - dec_max)
+    poss[0,:] = np.pi/2. - np.arccos(np.random.uniform(dmin,dmax,nobj))
+    poss[1,:] = np.random.uniform(ra_min,ra_max,nobj)
+    return poss
+
+
 class Pow2Cat(object):
     def __init__(self,ells,clgg,clkg=None,clkk=None,depth_map=None,lmax=None):
         """Initialize a catalog generator

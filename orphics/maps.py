@@ -4,7 +4,7 @@ import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
-from orphics import io,cosmology,stats
+from . import io,cosmology,stats,catalogs
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
@@ -33,7 +33,6 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*
 
     """
 
-
     if not(fwhm is None):
         sigma = sigma_from_fwhm(fwhm)
         r,p = pointsrcs.expand_beam(sigma)
@@ -43,11 +42,7 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*
         if p.ndim!=1: raise ValueError
         if r.size != p.size: raise ValueError
 
-    poss = np.zeros((2,nobj))
-    dmin = np.cos(np.pi/2 - dec_min)
-    dmax = np.cos(np.pi/2 - dec_max)
-    poss[0,:] = np.pi/2. - np.arccos(np.random.uniform(dmin,dmax,nobj))
-    poss[1,:] = np.random.uniform(ra_min,ra_max,nobj)
+    poss = catalogs.get_random_catalog(nobj,dec_min,dec_max,ra_min,ra_max)
 
     if amps is None:
         amps = np.ones(nobj)
