@@ -11,7 +11,7 @@ from orphics import maps
 
 def get_random_catalog(nobj,dec_min=-np.pi/2,dec_max=np.pi/2,ra_min=0,ra_max=2.*np.pi):
     """
-    Generate a random catalog of nobj objects with uniform distribution in on the sphere.
+    Generate a random catalog of nobj objects with uniform distribution on the sphere.
 
     Args:
     nobj: int
