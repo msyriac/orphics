@@ -1076,12 +1076,10 @@ def filter_map(imap,kfilter):
 
 def gauss_beam(ell,fwhm):
     tht_fwhm = np.deg2rad(fwhm / 60.)
-    return np.exp(-(tht_fwhm**2.)*(ell**2.) / (16.*np.log(2.)))
+    return np.exp(-(tht_fwhm**2.)*(ell * (ell+1)) / (16.*np.log(2.)))
 
 def sigma_from_fwhm(fwhm):
     return fwhm/2./np.sqrt(2.*np.log(2.))
-
-
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
     output = enmap.ones(shape[-2:],wcs, dtype = np.int)
