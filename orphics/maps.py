@@ -12,7 +12,9 @@ import healpy as hp
 
 
 
-def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*utils.degree,ra_max=360*utils.degree,dec_min=-90*utils.degree,dec_max=90*utils.degree):
+def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,
+                      ra_min=0.*utils.degree,ra_max=360*utils.degree,
+                      dec_min=-90*utils.degree,dec_max=90*utils.degree,seed=None):
     """
     Generate a map with sources distributed randomly.
 
@@ -20,13 +22,14 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*
     shape (tuple): The shape of the output map.
     wcs (object): The WCS object defining the coordinate system of the map.
     nobj (int): The number of random sources to generate.
-    fwhm (float, optional): The full width at half maximum of the sources' Gaussian beam. Default is None. Alternatively, you can specify the radial profile of the sources using the profile argument.
+    fwhm (float, optional): The full width at half maximum of the sources' Gaussian beam in radians. Default is None. Alternatively, you can specify the radial profile of the sources using the profile argument.
     profile (tuple, optional): The radial profile of the sources. Should be a tuple of two 1D arrays representing the radial distance (in radians) and the profile values. Default is None.
     amps (array-like, optional): The amplitudes of the sources. Should be a 1D array with length equal to nobj. Default is None.
-    ra_min (float, optional): The minimum right ascension value for generating random positions. Default is 0 degrees.
-    ra_max (float, optional): The maximum right ascension value for generating random positions. Default is 360 degrees.
-    dec_min (float, optional): The minimum declination value for generating random positions. Default is -90 degrees.
-    dec_max (float, optional): The maximum declination value for generating random positions. Default is 90 degrees.
+    ra_min (float, optional): The minimum right ascension value for generating random positions in radians. Default is 0 degrees.
+    ra_max (float, optional): The maximum right ascension value for generating random positions in radians. Default is 360 degrees.
+    dec_min (float, optional): The minimum declination value for generating random positions in radians. Default is -90 degrees.
+    dec_max (float, optional): The maximum declination value for generating random positions in radians. Default is 90 degrees.
+    seed (int or tuple of ints, optional): Random number seed
 
     Returns:
     poss, omap: A tuple containing the positions of the generated sources and the output source map.
@@ -42,7 +45,7 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*
         if p.ndim!=1: raise ValueError
         if r.size != p.size: raise ValueError
 
-    poss = catalogs.get_random_catalog(nobj,dec_min,dec_max,ra_min,ra_max)
+    poss = catalogs.get_random_catalog(nobj,dec_min,dec_max,ra_min,ra_max,seed=seed)
 
     if amps is None:
         amps = np.ones(nobj)
