@@ -167,7 +167,7 @@ def pcov_from_ivar(n,dec,ra,ivar,cmb_theory_fn,beam_fn,iau=False,full_map=True):
     cmb2d_TEB[0,1] = theory('TE',modlmap)
     cmb2d_TEB[1,0] = theory('TE',modlmap)
     beam2d = beam_fn(modlmap)
-    tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
+    tcov = stamp_pixcov_from_theory(enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
     return tcov + ncov_IQU
 
 
@@ -188,7 +188,7 @@ def tpcov_from_ivar(n,ivar,cmb_theory_fn,beam_fn):
     theory = cmb_theory_fn
     cmb2d_TEB[0,0] = theory('TT',modlmap)
     beam2d = beam_fn(modlmap)
-    tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,return_pow=False)    
+    tcov = stamp_pixcov_from_theory(enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,return_pow=False)    
     return tcov + ncov_IQU
 
 def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=None,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None,tot_pow2d=None,store_pcov=False,pcov=None):
@@ -221,7 +221,7 @@ def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=No
         if tot_pow2d is not None:
             pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
         else:
-            pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d_IQU,beam2d=beam2d,iau=iau)
+            pcov = stamp_pixcov_from_theory(cmb2d_TEB,n2d_IQU,beam2d=beam2d,iau=iau)
 
     # Do we have polarization?
     ncomp = pcov.shape[0]
