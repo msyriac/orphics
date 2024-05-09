@@ -9,7 +9,7 @@ import healpy as hp
 from astropy.io import fits
 from orphics import maps
 
-def get_random_catalog(nobj,dec_min=-np.pi/2,dec_max=np.pi/2,ra_min=0,ra_max=2.*np.pi):
+def get_random_catalog(nobj,dec_min=-np.pi/2,dec_max=np.pi/2,ra_min=0,ra_max=2.*np.pi,seed=None):
     """
     Generate a random catalog of nobj objects with uniform distribution on the sphere.
 
@@ -32,6 +32,7 @@ def get_random_catalog(nobj,dec_min=-np.pi/2,dec_max=np.pi/2,ra_min=0,ra_max=2.*
     poss = np.zeros((2,nobj))
     dmin = np.cos(np.pi/2 - dec_min)
     dmax = np.cos(np.pi/2 - dec_max)
+    if not(seed is None): np.random.seed(seed)
     poss[0,:] = np.pi/2. - np.arccos(np.random.uniform(dmin,dmax,nobj))
     poss[1,:] = np.random.uniform(ra_min,ra_max,nobj)
     return poss

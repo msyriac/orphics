@@ -4,7 +4,6 @@ import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
-from . import io,cosmology,stats,catalogs
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
@@ -12,7 +11,9 @@ import healpy as hp
 
 
 
-def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*utils.degree,ra_max=360*utils.degree,dec_min=-90*utils.degree,dec_max=90*utils.degree):
+def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,
+                      ra_min=0.*utils.degree,ra_max=360*utils.degree,
+                      dec_min=-90*utils.degree,dec_max=90*utils.degree,seed=None):
     """
     Generate a map with sources distributed randomly.
 
@@ -20,19 +21,21 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*
     shape (tuple): The shape of the output map.
     wcs (object): The WCS object defining the coordinate system of the map.
     nobj (int): The number of random sources to generate.
-    fwhm (float, optional): The full width at half maximum of the sources' Gaussian beam. Default is None. Alternatively, you can specify the radial profile of the sources using the profile argument.
+    fwhm (float, optional): The full width at half maximum of the sources' Gaussian beam in radians. Default is None. Alternatively, you can specify the radial profile of the sources using the profile argument.
     profile (tuple, optional): The radial profile of the sources. Should be a tuple of two 1D arrays representing the radial distance (in radians) and the profile values. Default is None.
     amps (array-like, optional): The amplitudes of the sources. Should be a 1D array with length equal to nobj. Default is None.
-    ra_min (float, optional): The minimum right ascension value for generating random positions. Default is 0 degrees.
-    ra_max (float, optional): The maximum right ascension value for generating random positions. Default is 360 degrees.
-    dec_min (float, optional): The minimum declination value for generating random positions. Default is -90 degrees.
-    dec_max (float, optional): The maximum declination value for generating random positions. Default is 90 degrees.
+    ra_min (float, optional): The minimum right ascension value for generating random positions in radians. Default is 0 degrees.
+    ra_max (float, optional): The maximum right ascension value for generating random positions in radians. Default is 360 degrees.
+    dec_min (float, optional): The minimum declination value for generating random positions in radians. Default is -90 degrees.
+    dec_max (float, optional): The maximum declination value for generating random positions in radians. Default is 90 degrees.
+    seed (int or tuple of ints, optional): Random number seed
 
     Returns:
     poss, omap: A tuple containing the positions of the generated sources and the output source map.
 
     """
-
+    from . import catalogs
+    
     if not(fwhm is None):
         sigma = sigma_from_fwhm(fwhm)
         r,p = pointsrcs.expand_beam(sigma)
@@ -42,7 +45,7 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,ra_min=0.*
         if p.ndim!=1: raise ValueError
         if r.size != p.size: raise ValueError
 
-    poss = catalogs.get_random_catalog(nobj,dec_min,dec_max,ra_min,ra_max)
+    poss = catalogs.get_random_catalog(nobj,dec_min,dec_max,ra_min,ra_max,seed=seed)
 
     if amps is None:
         amps = np.ones(nobj)
@@ -267,6 +270,7 @@ def area_sqdeg(mask,threshold=0.5):
     
 
 def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
+    from . import cosmology
     if theory is None: theory = cosmology.default_theory()
     ells = np.arange(lmax)
     ps = np.zeros((3,3,lmax))
@@ -546,7 +550,7 @@ def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None
     """Get the binned power spectrum of a map in one line of code.
     (At the cost of flexibility and reusability of expensive parts)"""
     
-    from orphics import stats
+    from . import stats
     shape,wcs = imap.shape,imap.wcs
     modlmap = enmap.modlmap(shape,wcs) if modlmap is None else modlmap
     fc = FourierCalc(shape,wcs) if fc is None else fc
@@ -564,7 +568,7 @@ def flat_sim(deg,px,lmax=6000,lensed=True,pol=False):
     Not very flexible but is a one-line replacement for
     a large fraction of use cases.
     """
-    from orphics import cosmology
+    from . import cosmology
     shape,wcs = rect_geometry(width_deg=deg,px_res_arcmin=px,pol=pol)
     modlmap = enmap.modlmap(shape,wcs)
     cc = cosmology.Cosmology(lmax=lmax,pickling=True,dimensionless=False)
@@ -1244,6 +1248,8 @@ def ilc_comb_a_b(response_a,response_b,cinv):
 
 
 def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method="isotropic"):
+    from . import stats
+
     assert method in ['isotropic','downsample']
     
     assert kmaps.ndim==3
@@ -1326,8 +1332,6 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
             if data:
                 Covmat[i,j][ells>ellmaxes[i]] = 1e90 # !!!
                 Covmat[i,j][ells>ellmaxes[j]] = 1e90 # !!!
-            #if i>=j:
-            #    io.plot_img(np.fft.fftshift(np.log10(Covmat[i,j,:])),lim=[-10,3])
             if i==j:
                 if lmins is not None: Covmat[i,j][ells<lmins[i]] = np.inf
                 if lmaxs is not None: Covmat[i,j][ells>lmaxs[i]] = np.inf

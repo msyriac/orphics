@@ -2,8 +2,6 @@ from __future__ import print_function
 import warnings
 from math import pi
 import numpy as np
-import pyfisher
-from pyfisher import TheorySpectra
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 import itertools
@@ -812,7 +810,8 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
             if not os.path.exists(directory):
                 os.makedirs(directory)
             pickle.dump(cmbmat,open("output/clsAll"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
-
+            
+    from pyfisher import TheorySpectra
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
         cls =cmbmat[lSuffix][2:,i]
@@ -894,6 +893,7 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
 
     uFile = cambRoot+uSuffix
     lFile = cambRoot+lSuffix
+    from pyfisher import TheorySpectra
 
     theory = TheorySpectra()
 
@@ -968,6 +968,8 @@ class LensForecast:
         G refers to the number density of an optical foreground galaxy sample
 
         '''
+        from pyfisher import TheorySpectra
+
         self._haveKK = False
         self._haveKG = False
         self._haveGG = False
@@ -1237,7 +1239,8 @@ def get_lensed_cls(theory,ells,clkk,lmax):
     #clcltt = np.nan_to_num(clcltt/cellrange/(cellrange+1.)*2.*np.pi)
     #print clcltt
     lpad = lmax
-    
+    from pyfisher import TheorySpectra
+
     dtheory = TheorySpectra()
     with np.errstate(divide='ignore', invalid='ignore'):
         mult = np.nan_to_num(1./mulfact)
@@ -1583,6 +1586,7 @@ def save_glens_cls_from_ini(ini_file,out_name,glmax=8000):
 
 
 def load_theory_from_glens(out_name,total=False,lpad=9000,TCMB=2.7255e6):
+    from pyfisher import TheorySpectra
 
     gcls = np.loadtxt("%s_%s.txt" % (out_name,"gradient"))
     if total:
@@ -1790,6 +1794,8 @@ class GenericLimberCosmicShear(InstallableLikelihood):
 
     def initialize(self):
         from . import stats
+        import pyfisher
+
         bin_edges = np.geomspace(self.glmin,self.lmax,self.nell)
         bin_edges = bin_edges[bin_edges>self.lmin]
         self.binner = stats.bin1D(bin_edges)
