@@ -4,7 +4,6 @@ import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
-from . import io,cosmology,stats,catalogs
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
@@ -35,7 +34,8 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,
     poss, omap: A tuple containing the positions of the generated sources and the output source map.
 
     """
-
+    from . import catalogs
+    
     if not(fwhm is None):
         sigma = sigma_from_fwhm(fwhm)
         r,p = pointsrcs.expand_beam(sigma)
@@ -270,6 +270,7 @@ def area_sqdeg(mask,threshold=0.5):
     
 
 def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
+    from . import cosmology
     if theory is None: theory = cosmology.default_theory()
     ells = np.arange(lmax)
     ps = np.zeros((3,3,lmax))
@@ -549,7 +550,7 @@ def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None
     """Get the binned power spectrum of a map in one line of code.
     (At the cost of flexibility and reusability of expensive parts)"""
     
-    from orphics import stats
+    from . import stats
     shape,wcs = imap.shape,imap.wcs
     modlmap = enmap.modlmap(shape,wcs) if modlmap is None else modlmap
     fc = FourierCalc(shape,wcs) if fc is None else fc
@@ -567,7 +568,7 @@ def flat_sim(deg,px,lmax=6000,lensed=True,pol=False):
     Not very flexible but is a one-line replacement for
     a large fraction of use cases.
     """
-    from orphics import cosmology
+    from . import cosmology
     shape,wcs = rect_geometry(width_deg=deg,px_res_arcmin=px,pol=pol)
     modlmap = enmap.modlmap(shape,wcs)
     cc = cosmology.Cosmology(lmax=lmax,pickling=True,dimensionless=False)
@@ -1247,6 +1248,8 @@ def ilc_comb_a_b(response_a,response_b,cinv):
 
 
 def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method="isotropic"):
+    from . import stats
+
     assert method in ['isotropic','downsample']
     
     assert kmaps.ndim==3
@@ -1329,8 +1332,6 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
             if data:
                 Covmat[i,j][ells>ellmaxes[i]] = 1e90 # !!!
                 Covmat[i,j][ells>ellmaxes[j]] = 1e90 # !!!
-            #if i>=j:
-            #    io.plot_img(np.fft.fftshift(np.log10(Covmat[i,j,:])),lim=[-10,3])
             if i==j:
                 if lmins is not None: Covmat[i,j][ells<lmins[i]] = np.inf
                 if lmaxs is not None: Covmat[i,j][ells>lmaxs[i]] = np.inf

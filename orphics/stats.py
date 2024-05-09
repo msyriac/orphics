@@ -6,7 +6,6 @@ import scipy
 from scipy.stats import binned_statistic as binnedstat,chi2
 from scipy.optimize import curve_fit
 import itertools
-from pyfisher import FisherMatrix
 
 
 def get_pte(chisquare_data,chisquares_sims):
@@ -225,7 +224,7 @@ def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
     """Make a triangle/corner plot from Fisher matrices.
     Does not support multiple confidence levels. (Redundant under Gaussian approximation of Fisher)
 
-    fishers -- list of stats.FisherMatrix objects
+    fishers -- list of pyfisher.FisherMatrix objects
     labels -- labels corresponding to each Fisher matrix in fishers
     params -- By default (if None) uses all params in every Fisher matrix. If not None, uses only this list of params.
     fid_dict -- dictionary mapping parameter names to fiducial values to center ellipses on
@@ -235,7 +234,7 @@ def corner_plot(fishers,labels,fid_dict=None,params=None,confidence_level=0.683,
     lss -- list of line styles corresponding to fishers
     """
 
-    from orphics import io
+    from . import io
     import matplotlib
     import matplotlib.pyplot as plt
     if params is None:
