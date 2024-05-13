@@ -216,7 +216,7 @@ def alpha_from_kappa(kappa=None,posmap=None,phi=None):
     if posmap is None: posmap = enmap.posmap(shape,wcs)
     pos = posmap + grad_phi
     alpha_pix = enmap.sky2pix(shape,wcs,pos, safe=False)
-    return alpha_pix
+    return enmap.enmap(alpha_pix,wcs)
     
 
 
