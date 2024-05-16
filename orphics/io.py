@@ -135,6 +135,7 @@ def mkdir(dirpath,comm=None):
     if comm.Get_rank()==0: 
         if not (exists):
             os.makedirs(dirpath)
+    comm.Barrier()
     return exists
 
 def prepare_dir(savedir,overwrite,comm=None,msg=None):
