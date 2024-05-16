@@ -816,8 +816,8 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
 
 class WhiskerPlot(object):
     def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',
-                 blind=True,xwidth=4,spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,
-                 bolds = None):
+                 xspanmin=None,xspanmax=None,xspanalpha=None,xspancolor='k',blind=True,xwidth=4,
+                 spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,bolds = None):
         if spacing is None: spacing = 0.8
         N = len(errs)
         ydec = 0.01
@@ -829,6 +829,11 @@ class WhiskerPlot(object):
         ax=f.add_subplot(111)
         ypos_start = 1
         ypos = ypos_start
+        if xspanmin is not None and xspanmax is not None:
+            ax.axvspan(xspanmin, xspanmax,
+                       alpha=(0.2 if xspanalpha is None else xspanalpha),
+                       color=xspancolor)
+
         for mean, err,label,color,bold in zip(means,errs,labels,colors,bolds):
             if one_sided:
                 ax.plot(err,ypos,marker='<',color=color)
