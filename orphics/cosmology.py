@@ -316,14 +316,6 @@ class Cosmology(object):
         az = self.z2a(z)
         return interp1d(a,fapprox)(az)
 
-    def growth_approximate(self,z):
-        # Approximate growth rate f calculation from Dodelson Eq 9.67
-        hfactor = self.H0**2./self.results.hubble_parameter(z)**2.
-        omegam = (self.pars.omegab+self.pars.omegac+self.pars.omegan) * ((1.+z)**3.) *hfactor
-        omegav = self.pars.omegav * hfactor
-        fapprox = omegam**0.6 + omegav*(1.+omegam/2.)/70.
-        return fapprox
-    
 
         
     def _initPower(self,pkgrid_override=None):

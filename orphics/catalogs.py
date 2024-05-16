@@ -9,6 +9,73 @@ import healpy as hp
 from astropy.io import fits
 from orphics import maps
 
+
+def reconstruct_velocities(ras,decs,zs,
+                           ras_rand,decs_rand,zs_rand,
+                           zeff=0.55,bg=1.92, # cmass defaults
+                           h = 0.676, omegam=0.31,
+                           fkp_weights=None,
+                           fkp_weights_rand=None):
+    ## Reconstructing los velocity field from galaxy positions
+    ## based largely on: 
+    ## https://github.com/cosmodesi/pyrecon/blob/main/nb/e2e_examples.ipynb
+    ## Code adapted and provided by Alex Lague
+
+    from nbodykit.lab import ArrayCatalog, cosmology
+    import nbodykit
+    from pyrecon import MultiGridReconstruction
+
+    ras = np.asarray(ras)
+    decs = np.asarray(decs)
+    zs = np.asarray(zs)
+    ras_rand = np.asarray(ras_rand)
+    decs_rand = np.asarray(decs_rand)
+    zs_rand = np.asarray(zs_rand)
+
+    # fiducial cosmo
+    cosmo = cosmology.Cosmology(h=h).match(Omega0_m=omegam)
+    fgrowth = cosmo.scale_independent_growth_rate(zeff)
+
+    # Load data and convert positions
+    data_cat = ArrayCatalog({'ra': ras, 'dec': decs, 'redshift': zs})
+    fkp_weights = np.ones(ras.shape) if fkp_weights is None else fkp_weights
+    data_cat['Position'] = nbodykit.transform.SkyToCartesian(data_cat['ra'],
+                                                              data_cat['dec'],
+                                                              data_cat['redshift'], cosmo)
+
+    # Load randoms and convert positions
+    rand_cat = ArrayCatalog({'ra': ras_rand, 'dec': decs_rand, 'redshift': zs_rand})
+    fkp_weights_rand = np.ones(ras_rand.shape) if fkp_weights_rand is None else fkp_weights_rand
+    rand_cat['Position'] = nbodykit.transform.SkyToCartesian(rand_cat['ra'],
+                                                             rand_cat['dec'],
+                                                             rand_cat['redshift'], cosmo)
+
+    # nbodykit works with dask, but pyrecon expects numpy ndarrays
+    pos = np.array(data_cat['Position'])
+    rand_pos = np.array(rand_cat['Position'])
+
+    # Setup recon
+    recon = MultiGridReconstruction(f=fgrowth, bias=bg, los=None, nmesh=512, positions=pos)
+    recon.assign_data(pos, fkp_weights)
+    recon.assign_randoms(rand_pos, fkp_weights_rand)
+    recon.set_density_contrast(smoothing_radius=10.) #smoothing density ~10-15 Mpc
+
+    # Run reeconstruction
+    recon.run()
+
+    data_positions_rec = recon.read_shifted_positions(pos, field='rsd') 
+    # field rsd is necessary otherwise the code moves particles back to their IC positions
+
+    Delta_pos = data_positions_rec - pos
+    vel = np.sum(Delta_pos*data_positions_rec, axis=1) # dot product with los
+    vel /= np.linalg.norm(data_positions_rec, axis=1) # in Mpc/h
+    vel /= cosmo.h # in Mpc                                                                                                                               
+
+    H = cosmo.hubble_function(zeff)*299792.458 # H(zeff)/c * speed_of_light gives km/s/Mpc
+    vel *= H / (1+zeff) # now in km/s
+    return vel
+
+
 def get_random_catalog(nobj,dec_min=-np.pi/2,dec_max=np.pi/2,ra_min=0,ra_max=2.*np.pi,seed=None):
     """
     Generate a random catalog of nobj objects with uniform distribution on the sphere.
