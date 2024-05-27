@@ -15,7 +15,8 @@ def reconstruct_velocities(ras,decs,zs,
                            zeff=0.55,bg=1.92, # cmass defaults
                            h = 0.676, omegam=0.31,
                            fkp_weights=None,
-                           fkp_weights_rand=None):
+                           fkp_weights_rand=None,
+                           nmesh=512, smoothing_radius=10.):
     ## Reconstructing los velocity field from galaxy positions
     ## based largely on: 
     ## https://github.com/cosmodesi/pyrecon/blob/main/nb/e2e_examples.ipynb
@@ -28,9 +29,11 @@ def reconstruct_velocities(ras,decs,zs,
     ras = np.asarray(ras)
     decs = np.asarray(decs)
     zs = np.asarray(zs)
+    if np.any(zs<=0.): raise ValueError
     ras_rand = np.asarray(ras_rand)
     decs_rand = np.asarray(decs_rand)
     zs_rand = np.asarray(zs_rand)
+    if np.any(zs_rand<=0.): raise ValueError
 
     # fiducial cosmo
     cosmo = cosmology.Cosmology(h=h).match(Omega0_m=omegam)
@@ -42,7 +45,6 @@ def reconstruct_velocities(ras,decs,zs,
     data_cat['Position'] = nbodykit.transform.SkyToCartesian(data_cat['ra'],
                                                               data_cat['dec'],
                                                               data_cat['redshift'], cosmo)
-
     # Load randoms and convert positions
     rand_cat = ArrayCatalog({'ra': ras_rand, 'dec': decs_rand, 'redshift': zs_rand})
     fkp_weights_rand = np.ones(ras_rand.shape) if fkp_weights_rand is None else fkp_weights_rand
@@ -55,12 +57,12 @@ def reconstruct_velocities(ras,decs,zs,
     rand_pos = np.array(rand_cat['Position'])
 
     # Setup recon
-    recon = MultiGridReconstruction(f=fgrowth, bias=bg, los=None, nmesh=512, positions=pos)
+    recon = MultiGridReconstruction(f=fgrowth, bias=bg, los=None, nmesh=nmesh, positions=pos)
     recon.assign_data(pos, fkp_weights)
     recon.assign_randoms(rand_pos, fkp_weights_rand)
-    recon.set_density_contrast(smoothing_radius=10.) #smoothing density ~10-15 Mpc
+    recon.set_density_contrast(smoothing_radius=smoothing_radius) #smoothing density ~10-15 Mpc
 
-    # Run reeconstruction
+    # Run reconstruction
     recon.run()
 
     data_positions_rec = recon.read_shifted_positions(pos, field='rsd') 

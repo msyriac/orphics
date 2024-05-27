@@ -839,6 +839,8 @@ class WhiskerPlot(object):
                 ax.plot(err,ypos,marker='<',color=color)
                 ax.hlines(ypos,xmin=xmin,xmax=err,label=label,color=color)
             else:
+                if isinstance(err,list):
+                    err = np.asarray(err)[:,None]
                 ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
             if text:
                 ax.text( xoffset, ypos-(yinc*ydec), label, fontsize=13,color=color,weight=bold)
