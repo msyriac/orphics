@@ -27,7 +27,7 @@ class latex:
     dl = "$D_{\\ell}$"
     cl = "$C_{\\ell}$"
     cL = "$C_{L}$"
-    ratcl = "$\Delta C_{\\ell}/C_{\\ell}$"
+    ratcl = "$\\Delta C_{\\ell}/C_{\\ell}$"
 
 class DummyFile(object):
     def write(self, x): pass
@@ -723,19 +723,19 @@ class FisherPlots(object):
                     # a sigma8 hack
                     if "S8" in paramX:
                         xval = 0.8
-                        paramlabelx = '$\sigma_8(z_{'+paramX[3:]+'})$'
+                        paramlabelx = '$\\sigma_8(z_{'+paramX[3:]+'})$'
                     else:
                         xval = self.fidDicts[section][paramX]
                         paramlabelx = '$'+self.paramLatexLists[section][p]+'$'
                     if "S8" in paramY:
                         yval = 0.8
-                        paramlabely = '$\sigma_8(z_{'+paramY[3:]+'})$'
+                        paramlabely = '$\\sigma_8(z_{'+paramY[3:]+'})$'
                     else:
                         yval = self.fidDicts[section][paramY]
                         paramlabely = '$'+self.paramLatexLists[section][q]+'$' 
 
-                    if paramX=="S8All": paramlabelx = '$\sigma_8$'
-                    if paramY=="S8All": paramlabely = '$\sigma_8$'
+                    if paramX=="S8All": paramlabelx = '$\\sigma_8$'
+                    if paramY=="S8All": paramlabely = '$\\sigma_8$'
                         
                     chisq = np.array([[chi211,chi212],[chi212,chi222]])
                     Lmat = np.linalg.cholesky(chisq)
