@@ -613,7 +613,7 @@ class LimberCosmology(Cosmology):
             
             
     def _lensWindow(self,kernel,numzIntegral):
-        '''
+        r'''
         Calculates the following integral
         W(z) = \int dz'  p(z') (chi(z')-chi(z))/chi(z')
         where p(z) is the dndz/pdf of spectra
@@ -1350,7 +1350,7 @@ def pk_comparison(param,z,val1,val2,oparams=None):
     pl.legend(loc = 'upper right')
     pl.done()
     
-    pl = io.Plotter(xlabel='k',ylabel='$\Delta P(k) / P$',xscale='log')
+    pl = io.Plotter(xlabel='k',ylabel=r'$\Delta P(k) / P$',xscale='log')
     pl.add(ks,(pk2.ravel()-pk1.ravel())/pk2.ravel(),label=param+'='+str(val1),color="C0")
     pl.legend(loc = 'upper right')
     pl.done()
