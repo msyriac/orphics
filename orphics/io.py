@@ -283,7 +283,14 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,noshow=False,extent=None,dpi=None,skip_plot=False,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,
+             down=None,crange=None,cmap=None,arc_width=None,
+             xlabel="",ylabel="",figsize=None,quiver=None,
+             label=None,projection=None,noshow=False,
+             extent=None,dpi=None,skip_plot=False,interpolation='none',**kwargs):
+    """
+    extent=[horizontal_min,horizontal_max,vertical_min,vertical_max]
+    """
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
@@ -293,7 +300,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
         if extent is None:
             extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
         pl = Plotter(ftsize=ftsize,xlabel=xlabel,ylabel=ylabel,figsize=figsize,projection=projection)
-        pl.plot2d(array,extent=extent,cm=cmap,label=label,**kwargs)
+        pl.plot2d(array,extent=extent,cm=cmap,label=label,interpolation=interpolation,**kwargs)
 
         if quiver is not None:
             assert arc_width is not None
@@ -474,7 +481,8 @@ class Plotter(object):
             self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,color=color,capsize=capsize,**kwargs)
         if label is not None: self.do_legend = True
 
-    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,disable_grid=False,**kwargs):
+    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,
+               labsize=14,extent=None,ticksize=12,disable_grid=False,interpolation='none',**kwargs):
         '''
         For an array passed in as [j,i]
         Displays j along y and i along x , so (y,x)
@@ -496,7 +504,7 @@ class Plotter(object):
 
         if extent is None:
             extent = (0, arr.shape[1], arr.shape[0], 0)
-        img = self._ax.imshow(arr,interpolation="none",vmin=limmin,vmax=limmax,cmap=cm,extent=extent,**kwargs)
+        img = self._ax.imshow(arr,interpolation=interpolation,vmin=limmin,vmax=limmax,cmap=cm,extent=extent,**kwargs)
         if disable_grid: self._ax.grid(b=None)
         
 

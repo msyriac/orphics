@@ -96,7 +96,7 @@ class CAMB(object):
             else:
                 pars.NonLinear = model.NonLinear_none
             pars.set_accuracy(AccuracyBoost=1.0, lSampleBoost=1.0, lAccuracyBoost=1.0)
-            if nonlinear: lens_potential_accuracy = 0
+            if not(nonlinear): lens_potential_accuracy = 0
             pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=lens_potential_accuracy)
             pars.set_matter_power(redshifts=redshifts,kmax=kmax)
         else:
