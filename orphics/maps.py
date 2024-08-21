@@ -392,7 +392,9 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
         ells = np.arange(lmax)
         N_ell_standard = atm_factor(ells,lknee,alpha) + 1.
         N_ell_standard[~np.isfinite(N_ell_standard)] = 0
-        if lmin is not None: N_ell_standard[ells<lmin] = 0
+        if lmin is not None:
+            if lmin>=lmax: raise ValueError
+            N_ell_standard[ells<lmin] = 0
     shape,wcs = ivar.shape[-2:],ivar.wcs
     if N_ell_standard is None and (lknee is None):
         if seed is not None: np.random.seed(seed)

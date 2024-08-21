@@ -818,6 +818,8 @@ class WhiskerPlot(object):
     def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',
                  xspanmin=None,xspanmax=None,xspanalpha=None,xspancolor='k',blind=True,xwidth=4,
                  spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,bolds = None):
+        plt.rcParams["font.family"] = "serif"
+        plt.rcParams["mathtext.fontset"] = "dejavuserif"
         if spacing is None: spacing = 0.8
         N = len(errs)
         ydec = 0.01
