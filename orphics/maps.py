@@ -9,6 +9,19 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def field_variance(cls):
+    """
+    Return the real-space variance
+    sigma^2 = \sum_l 2l+1  C_l / 4pi
+    of a field that has power spectrum
+    C_l. This has the same units as the
+    power spectrum.
+
+    Assumes cls start at 0 and are spaced
+    by 1.
+    """
+    ells = np.arange(cls.size)
+    return np.sum((2*ells+1)*cls/4./np.pi)
 
 
 def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,
