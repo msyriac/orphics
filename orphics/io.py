@@ -350,7 +350,8 @@ class Plotter(object):
     def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",
                  yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,
                  minor_tick_size=3,scalefn = None,projection=None,
-                 secax_fns=None,secax_label=None,**kwargs):
+                 secax_fns=None,secax_label=None,
+                 secay_fns=None,secay_label=None,**kwargs):
         self.scalefn = None
         if scheme is not None:
             if scheme=='Dell' or scheme=='Dl':
@@ -362,6 +363,11 @@ class Plotter(object):
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$C_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlog' if xyscale is None else xyscale
+                self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
+            elif scheme=='Pk':
+                xlabel = '$k$ (Mpc$^{-1}$)' if xlabel is None else xlabel
+                ylabel = '$P(k)$ (Mpc$^3$)' if ylabel is None else ylabel
+                xyscale = 'loglog' if xyscale is None else xyscale
                 self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
             elif scheme=='CL':
                 xlabel = '$L$' if xlabel is None else xlabel
@@ -436,6 +442,13 @@ class Plotter(object):
             secax.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)
             secax.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)
             self._secax = secax
+
+        if secay_fns is not None:
+            secay = self._ax.secondary_yaxis('right', functions=secay_fns)
+            secay.set_ylabel(secay_label,fontsize=ftsize)
+            secay.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)
+            secay.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)
+            self._secay = secay
 
 
 
