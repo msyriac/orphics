@@ -9,6 +9,31 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000):
+    from . import cosmology
+    theory = cosmology.default_theory()
+    ells = np.arange(lmax+1)
+    if lensed_cls:
+        cfunc = theory.lCl
+    else:
+        cfunc = theory.uCl
+    if not(len(shape)==2):
+        raise ValueError
+    if pol:
+        shape = (3,) + shape[-2:]
+        ps = np.zeros((3,3,lmax+1))
+        ps[0,0] = cfunc('TT',ells)
+        ps[0,1] = cfunc('TE',ells)
+        ps[1,0] = cfunc('TE',ells)
+        ps[1,1] = cfunc('EE',ells)
+        ps[2,2] = cfunc('BB',ells)
+    else:
+        ps = cfunc('TT',ells)
+    return cs.rand_map(shape,wcs,ps)
+        
+        
+        
+
 def field_variance(cls):
     """
     Return the real-space variance
