@@ -9,7 +9,7 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
-def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000):
+def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
     from . import cosmology
     theory = cosmology.default_theory()
     ells = np.arange(lmax+1)
@@ -29,7 +29,7 @@ def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000):
         ps[2,2] = cfunc('BB',ells)
     else:
         ps = cfunc('TT',ells)
-    return cs.rand_map(shape,wcs,ps)
+    return cs.rand_map(shape,wcs,ps,dtype=dtype)
         
         
         

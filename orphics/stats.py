@@ -8,6 +8,10 @@ from scipy.optimize import curve_fit
 import itertools
 
 
+def nsigma_from_pte(pte):
+    from scipy.special import erfinv
+    return erfinv ( (1-pte)) * np.sqrt(2)
+
 def get_pte(chisquare_data,chisquares_sims):
     return chisquares_sims[chisquare_data<chisquares_sims].size / chisquares_sims.size
 
