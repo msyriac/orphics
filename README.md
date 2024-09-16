@@ -7,14 +7,6 @@ To install while working on the repo (with symlinks):
 
 ``pip install -e .``
 
-otherwise
-
-``pip install .``
-
-or
-
-``python setup.py install --user``
-
 ### Usage
 
 Some key modules include:
