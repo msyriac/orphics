@@ -3,7 +3,7 @@
 
 ### Installation
 
-To install while working on the repo (with symlinks):
+To install:
 
 ``pip install -e .``
 
