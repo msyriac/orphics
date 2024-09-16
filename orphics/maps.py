@@ -8,9 +8,35 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
+from . import cosmology
+
+def matched_filter(imap,fwhm_arcmin,cls=None,noise_uk_arcmin=None,taper_per=12.0):
+    taper = 1.0
+    if not(taper_per is None):
+        taper,_ = get_taper(imap.shape[-2:],imap.wcs,taper_percent = taper_per)
+    kmap = enmap.fft(imap*taper)
+    
+    modlmap = enmap.modlmap(imap.shape,imap.wcs)
+    p2d = gauss_beam(modlmap,fwhm_arcmin)
+    if cls is None:
+        theory = cosmology.default_theory()
+        s2d = theory.lCl('TT',modlmap)*p2d**2.
+    else:
+        ells = np.arange(cls.size)
+        s2d = interp(ells,cls)(modlmap)
+
+    n2d = 0.
+    if not(noise_uk_arcmin is None):
+        n2d = (noise_uk_arcmin*np.pi/180./60.)**2.
+
+    filt2d = p2d/(s2d+n2d)
+    filt2d[~np.isfinite(filt2d)] = 0.
+
+    return enmap.ifft(kmap*filt2d).real
+
+    
 
 def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
-    from . import cosmology
     theory = cosmology.default_theory()
     ells = np.arange(lmax+1)
     if lensed_cls:
@@ -73,7 +99,7 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,
 
     """
     from . import catalogs
-    
+
     if not(fwhm is None):
         sigma = sigma_from_fwhm(fwhm)
         r,p = pointsrcs.expand_beam(sigma)
