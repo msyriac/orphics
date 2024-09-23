@@ -9,6 +9,16 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 
+def block_smooth(imap,factor):
+    """Smooth maps with block downgrading and projection
+    back to original geometry
+    """
+    downed = enmap.downgrade(imap, factor, inclusive=True,op=np.nanmean)
+    downed[np.isnan(downed)] = 0
+    omap = enmap.upgrade(downed,factor,inclusive=True,oshape=imap.shape)
+    return omap
+
+
 def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
     from . import cosmology
     theory = cosmology.default_theory()
