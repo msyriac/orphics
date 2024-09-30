@@ -36,13 +36,16 @@ def matched_filter(imap,fwhm_arcmin,cls=None,noise_uk_arcmin=None,taper_per=12.0
 
     
 
-def block_smooth(imap,factor):
+def block_smooth(imap,factor,slow=False):
     """Smooth maps with block downgrading and projection
     back to original geometry
     """
     downed = enmap.downgrade(imap, factor, inclusive=True,op=np.nanmean)
     downed[np.isnan(downed)] = 0
-    omap = enmap.upgrade(downed,factor,inclusive=True,oshape=imap.shape)
+    if slow:
+        omap = enmap.project(downed,imap.shape,imap.wcs,order=0)
+    else:
+        omap = enmap.upgrade(downed,factor,inclusive=True,oshape=imap.shape)
     return omap
 
 
