@@ -17,8 +17,6 @@ except:
 import time, re, os
 from scipy.integrate import odeint
 from orphics.io import bcolors
-import camb
-from camb import model
 
 
 defaultConstants = {'TCMB': 2.7255
@@ -78,6 +76,8 @@ class CAMB(object):
         for p in required_params:
             if p not in params.keys():
                 params[p] = defaultCosmology[p]
+        import camb
+        from camb import model
         pars = camb.CAMBparams(want_zstar=True)
         pars.set_dark_energy(w=params['w0'],wa=params['wa'])
         try:
