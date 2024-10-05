@@ -3,17 +3,9 @@
 
 ### Installation
 
-To install while working on the repo (with symlinks):
+To install:
 
 ``pip install -e .``
-
-otherwise
-
-``pip install .``
-
-or
-
-``python setup.py install --user``
 
 ### Usage
 

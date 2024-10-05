@@ -8,7 +8,84 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
+from . import cosmology
 
+def matched_filter(imap,fwhm_arcmin,cls=None,noise_uk_arcmin=None,taper_per=12.0):
+    taper = 1.0
+    if not(taper_per is None):
+        taper,_ = get_taper(imap.shape[-2:],imap.wcs,taper_percent = taper_per)
+    kmap = enmap.fft(imap*taper)
+    
+    modlmap = enmap.modlmap(imap.shape,imap.wcs)
+    p2d = gauss_beam(modlmap,fwhm_arcmin)
+    if cls is None:
+        theory = cosmology.default_theory()
+        s2d = theory.lCl('TT',modlmap)*p2d**2.
+    else:
+        ells = np.arange(cls.size)
+        s2d = interp(ells,cls)(modlmap)
+
+    n2d = 0.
+    if not(noise_uk_arcmin is None):
+        n2d = (noise_uk_arcmin*np.pi/180./60.)**2.
+
+    filt2d = p2d/(s2d+n2d)
+    filt2d[~np.isfinite(filt2d)] = 0.
+
+    return enmap.ifft(kmap*filt2d).real
+
+    
+
+def block_smooth(imap,factor,slow=False):
+    """Smooth maps with block downgrading and projection
+    back to original geometry
+    """
+    downed = enmap.downgrade(imap, factor, inclusive=True,op=np.nanmean)
+    downed[np.isnan(downed)] = 0
+    if slow:
+        omap = enmap.project(downed,imap.shape,imap.wcs,order=0)
+    else:
+        omap = enmap.upgrade(downed,factor,inclusive=True,oshape=imap.shape)
+    return omap
+
+
+def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
+    theory = cosmology.default_theory()
+    ells = np.arange(lmax+1)
+    if lensed_cls:
+        cfunc = theory.lCl
+    else:
+        cfunc = theory.uCl
+    if not(len(shape)==2):
+        raise ValueError
+    if pol:
+        shape = (3,) + shape[-2:]
+        ps = np.zeros((3,3,lmax+1))
+        ps[0,0] = cfunc('TT',ells)
+        ps[0,1] = cfunc('TE',ells)
+        ps[1,0] = cfunc('TE',ells)
+        ps[1,1] = cfunc('EE',ells)
+        ps[2,2] = cfunc('BB',ells)
+    else:
+        ps = cfunc('TT',ells)
+    return cs.rand_map(shape,wcs,ps,dtype=dtype)
+        
+        
+        
+
+def field_variance(cls):
+    """
+    Return the real-space variance
+    sigma^2 = \sum_l 2l+1  C_l / 4pi
+    of a field that has power spectrum
+    C_l. This has the same units as the
+    power spectrum.
+
+    Assumes cls start at 0 and are spaced
+    by 1.
+    """
+    ells = np.arange(cls.size)
+    return np.sum((2*ells+1)*cls/4./np.pi)
 
 
 def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,
@@ -35,7 +112,7 @@ def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,
 
     """
     from . import catalogs
-    
+
     if not(fwhm is None):
         sigma = sigma_from_fwhm(fwhm)
         r,p = pointsrcs.expand_beam(sigma)
@@ -392,7 +469,9 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
         ells = np.arange(lmax)
         N_ell_standard = atm_factor(ells,lknee,alpha) + 1.
         N_ell_standard[~np.isfinite(N_ell_standard)] = 0
-        if lmin is not None: N_ell_standard[ells<lmin] = 0
+        if lmin is not None:
+            if lmin>=lmax: raise ValueError
+            N_ell_standard[ells<lmin] = 0
     shape,wcs = ivar.shape[-2:],ivar.wcs
     if N_ell_standard is None and (lknee is None):
         if seed is not None: np.random.seed(seed)
