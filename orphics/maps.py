@@ -290,7 +290,9 @@ def cosine_stitch(alm1,map2,lstitch=5200,lcosine=80,mlmax=6000):
     omap = cs.alm2map(hp.almxfl(alm1,fl1),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype)) + omap2
     return omap
 
-def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-4,flmin = 700):
+def stitched_noise(shape,wcs,alm,mask,
+                   rms_uk_arcmin = None,
+                   lstitch=5200,lcosine=80,mlmax=6000,alpha=-4,flmin = 700):
     """
     Stitch constant (homogenous) white-noise to a band-limited noise
     sim realization.
@@ -315,16 +317,19 @@ def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-
     noise : `numpy.ndarray`
         The stitched noise map.
     """
-    from scipy.optimize import curve_fit as cfit
-    
-    # Get noise power of input alm
-    w2 = wfactor(2,mask)
-    wcls = cs.alm2cl(alm)/w2
-    ls = np.arange(wcls.size)
-    # Fit to red+white noise
-    rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
-    popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
-    rms = popt[0]
+
+    if rms_uk_arcmin is None:
+        from scipy.optimize import curve_fit as cfit
+        # Get noise power of input alm
+        w2 = wfactor(2,mask)
+        wcls = cs.alm2cl(alm)/w2
+        ls = np.arange(wcls.size)
+        # Fit to red+white noise
+        rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
+        popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
+        rms = popt[0]
+    else:
+        rms = rms_uk_arcmin
 
     # Generate white noise map
     wmap = white_noise(shape,wcs,rms)
@@ -528,13 +533,21 @@ def ivar(shape,wcs,noise_muK_arcmin,ipsizemap=None):
     pmap = ipsizemap*((180.*60./np.pi)**2.)
     return pmap/noise_muK_arcmin**2.
 
-def white_noise(shape,wcs,noise_muK_arcmin=None,seed=None,ipsizemap=None,div=None):
+
+def white_noise(shape=None,wcs=None,noise_muK_arcmin=None,seed=None,ipsizemap=None,div=None,nside=None):
     """
     Generate a non-band-limited white noise map.
     """
-    if div is None: div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
     if seed is not None: np.random.seed(seed)
-    return np.random.standard_normal(shape) / np.sqrt(div)
+    if nside is None:
+        if div is None: div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
+        return np.random.standard_normal(shape) / np.sqrt(div)
+    else:
+        npix = int(12*nside**2)
+        ipsizemap = 4*np.pi / npix
+        pmap = ipsizemap*((180.*60./np.pi)**2.)
+        div = pmap/noise_muK_arcmin**2.
+        return np.random.standard_normal((npix,)) / np.sqrt(div)
 
     
 def get_ecc(img):
