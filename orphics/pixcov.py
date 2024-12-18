@@ -167,7 +167,7 @@ def pcov_from_ivar(n,dec,ra,ivar,cmb_theory_fn,beam_fn,iau=False,full_map=True):
     cmb2d_TEB[0,1] = theory('TE',modlmap)
     cmb2d_TEB[1,0] = theory('TE',modlmap)
     beam2d = beam_fn(modlmap)
-    tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
+    tcov = stamp_pixcov_from_theory(enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,iau=iau,return_pow=False)    
     return tcov + ncov_IQU
 
 
@@ -188,7 +188,7 @@ def tpcov_from_ivar(n,ivar,cmb_theory_fn,beam_fn):
     theory = cmb_theory_fn
     cmb2d_TEB[0,0] = theory('TT',modlmap)
     beam2d = beam_fn(modlmap)
-    tcov = stamp_pixcov_from_theory(n,enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,return_pow=False)    
+    tcov = stamp_pixcov_from_theory(enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,return_pow=False)    
     return tcov + ncov_IQU
 
 def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=None,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None,tot_pow2d=None,store_pcov=False,pcov=None):
@@ -221,7 +221,7 @@ def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=No
         if tot_pow2d is not None:
             pcov = fcov_to_rcorr(shape,wcs,tot_pow2d,n)
         else:
-            pcov = stamp_pixcov_from_theory(n,cmb2d_TEB,n2d_IQU,beam2d=beam2d,iau=iau)
+            pcov = stamp_pixcov_from_theory(cmb2d_TEB,n2d_IQU,beam2d=beam2d,iau=iau)
 
     # Do we have polarization?
     ncomp = pcov.shape[0]
@@ -580,7 +580,7 @@ def inpaint_uncorrelated_save_geometries(coords,hole_radius,ivar,output_dir,
 
     if rank==0:
         empty_file = f'{output_dir}/empty_catalog'
-        np.savetxt(f'{output_dir}/source_inpaint_attributes.txt',np.asarray([[ncomp,hole_radius,context_fraction],]),fmt='%d,%.15f,%.15f',header='ncomp,hole_radius,context_fraction')
+        np.savetxt(f'{output_dir}/source_inpaint_attributes.dat',np.asarray([[ncomp,hole_radius/utils.arcmin,context_fraction],]),fmt='%d,%.15f,%.15f',header='ncomp,hole_radius (arcmin),context_fraction')
         if os.path.isfile(empty_file):
             os.remove_file(empty_file)
 
@@ -786,7 +786,15 @@ def inpaint_uncorrelated_from_saved_geometries(imap,output_dir,inplace=False,ver
 
     if len(coords)!=len(tasks): raise ValueError
 
-    ncomp,hole_radius,context_fraction = np.loadtxt(f'{output_dir}/source_inpaint_attributes.txt',unpack=True,delimiter=',')
+    try:
+        ncomp,hole_radius,context_fraction = np.loadtxt(f'{output_dir}/source_inpaint_attributes.dat',unpack=True,delimiter=',')
+        hole_radius = hole_radius * utils.arcmin
+    except FileNotFoundError:
+        if os.path.isfile(f'{output_dir}/source_inpaint_attributes.txt'):
+            print("This inpaint model is incompatible with a bugfix in orphics.pixcov. Please remake the model.")
+        else:
+            print("Missing inpaint model files. Please remake the model.")
+        raise
     rtot = hole_radius * (1 + context_fraction)
     pixboxes = enmap.neighborhood_pixboxes(imap.shape[-2:], imap.wcs, coords, rtot)
 

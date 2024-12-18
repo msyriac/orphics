@@ -9,6 +9,104 @@ import healpy as hp
 from astropy.io import fits
 from orphics import maps
 
+
+def reconstruct_velocities(ras,decs,zs,
+                           ras_rand,decs_rand,zs_rand,
+                           zeff=0.55,bg=1.92, # cmass defaults
+                           h = 0.676, omegam=0.31,
+                           fkp_weights=None,
+                           fkp_weights_rand=None,
+                           nmesh=512, smoothing_radius=10.):
+    ## Reconstructing los velocity field from galaxy positions
+    ## based largely on: 
+    ## https://github.com/cosmodesi/pyrecon/blob/main/nb/e2e_examples.ipynb
+    ## Code adapted and provided by Alex Lague
+
+    from nbodykit.lab import ArrayCatalog, cosmology
+    import nbodykit
+    from pyrecon import MultiGridReconstruction
+
+    ras = np.asarray(ras)
+    decs = np.asarray(decs)
+    zs = np.asarray(zs)
+    if np.any(zs<=0.): raise ValueError
+    ras_rand = np.asarray(ras_rand)
+    decs_rand = np.asarray(decs_rand)
+    zs_rand = np.asarray(zs_rand)
+    if np.any(zs_rand<=0.): raise ValueError
+
+    # fiducial cosmo
+    cosmo = cosmology.Cosmology(h=h).match(Omega0_m=omegam)
+    fgrowth = cosmo.scale_independent_growth_rate(zeff)
+
+    # Load data and convert positions
+    data_cat = ArrayCatalog({'ra': ras, 'dec': decs, 'redshift': zs})
+    fkp_weights = np.ones(ras.shape) if fkp_weights is None else fkp_weights
+    data_cat['Position'] = nbodykit.transform.SkyToCartesian(data_cat['ra'],
+                                                              data_cat['dec'],
+                                                              data_cat['redshift'], cosmo)
+    # Load randoms and convert positions
+    rand_cat = ArrayCatalog({'ra': ras_rand, 'dec': decs_rand, 'redshift': zs_rand})
+    fkp_weights_rand = np.ones(ras_rand.shape) if fkp_weights_rand is None else fkp_weights_rand
+    rand_cat['Position'] = nbodykit.transform.SkyToCartesian(rand_cat['ra'],
+                                                             rand_cat['dec'],
+                                                             rand_cat['redshift'], cosmo)
+
+    # nbodykit works with dask, but pyrecon expects numpy ndarrays
+    pos = np.array(data_cat['Position'])
+    rand_pos = np.array(rand_cat['Position'])
+
+    # Setup recon
+    recon = MultiGridReconstruction(f=fgrowth, bias=bg, los=None, nmesh=nmesh, positions=pos)
+    recon.assign_data(pos, fkp_weights)
+    recon.assign_randoms(rand_pos, fkp_weights_rand)
+    recon.set_density_contrast(smoothing_radius=smoothing_radius) #smoothing density ~10-15 Mpc
+
+    # Run reconstruction
+    recon.run()
+
+    data_positions_rec = recon.read_shifted_positions(pos, field='rsd') 
+    # field rsd is necessary otherwise the code moves particles back to their IC positions
+
+    Delta_pos = data_positions_rec - pos
+    vel = np.sum(Delta_pos*data_positions_rec, axis=1) # dot product with los
+    vel /= np.linalg.norm(data_positions_rec, axis=1) # in Mpc/h
+    vel /= cosmo.h # in Mpc                                                                                                                               
+
+    H = cosmo.hubble_function(zeff)*299792.458 # H(zeff)/c * speed_of_light gives km/s/Mpc
+    vel *= H / (1+zeff) # now in km/s
+    return vel
+
+
+def get_random_catalog(nobj,dec_min=-np.pi/2,dec_max=np.pi/2,ra_min=0,ra_max=2.*np.pi,seed=None):
+    """
+    Generate a random catalog of nobj objects with uniform distribution on the sphere.
+
+    Args:
+    nobj: int
+        Number of objects to generate
+    dec_min: float
+        Minimum declination in radians
+    dec_max: float
+        Maximum declination in radians
+    ra_min: float
+        Minimum right ascension in radians
+    ra_max: float   
+        Maximum right ascension in radians
+
+    Returns:
+    poss: (2,nobj) array
+        Array of dec,ra coordinates in radians    
+    """
+    poss = np.zeros((2,nobj))
+    dmin = np.cos(np.pi/2 - dec_min)
+    dmax = np.cos(np.pi/2 - dec_max)
+    if not(seed is None): np.random.seed(seed)
+    poss[0,:] = np.pi/2. - np.arccos(np.random.uniform(dmin,dmax,nobj))
+    poss[1,:] = np.random.uniform(ra_min,ra_max,nobj)
+    return poss
+
+
 class Pow2Cat(object):
     def __init__(self,ells,clgg,clkg=None,clkk=None,depth_map=None,lmax=None):
         """Initialize a catalog generator
@@ -78,7 +176,7 @@ class Pow2Cat(object):
         sampled = np.random.poisson(ngalmap).astype(np.float64)
         Ny,Nx = self.shape[-2:]
         pixmap = (enmap.pixmap(self.shape,self.wcs)).reshape(2,Ny*Nx)
-        nobjs = sampled.reshape(-1).astype(np.int)
+        nobjs = sampled.reshape(-1).astype(int)
         cat = np.repeat(pixmap,nobjs,-1).astype(np.float64)
         jitter = np.random.uniform(-0.5,0.5,size=cat.shape) if add_jitter else 0.
         cat += jitter
@@ -494,7 +592,7 @@ def select_based_on_mask(ras,decs,mask,threshold=0.99):
     Filters ra,dec based on whether it falls within a mask
     """
     coords = np.vstack((decs,ras))*np.pi/180.
-    pixs = enmap.sky2pix(mask.shape,mask.wcs,coords).astype(np.int)
+    pixs = enmap.sky2pix(mask.shape,mask.wcs,coords).astype(int)
     # First select those that fall within geometry
     sel = np.logical_and.reduce([pixs[0]>=0,pixs[1]>=0,pixs[0]<mask.shape[0],pixs[1]<mask.shape[1]])
     pixs = pixs[:,sel]
@@ -587,7 +685,7 @@ def hp_from_mangle(weight_ply_files,nside=None,veto_ply_files=None,hp_coords='eq
 
     if coords is None:
         npix = hp.nside2npix(nside)
-        pixs = np.arange(npix,dtype=np.int)
+        pixs = np.arange(npix,dtype=int)
         if verbose: print("Converting healpix pixels to coordinates.")
         ra,dec = hp.pix2ang(nside,pixs,lonlat=True)
 

@@ -1,14 +1,137 @@
 from __future__ import print_function 
-from pixell import enmap, utils, resample, curvedsky as cs, reproject
+from pixell import enmap, utils, resample, curvedsky as cs, reproject,pointsrcs
 import numpy as np
 from pixell.fft import fft,ifft
 from scipy.interpolate import interp1d
 import yaml,six
-from orphics import io,cosmology,stats
 import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
+from . import cosmology
+
+def matched_filter(imap,fwhm_arcmin,cls=None,noise_uk_arcmin=None,taper_per=12.0):
+    taper = 1.0
+    if not(taper_per is None):
+        taper,_ = get_taper(imap.shape[-2:],imap.wcs,taper_percent = taper_per)
+    kmap = enmap.fft(imap*taper)
+    
+    modlmap = enmap.modlmap(imap.shape,imap.wcs)
+    p2d = gauss_beam(modlmap,fwhm_arcmin)
+    if cls is None:
+        theory = cosmology.default_theory()
+        s2d = theory.lCl('TT',modlmap)*p2d**2.
+    else:
+        ells = np.arange(cls.size)
+        s2d = interp(ells,cls)(modlmap)
+
+    n2d = 0.
+    if not(noise_uk_arcmin is None):
+        n2d = (noise_uk_arcmin*np.pi/180./60.)**2.
+
+    filt2d = p2d/(s2d+n2d)
+    filt2d[~np.isfinite(filt2d)] = 0.
+
+    return enmap.ifft(kmap*filt2d).real
+
+    
+
+def block_smooth(imap,factor,slow=False):
+    """Smooth maps with block downgrading and projection
+    back to original geometry
+    """
+    downed = enmap.downgrade(imap, factor, inclusive=True,op=np.nanmean)
+    downed[np.isnan(downed)] = 0
+    if slow:
+        omap = enmap.project(downed,imap.shape,imap.wcs,order=0)
+    else:
+        omap = enmap.upgrade(downed,factor,inclusive=True,oshape=imap.shape)
+    return omap
+
+
+def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
+    theory = cosmology.default_theory()
+    ells = np.arange(lmax+1)
+    if lensed_cls:
+        cfunc = theory.lCl
+    else:
+        cfunc = theory.uCl
+    if not(len(shape)==2):
+        raise ValueError
+    if pol:
+        shape = (3,) + shape[-2:]
+        ps = np.zeros((3,3,lmax+1))
+        ps[0,0] = cfunc('TT',ells)
+        ps[0,1] = cfunc('TE',ells)
+        ps[1,0] = cfunc('TE',ells)
+        ps[1,1] = cfunc('EE',ells)
+        ps[2,2] = cfunc('BB',ells)
+    else:
+        ps = cfunc('TT',ells)
+    return cs.rand_map(shape,wcs,ps,dtype=dtype)
+        
+        
+        
+
+def field_variance(cls):
+    """
+    Return the real-space variance
+    sigma^2 = \sum_l 2l+1  C_l / 4pi
+    of a field that has power spectrum
+    C_l. This has the same units as the
+    power spectrum.
+
+    Assumes cls start at 0 and are spaced
+    by 1.
+    """
+    ells = np.arange(cls.size)
+    return np.sum((2*ells+1)*cls/4./np.pi)
+
+
+def random_source_map(shape,wcs,nobj,fwhm=None,profile=None,amps=None,
+                      ra_min=0.*utils.degree,ra_max=360*utils.degree,
+                      dec_min=-90*utils.degree,dec_max=90*utils.degree,seed=None):
+    """
+    Generate a map with sources distributed randomly.
+
+    Parameters:
+    shape (tuple): The shape of the output map.
+    wcs (object): The WCS object defining the coordinate system of the map.
+    nobj (int): The number of random sources to generate.
+    fwhm (float, optional): The full width at half maximum of the sources' Gaussian beam in radians. Default is None. Alternatively, you can specify the radial profile of the sources using the profile argument.
+    profile (tuple, optional): The radial profile of the sources. Should be a tuple of two 1D arrays representing the radial distance (in radians) and the profile values. Default is None.
+    amps (array-like, optional): The amplitudes of the sources. Should be a 1D array with length equal to nobj. Default is None.
+    ra_min (float, optional): The minimum right ascension value for generating random positions in radians. Default is 0 degrees.
+    ra_max (float, optional): The maximum right ascension value for generating random positions in radians. Default is 360 degrees.
+    dec_min (float, optional): The minimum declination value for generating random positions in radians. Default is -90 degrees.
+    dec_max (float, optional): The maximum declination value for generating random positions in radians. Default is 90 degrees.
+    seed (int or tuple of ints, optional): Random number seed
+
+    Returns:
+    poss, omap: A tuple containing the positions of the generated sources and the output source map.
+
+    """
+    from . import catalogs
+
+    if not(fwhm is None):
+        sigma = sigma_from_fwhm(fwhm)
+        r,p = pointsrcs.expand_beam(sigma)
+    else:
+        r,p = profile
+        if r.ndim!=1: raise ValueError
+        if p.ndim!=1: raise ValueError
+        if r.size != p.size: raise ValueError
+
+    poss = catalogs.get_random_catalog(nobj,dec_min,dec_max,ra_min,ra_max,seed=seed)
+
+    if amps is None:
+        amps = np.ones(nobj)
+    else:        
+        if amps.ndim!=1: raise ValueError
+        if amps.size!=nobj: raise ValueError
+
+    omap = pointsrcs.sim_objects(shape,wcs,poss,amps,((r,p)))
+    return poss,omap
 
 def gapfill_edge_conv_flat(map, mask, ivar=None, alpha=-3, edge_rad=1*utils.arcmin, rmin=2*utils.arcmin, tol=1e-8):
     """Gapfill by doing a masked convolution with a profile that
@@ -167,7 +290,9 @@ def cosine_stitch(alm1,map2,lstitch=5200,lcosine=80,mlmax=6000):
     omap = cs.alm2map(hp.almxfl(alm1,fl1),enmap.empty(map2.shape,map2.wcs,dtype=map2.dtype)) + omap2
     return omap
 
-def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-4,flmin = 700):
+def stitched_noise(shape,wcs,alm,mask,
+                   rms_uk_arcmin = None,
+                   lstitch=5200,lcosine=80,mlmax=6000,alpha=-4,flmin = 700):
     """
     Stitch constant (homogenous) white-noise to a band-limited noise
     sim realization.
@@ -192,16 +317,19 @@ def stitched_noise(shape,wcs,alm,mask,lstitch=5200,lcosine=80,mlmax=6000,alpha=-
     noise : `numpy.ndarray`
         The stitched noise map.
     """
-    from scipy.optimize import curve_fit as cfit
-    
-    # Get noise power of input alm
-    w2 = wfactor(2,mask)
-    wcls = cs.alm2cl(alm)/w2
-    ls = np.arange(wcls.size)
-    # Fit to red+white noise
-    rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
-    popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
-    rms = popt[0]
+
+    if rms_uk_arcmin is None:
+        from scipy.optimize import curve_fit as cfit
+        # Get noise power of input alm
+        w2 = wfactor(2,mask)
+        wcls = cs.alm2cl(alm)/w2
+        ls = np.arange(wcls.size)
+        # Fit to red+white noise
+        rfunc = lambda ls,rms_noise, lknee : rednoise(ls,rms_noise,lknee=lknee,alpha=alpha)
+        popt,pcov = cfit(rfunc,ls[ls>flmin],wcls[ls>flmin],p0=[1e-3,1000])
+        rms = popt[0]
+    else:
+        rms = rms_uk_arcmin
 
     # Generate white noise map
     wmap = white_noise(shape,wcs,rms)
@@ -224,6 +352,7 @@ def area_sqdeg(mask,threshold=0.5):
     
 
 def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
+    from . import cosmology
     if theory is None: theory = cosmology.default_theory()
     ells = np.arange(lmax)
     ps = np.zeros((3,3,lmax))
@@ -345,7 +474,9 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
         ells = np.arange(lmax)
         N_ell_standard = atm_factor(ells,lknee,alpha) + 1.
         N_ell_standard[~np.isfinite(N_ell_standard)] = 0
-        if lmin is not None: N_ell_standard[ells<lmin] = 0
+        if lmin is not None:
+            if lmin>=lmax: raise ValueError
+            N_ell_standard[ells<lmin] = 0
     shape,wcs = ivar.shape[-2:],ivar.wcs
     if N_ell_standard is None and (lknee is None):
         if seed is not None: np.random.seed(seed)
@@ -402,13 +533,21 @@ def ivar(shape,wcs,noise_muK_arcmin,ipsizemap=None):
     pmap = ipsizemap*((180.*60./np.pi)**2.)
     return pmap/noise_muK_arcmin**2.
 
-def white_noise(shape,wcs,noise_muK_arcmin=None,seed=None,ipsizemap=None,div=None):
+
+def white_noise(shape=None,wcs=None,noise_muK_arcmin=None,seed=None,ipsizemap=None,div=None,nside=None):
     """
     Generate a non-band-limited white noise map.
     """
-    if div is None: div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
     if seed is not None: np.random.seed(seed)
-    return np.random.standard_normal(shape) / np.sqrt(div)
+    if nside is None:
+        if div is None: div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
+        return np.random.standard_normal(shape) / np.sqrt(div)
+    else:
+        npix = int(12*nside**2)
+        ipsizemap = 4*np.pi / npix
+        pmap = ipsizemap*((180.*60./np.pi)**2.)
+        div = pmap/noise_muK_arcmin**2.
+        return np.random.standard_normal((npix,)) / np.sqrt(div)
 
     
 def get_ecc(img):
@@ -503,7 +642,7 @@ def binned_power(imap,bin_edges=None,binner=None,fc=None,modlmap=None,imap2=None
     """Get the binned power spectrum of a map in one line of code.
     (At the cost of flexibility and reusability of expensive parts)"""
     
-    from orphics import stats
+    from . import stats
     shape,wcs = imap.shape,imap.wcs
     modlmap = enmap.modlmap(shape,wcs) if modlmap is None else modlmap
     fc = FourierCalc(shape,wcs) if fc is None else fc
@@ -521,7 +660,7 @@ def flat_sim(deg,px,lmax=6000,lensed=True,pol=False):
     Not very flexible but is a one-line replacement for
     a large fraction of use cases.
     """
-    from orphics import cosmology
+    from . import cosmology
     shape,wcs = rect_geometry(width_deg=deg,px_res_arcmin=px,pol=pol)
     modlmap = enmap.modlmap(shape,wcs)
     cc = cosmology.Cosmology(lmax=lmax,pickling=True,dimensionless=False)
@@ -609,7 +748,7 @@ def cutup(shape,numy,numx,pad=0):
     boxes[:,0,1][boxes[:,0,1]<0] = 0
     boxes[:,1,1] = np.repeat(pixs_x[1:],numy) + pad
     boxes[:,1,1][boxes[:,1,1]>(Nx-1)] = Nx-1
-    boxes = boxes.astype(np.int)
+    boxes = boxes.astype(int)
 
     return boxes
 
@@ -681,7 +820,7 @@ def downsample_power(shape,wcs,cov,ndown=16,order=0,exp=None,fftshift=True,fft=F
         dshape = np.array(cov.shape)
         dshape[-2] /= ndown[0]
         dshape[-1] /= ndown[1]
-        cov_low = resample.resample_fft(afftshift(cov), dshape.astype(np.int))
+        cov_low = resample.resample_fft(afftshift(cov), dshape.astype(int))
     else:
         cov_low = enmap.downgrade(afftshift(cov), ndown)
     if not(fft_up):
@@ -1082,7 +1221,7 @@ def sigma_from_fwhm(fwhm):
     return fwhm/2./np.sqrt(2.*np.log(2.))
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
-    output = enmap.ones(shape[-2:],wcs, dtype = np.int)
+    output = enmap.ones(shape[-2:],wcs, dtype = int)
     if (lmin is not None) or (lmax is not None): modlmap = enmap.modlmap(shape, wcs)
     if (lxcut is not None) or (lycut is not None): ly, lx = enmap.laxes(shape, wcs, oversample=1)
     if lmin is not None:
@@ -1199,6 +1338,8 @@ def ilc_comb_a_b(response_a,response_b,cinv):
 
 
 def ilc_empirical_cov(kmaps,bin_edges=None,ndown=16,order=1,fftshift=True,method="isotropic"):
+    from . import stats
+
     assert method in ['isotropic','downsample']
     
     assert kmaps.ndim==3
@@ -1281,8 +1422,6 @@ def ilc_cov(ells,cmb_ps,kbeams,freqs,noises,components,fnoise=None,plot=False,
             if data:
                 Covmat[i,j][ells>ellmaxes[i]] = 1e90 # !!!
                 Covmat[i,j][ells>ellmaxes[j]] = 1e90 # !!!
-            #if i>=j:
-            #    io.plot_img(np.fft.fftshift(np.log10(Covmat[i,j,:])),lim=[-10,3])
             if i==j:
                 if lmins is not None: Covmat[i,j][ells<lmins[i]] = np.inf
                 if lmaxs is not None: Covmat[i,j][ells>lmaxs[i]] = np.inf
@@ -1413,7 +1552,7 @@ def inpaint_cg(imap,rand_map,mask,power2d,eps=1.e-8):
         alpha=delta_new/(np.inner(d,q))
         x=x+alpha*d
         
-        if i/50.<np.int(i/50):
+        if i/50.<int(i/50):
             
             r=b-apply_px_c_inv_px(x)
         else:

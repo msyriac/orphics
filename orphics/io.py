@@ -27,7 +27,7 @@ class latex:
     dl = "$D_{\\ell}$"
     cl = "$C_{\\ell}$"
     cL = "$C_{L}$"
-    ratcl = "$\Delta C_{\\ell}/C_{\\ell}$"
+    ratcl = "$\\Delta C_{\\ell}/C_{\\ell}$"
 
 class DummyFile(object):
     def write(self, x): pass
@@ -135,6 +135,7 @@ def mkdir(dirpath,comm=None):
     if comm.Get_rank()==0: 
         if not (exists):
             os.makedirs(dirpath)
+    comm.Barrier()
     return exists
 
 def prepare_dir(savedir,overwrite,comm=None,msg=None):
@@ -282,7 +283,14 @@ def mollview(hp_map,filename=None,lim=None,coord='C',verbose=True,return_project
         if verbose: cprint("Saved healpix plot to "+ filename,color="g")
     if return_projected_map: return retimg
 
-def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,down=None,crange=None,cmap=None,arc_width=None,xlabel="",ylabel="",figsize=None,quiver=None,label=None,projection=None,noshow=False,extent=None,dpi=None,skip_plot=False,**kwargs):
+def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True,
+             down=None,crange=None,cmap=None,arc_width=None,
+             xlabel="",ylabel="",figsize=None,quiver=None,
+             label=None,projection=None,noshow=False,
+             extent=None,dpi=None,skip_plot=False,interpolation='none',**kwargs):
+    """
+    extent=[horizontal_min,horizontal_max,vertical_min,vertical_max]
+    """
     if array.ndim>2: array = array.reshape(-1,*array.shape[-2:])[0] # Only plot the first component
     if flip: array = np.flipud(array)
     if high_res:
@@ -292,7 +300,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
         if extent is None:
             extent = None if arc_width is None else [-arc_width/2.,arc_width/2.,-arc_width/2.,arc_width/2.]
         pl = Plotter(ftsize=ftsize,xlabel=xlabel,ylabel=ylabel,figsize=figsize,projection=projection)
-        pl.plot2d(array,extent=extent,cm=cmap,label=label,**kwargs)
+        pl.plot2d(array,extent=extent,cm=cmap,label=label,interpolation=interpolation,**kwargs)
 
         if quiver is not None:
             assert arc_width is not None
@@ -342,7 +350,8 @@ class Plotter(object):
     def __init__(self,scheme=None,xlabel=None,ylabel=None,xyscale=None,xscale="linear",
                  yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,
                  minor_tick_size=3,scalefn = None,projection=None,
-                 secax_fns=None,secax_label=None,**kwargs):
+                 secax_fns=None,secax_label=None,
+                 secay_fns=None,secay_label=None,**kwargs):
         self.scalefn = None
         if scheme is not None:
             if scheme=='Dell' or scheme=='Dl':
@@ -354,6 +363,11 @@ class Plotter(object):
                 xlabel = '$\\ell$' if xlabel is None else xlabel
                 ylabel = '$C_{\\ell}$' if ylabel is None else ylabel
                 xyscale = 'linlog' if xyscale is None else xyscale
+                self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
+            elif scheme=='Pk':
+                xlabel = '$k$ (Mpc$^{-1}$)' if xlabel is None else xlabel
+                ylabel = '$P(k)$ (Mpc$^3$)' if ylabel is None else ylabel
+                xyscale = 'loglog' if xyscale is None else xyscale
                 self.scalefn = (lambda x: 1)  if scalefn is None else scalefn
             elif scheme=='CL':
                 xlabel = '$L$' if xlabel is None else xlabel
@@ -429,6 +443,13 @@ class Plotter(object):
             secax.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)
             self._secax = secax
 
+        if secay_fns is not None:
+            secay = self._ax.secondary_yaxis('right', functions=secay_fns)
+            secay.set_ylabel(secay_label,fontsize=ftsize)
+            secay.tick_params(axis='both', which='major', labelsize=labsize,width=self.thk,size=major_tick_size)
+            secay.tick_params(axis='both', which='minor', labelsize=labsize,size=minor_tick_size)
+            self._secay = secay
+
 
 
     def legend(self,loc='best',labsize=12,numpoints=1,bbox_to_anchor=None,**kwargs):
@@ -473,7 +494,8 @@ class Plotter(object):
             self._ax.errorbar(x*mulx+addx,yc,yerr=yerrc,ls=ls,marker=marker,elinewidth=elinewidth,markersize=markersize,label=label,alpha=alpha,color=color,capsize=capsize,**kwargs)
         if label is not None: self.do_legend = True
 
-    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,labsize=14,extent=None,ticksize=12,disable_grid=False,**kwargs):
+    def plot2d(self,data,lim=None,levels=None,clip=0,clbar=True,cm=None,label=None,
+               labsize=14,extent=None,ticksize=12,disable_grid=False,interpolation='none',**kwargs):
         '''
         For an array passed in as [j,i]
         Displays j along y and i along x , so (y,x)
@@ -495,7 +517,7 @@ class Plotter(object):
 
         if extent is None:
             extent = (0, arr.shape[1], arr.shape[0], 0)
-        img = self._ax.imshow(arr,interpolation="none",vmin=limmin,vmax=limmax,cmap=cm,extent=extent,**kwargs)
+        img = self._ax.imshow(arr,interpolation=interpolation,vmin=limmin,vmax=limmax,cmap=cm,extent=extent,**kwargs)
         if disable_grid: self._ax.grid(b=None)
         
 
@@ -722,19 +744,19 @@ class FisherPlots(object):
                     # a sigma8 hack
                     if "S8" in paramX:
                         xval = 0.8
-                        paramlabelx = '$\sigma_8(z_{'+paramX[3:]+'})$'
+                        paramlabelx = '$\\sigma_8(z_{'+paramX[3:]+'})$'
                     else:
                         xval = self.fidDicts[section][paramX]
                         paramlabelx = '$'+self.paramLatexLists[section][p]+'$'
                     if "S8" in paramY:
                         yval = 0.8
-                        paramlabely = '$\sigma_8(z_{'+paramY[3:]+'})$'
+                        paramlabely = '$\\sigma_8(z_{'+paramY[3:]+'})$'
                     else:
                         yval = self.fidDicts[section][paramY]
                         paramlabely = '$'+self.paramLatexLists[section][q]+'$' 
 
-                    if paramX=="S8All": paramlabelx = '$\sigma_8$'
-                    if paramY=="S8All": paramlabely = '$\sigma_8$'
+                    if paramX=="S8All": paramlabelx = '$\\sigma_8$'
+                    if paramY=="S8All": paramlabely = '$\\sigma_8$'
                         
                     chisq = np.array([[chi211,chi212],[chi212,chi222]])
                     Lmat = np.linalg.cholesky(chisq)
@@ -815,8 +837,10 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
 
 class WhiskerPlot(object):
     def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',
-                 blind=True,xwidth=4,spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,
-                 bolds = None):
+                 xspanmin=None,xspanmax=None,xspanalpha=None,xspancolor='k',blind=True,xwidth=4,
+                 spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,bolds = None):
+        plt.rcParams["font.family"] = "serif"
+        plt.rcParams["mathtext.fontset"] = "dejavuserif"
         if spacing is None: spacing = 0.8
         N = len(errs)
         ydec = 0.01
@@ -828,11 +852,18 @@ class WhiskerPlot(object):
         ax=f.add_subplot(111)
         ypos_start = 1
         ypos = ypos_start
+        if xspanmin is not None and xspanmax is not None:
+            ax.axvspan(xspanmin, xspanmax,
+                       alpha=(0.2 if xspanalpha is None else xspanalpha),
+                       color=xspancolor)
+
         for mean, err,label,color,bold in zip(means,errs,labels,colors,bolds):
             if one_sided:
                 ax.plot(err,ypos,marker='<',color=color)
                 ax.hlines(ypos,xmin=xmin,xmax=err,label=label,color=color)
             else:
+                if isinstance(err,list):
+                    err = np.asarray(err)[:,None]
                 ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
             if text:
                 ax.text( xoffset, ypos-(yinc*ydec), label, fontsize=13,color=color,weight=bold)

@@ -2,8 +2,6 @@ from __future__ import print_function
 import warnings
 from math import pi
 import numpy as np
-import pyfisher
-from pyfisher import TheorySpectra
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
 import itertools
@@ -19,8 +17,6 @@ except:
 import time, re, os
 from scipy.integrate import odeint
 from orphics.io import bcolors
-import camb
-from camb import model
 
 
 defaultConstants = {'TCMB': 2.7255
@@ -80,7 +76,9 @@ class CAMB(object):
         for p in required_params:
             if p not in params.keys():
                 params[p] = defaultCosmology[p]
-        pars = camb.CAMBparams()
+        import camb
+        from camb import model
+        pars = camb.CAMBparams(want_zstar=True)
         pars.set_dark_energy(w=params['w0'],wa=params['wa'])
         try:
             theta = params['theta100']/100.
@@ -98,7 +96,7 @@ class CAMB(object):
             else:
                 pars.NonLinear = model.NonLinear_none
             pars.set_accuracy(AccuracyBoost=1.0, lSampleBoost=1.0, lAccuracyBoost=1.0)
-            if nonlinear: lens_potential_accuracy = 0
+            if not(nonlinear): lens_potential_accuracy = 0
             pars.set_for_lmax(lmax=(lmax+500), lens_potential_accuracy=lens_potential_accuracy)
             pars.set_matter_power(redshifts=redshifts,kmax=kmax)
         else:
@@ -318,14 +316,6 @@ class Cosmology(object):
         az = self.z2a(z)
         return interp1d(a,fapprox)(az)
 
-    def growth_approximate(self,z):
-        # Approximate growth rate f calculation from Dodelson Eq 9.67
-        hfactor = self.H0**2./self.results.hubble_parameter(z)**2.
-        omegam = (self.pars.omegab+self.pars.omegac+self.pars.omegan) * ((1.+z)**3.) *hfactor
-        omegav = self.pars.omegav * hfactor
-        fapprox = omegam**0.6 + omegav*(1.+omegam/2.)/70.
-        return fapprox
-    
 
         
     def _initPower(self,pkgrid_override=None):
@@ -623,7 +613,7 @@ class LimberCosmology(Cosmology):
             
             
     def _lensWindow(self,kernel,numzIntegral):
-        '''
+        r'''
         Calculates the following integral
         W(z) = \int dz'  p(z') (chi(z')-chi(z))/chi(z')
         where p(z) is the dndz/pdf of spectra
@@ -812,7 +802,8 @@ def loadTheorySpectraFromPycambResults(results,pars,kellmax,unlensedEqualsLensed
             if not os.path.exists(directory):
                 os.makedirs(directory)
             pickle.dump(cmbmat,open("output/clsAll"+prefix+"_"+str(kellmax)+"_"+time.strftime('%Y%m%d') +".pkl",'wb'))
-
+            
+    from pyfisher import TheorySpectra
     theory = TheorySpectra()
     for i,pol in enumerate(['TT','EE','BB','TE']):
         cls =cmbmat[lSuffix][2:,i]
@@ -894,6 +885,7 @@ def loadTheorySpectraFromCAMB(cambRoot,unlensedEqualsLensed=False,useTotal=False
 
     uFile = cambRoot+uSuffix
     lFile = cambRoot+lSuffix
+    from pyfisher import TheorySpectra
 
     theory = TheorySpectra()
 
@@ -968,6 +960,8 @@ class LensForecast:
         G refers to the number density of an optical foreground galaxy sample
 
         '''
+        from pyfisher import TheorySpectra
+
         self._haveKK = False
         self._haveKG = False
         self._haveGG = False
@@ -1237,7 +1231,8 @@ def get_lensed_cls(theory,ells,clkk,lmax):
     #clcltt = np.nan_to_num(clcltt/cellrange/(cellrange+1.)*2.*np.pi)
     #print clcltt
     lpad = lmax
-    
+    from pyfisher import TheorySpectra
+
     dtheory = TheorySpectra()
     with np.errstate(divide='ignore', invalid='ignore'):
         mult = np.nan_to_num(1./mulfact)
@@ -1355,7 +1350,7 @@ def pk_comparison(param,z,val1,val2,oparams=None):
     pl.legend(loc = 'upper right')
     pl.done()
     
-    pl = io.Plotter(xlabel='k',ylabel='$\Delta P(k) / P$',xscale='log')
+    pl = io.Plotter(xlabel='k',ylabel=r'$\Delta P(k) / P$',xscale='log')
     pl.add(ks,(pk2.ravel()-pk1.ravel())/pk2.ravel(),label=param+'='+str(val1),color="C0")
     pl.legend(loc = 'upper right')
     pl.done()
@@ -1583,6 +1578,7 @@ def save_glens_cls_from_ini(ini_file,out_name,glmax=8000):
 
 
 def load_theory_from_glens(out_name,total=False,lpad=9000,TCMB=2.7255e6):
+    from pyfisher import TheorySpectra
 
     gcls = np.loadtxt("%s_%s.txt" % (out_name,"gradient"))
     if total:
@@ -1790,6 +1786,8 @@ class GenericLimberCosmicShear(InstallableLikelihood):
 
     def initialize(self):
         from . import stats
+        import pyfisher
+
         bin_edges = np.geomspace(self.glmin,self.lmax,self.nell)
         bin_edges = bin_edges[bin_edges>self.lmin]
         self.binner = stats.bin1D(bin_edges)
