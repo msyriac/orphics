@@ -541,7 +541,11 @@ def white_noise(shape=None,wcs=None,noise_muK_arcmin=None,seed=None,ipsizemap=No
     if seed is not None: np.random.seed(seed)
     if nside is None:
         if div is None: div = ivar(shape,wcs,noise_muK_arcmin,ipsizemap=ipsizemap)
-        return np.random.standard_normal(shape) / np.sqrt(div)
+        # pixels with ivar = 0 we get inf, fix a la Zach
+        mask = div != 0
+        out = np.divide(np.random.standard_normal(shape),np.sqrt(div),where=mask, out=np.random.standard_normal(shape))
+        out[..., ~mask] = np.finfo(out.dtype).max
+        return out # np.random.standard_normal(shape) / np.sqrt(div)
     else:
         npix = int(12*nside**2)
         ipsizemap = 4*np.pi / npix
