@@ -839,6 +839,51 @@ class WhiskerPlot(object):
     def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',
                  xspanmin=None,xspanmax=None,xspanalpha=None,xspancolor='k',blind=True,xwidth=4,
                  spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,bolds = None):
+        """
+        Create a whisker plot.
+
+        Parameters
+        ----------
+        means : list
+            List of means.
+        errs : list
+            List of errors. Can be a list of lists for asymmetric errors.
+        labels : list
+            List of labels.
+        colors : list
+            List of colors.
+        xmin : float
+            Minimum x value.
+        xmax : float
+            Maximum x value.
+        xlabel : str
+            X-axis label.
+        xspanmin : float
+            Minimum x value for a shaded region.
+        xspanmax : float
+            Maximum x value for a shaded region.
+        xspanalpha : float
+            Alpha value for the shaded region.
+        xspancolor : str
+            Color for the shaded region.
+        blind : bool
+            Whether to blind the x-axis.
+        xwidth : float
+            Width of the figure.
+        spacing : float
+            Spacing between the whiskers.
+        xoffset : float
+            Offset for the text labels.
+        one_sided : bool
+            Whether to plot one-sided error bars.
+        text : bool
+            Whether to add text labels.
+        fontsize : int
+            Font size.
+        bolds : list
+            List of bold labels.                    
+        """
+        
         plt.rcParams["font.family"] = "serif"
         plt.rcParams["mathtext.fontset"] = "dejavuserif"
         if spacing is None: spacing = 0.8
