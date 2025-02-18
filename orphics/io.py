@@ -838,7 +838,8 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
 class WhiskerPlot(object):
     def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',
                  xspanmin=None,xspanmax=None,xspanalpha=None,xspancolor='k',blind=True,xwidth=4,
-                 spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,bolds = None):
+                 spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,bolds = None,
+                 ref_xmin=None,refs=None,ref_ftsize=6, text_ftsize=13,vline=None):
         plt.rcParams["font.family"] = "serif"
         plt.rcParams["mathtext.fontset"] = "dejavuserif"
         if spacing is None: spacing = 0.8
@@ -852,12 +853,15 @@ class WhiskerPlot(object):
         ax=f.add_subplot(111)
         ypos_start = 1
         ypos = ypos_start
+        if not(vline is None):
+            ax.axvline(x=vline,ls='--',alpha=0.3,color='k')
+        
         if xspanmin is not None and xspanmax is not None:
             ax.axvspan(xspanmin, xspanmax,
                        alpha=(0.2 if xspanalpha is None else xspanalpha),
                        color=xspancolor)
 
-        for mean, err,label,color,bold in zip(means,errs,labels,colors,bolds):
+        for i,(mean, err,label,color,bold) in enumerate(zip(means,errs,labels,colors,bolds)):
             if one_sided:
                 ax.plot(err,ypos,marker='<',color=color)
                 ax.hlines(ypos,xmin=xmin,xmax=err,label=label,color=color)
@@ -866,7 +870,9 @@ class WhiskerPlot(object):
                     err = np.asarray(err)[:,None]
                 ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
             if text:
-                ax.text( xoffset, ypos-(yinc*ydec), label, fontsize=13,color=color,weight=bold)
+                ax.text( xoffset, ypos-(yinc*ydec), label, fontsize=text_ftsize,color=color,weight=bold)
+                if refs is not None:
+                    if refs[i] is not None: ax.text( ref_xmin, ypos-(yinc*ydec), refs[i], fontsize=ref_ftsize,color=color,weight=bold)
             ypos -= ydec
 
         ax.tick_params(axis='x',which='minor',top='on',direction='in')
@@ -879,7 +885,6 @@ class WhiskerPlot(object):
         ye = max(ypos_start+ydec,ypos-ydec*0.05)
         ax.set_ylim(ys,ye)
         ax.set_xlabel(xlabel, fontsize=fontsize)
-
         # Turn off tick labels
         ax.set_yticklabels([])
         if blind: ax.set_xticklabels([])
@@ -889,3 +894,4 @@ class WhiskerPlot(object):
     def savefig(self,ofname,dpi=200,**kwargs):
         plt.tight_layout()
         plt.savefig(ofname,dpi=dpi,bbox_inches='tight',**kwargs)
+        plt.close(self.fig)
