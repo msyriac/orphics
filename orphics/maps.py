@@ -49,7 +49,8 @@ def block_smooth(imap,factor,slow=False):
     return omap
 
 
-def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
+def rand_map(shape,wcs,pol=False,lensed_cls=True,fwhm=None,lmax=6000,
+             dtype=np.float32,return_theory=False):
     theory = cosmology.default_theory()
     ells = np.arange(lmax+1)
     if lensed_cls:
@@ -58,17 +59,35 @@ def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
         cfunc = theory.uCl
     if not(len(shape)==2):
         raise ValueError
+    if fwhm:
+        bells = gauss_beam(fwhm,ells)**2.
+    else:
+        bells = 1.0
+    ttspec = cfunc('TT',ells)
     if pol:
+        tespec = cfunc('TE',ells)
+        eespec = cfunc('EE',ells)
+        bbspec = cfunc('BB',ells)
         shape = (3,) + shape[-2:]
         ps = np.zeros((3,3,lmax+1))
-        ps[0,0] = cfunc('TT',ells)
-        ps[0,1] = cfunc('TE',ells)
-        ps[1,0] = cfunc('TE',ells)
-        ps[1,1] = cfunc('EE',ells)
-        ps[2,2] = cfunc('BB',ells)
+        ps[0,0] = ttspec*bells
+        ps[0,1] = tespec*bells
+        ps[1,0] = tespec*bells
+        ps[1,1] = eespec*bells
+        ps[2,2] = bbspec*bells
     else:
-        ps = cfunc('TT',ells)
-    return cs.rand_map(shape,wcs,ps,dtype=dtype)
+        ps = ttspec*bells
+    omap = cs.rand_map(shape,wcs,ps,dtype=dtype)
+    if return_theory:
+        odict = {}
+        odict['TT'] = ttspec
+        if pol:
+            odict['TE'] = tespec
+            odict['EE'] = eespec
+            odict['BB'] = bbspec
+        return omap,odict
+    else:
+        return omap
         
         
         
