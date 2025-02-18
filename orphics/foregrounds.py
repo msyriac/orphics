@@ -8,7 +8,6 @@ import numpy as np
 from scipy.interpolate import interp1d
 from orphics import maps, cosmology
 
-
 # Helpers from tilec/fg.py [with J. Colin Hill]
 
 ######################################

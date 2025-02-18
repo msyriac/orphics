@@ -282,7 +282,7 @@ def area_sqdeg(mask,threshold=0.5):
     return area(mask,threshold)/utils.degree**2.
     
 
-def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
+def cmb_ps(lmax,lensed=True,theory=None):
     from . import cosmology
     if theory is None: theory = cosmology.default_theory()
     ells = np.arange(lmax)
@@ -293,8 +293,11 @@ def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=No
     ps[1,0] = ps[0,1].copy()
     ps[1,1] = clfunc('EE')
     ps[2,2] = clfunc('BB')
+    return ps
+    
+def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
     if len(shape)==2: shape = (3,)+shape
-    return cs.rand_map(shape,wcs,ps,lmax=lmax,dtype=dtype,seed=seed)
+    return cs.rand_map(shape,wcs,cmb_ps(lmax,lensed=lensed,theory=theory),lmax=lmax,dtype=dtype,seed=seed)
 
 def mask_srcs(shape,wcs,srcs_deg,radius_arcmin):
     """
@@ -359,6 +362,8 @@ def kspace_coadd_alms(kmaps,kbeams,kncovs,fkbeam=1):
     kbeams are the beams
     kncovs are the noise spectra for weighting, *not* beam deconvolved
     fkbeam is the final beam applied
+
+    W = b_l 
     """
 
     kmaps = np.asarray(kmaps)
