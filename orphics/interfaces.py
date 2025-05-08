@@ -37,7 +37,7 @@ def get_agora_halos(z_min = 0.30, z_max = 0.35,
                     mass_min = 3e14, mass_max = 3.3e14,
                     mmap_mode='r',croot='/data5/sims/agora_sims/full/halocat',
                     verbose=False,massdef='m500'):
-    files = redshift_to_halocat_files(z_min, z_max)
+    files = agora_redshift_to_halocat_files(z_min, z_max)
     oras = []
     odecs = []
     ozs = []
