@@ -10,6 +10,69 @@ import warnings
 import healpy as hp
 from . import cosmology
 
+def thumbnail_healpix(hmap,pos=(0,0),r=10*utils.arcmin,res=None,frame='icrs'):
+    """
+    Extract a gnomonic-projected thumbnail from a HEALPix map.
+
+    Parameters:
+    - hmap : np.ndarray
+        HEALPix map (1D array).
+    - pos : tuple
+        (dec, ra) in degrees; center of the thumbnail.
+    - r : float
+        Half-size of the thumbnail in radians.
+    - res : float
+        Pixel resolution in radians/pixel.
+    - frame : str
+        Coordinate frame for the input position ('icrs', 'galactic', etc.)
+
+    Returns:
+    - omap : 2D numpy array of shape (N, N)
+        Interpolated values on a gnomonic grid.
+    """
+    from astropy.coordinates import SkyCoord, SkyOffsetFrame
+    import astropy.units as u
+
+    if hmap.ndim>2: raise ValueError
+    if hmap.ndim==2:
+        if hmap.shape[0]!=1: raise ValueError
+        hmap = hmap[0]
+
+    if res is None:
+        npix = hmap.size
+        nside = hp.npix2nside(npix)
+        res = 8192/nside*0.5*utils.arcmin/2
+
+    
+    dec0, ra0 = pos
+    N = int(2 * r / res)
+
+    # Define central sky position and offset frame
+    center = SkyCoord(ra=ra0*u.rad, dec=dec0*u.rad, frame=frame)
+    offset_frame = SkyOffsetFrame(origin=center)
+
+    # Create grid in tangent plane (x, y in degrees)
+    grid_vals = np.linspace(-r, r, N)
+    x, y = np.meshgrid(grid_vals, grid_vals)
+    x = x.ravel()
+    y = y.ravel()
+
+    # Convert tangent-plane grid to sky coordinates
+    offset_coords = SkyCoord(lon=x*u.rad, lat=y*u.rad, frame=offset_frame)
+    sky_coords = offset_coords.transform_to(frame)
+
+    # Convert to HEALPix angles: theta (colatitude), phi (longitude)
+    theta = 0.5 * np.pi - sky_coords.dec.radian
+    phi = sky_coords.ra.radian
+
+    # Interpolate HEALPix map at those angles
+    values = hp.get_interp_val(hmap, theta, phi)
+
+    # Reshape to 2D grid
+    omap = values.reshape((N, N))
+    _,wcs = enmap.geometry(pos=(0,0),res=res,shape=(N,N),proj='tan')
+    return enmap.enmap(omap,wcs)
+
 def matched_filter(imap,fwhm_arcmin,cls=None,noise_uk_arcmin=None,taper_per=12.0):
     taper = 1.0
     if not(taper_per is None):
@@ -506,10 +569,15 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
 
 
 def galactic_mask(shape,wcs,nside,theta1,theta2,order=0):
+    warnings.warn("Deprecated: Use galactic_mask_equ instead")
     npix = hp.nside2npix(nside)
     orig = np.ones(npix)
     orig[hp.query_strip(nside,theta1,theta2)] = 0
     return reproject.healpix2map(orig, shape, wcs, rot='gal,equ',method='spline',order=order,extensive=False)
+
+def galactic_mask_equ(shape,wcs,nside,theta1,theta2,order=0):
+    return galactic_mask(shape,wcs,nside,np.pi/2.-theta1,np.pi/2.-theta2,order=order)
+
 
 def north_galactic_mask(shape,wcs,nside,order=0):
     return galactic_mask(shape,wcs,nside,0,np.deg2rad(90),order=order)
