@@ -351,7 +351,7 @@ class Plotter(object):
                  yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,
                  minor_tick_size=3,scalefn = None,projection=None,
                  secax_fns=None,secax_label=None,
-                 secay_fns=None,secay_label=None,**kwargs):
+                 secay_fns=None,secay_label=None,title=None,**kwargs):
         self.scalefn = None
         if scheme is not None:
             if scheme=='Dell' or scheme=='Dl':
@@ -407,6 +407,7 @@ class Plotter(object):
         self.thk = thk
         
         self._fig=plt.figure(**kwargs)
+        if title is not None: self._fig.suptitle(title)
         self._ax=self._fig.add_subplot(1,1,1,projection=projection)
 
 

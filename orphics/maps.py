@@ -18,11 +18,11 @@ def thumbnail_healpix(hmap,pos=(0,0),r=10*utils.arcmin,res=None,frame='icrs'):
     - hmap : np.ndarray
         HEALPix map (1D array).
     - pos : tuple
-        (dec, ra) in degrees; center of the thumbnail.
+        (dec, ra) in radians; center of the thumbnail.
     - r : float
         Half-size of the thumbnail in radians.
     - res : float
-        Pixel resolution in radians/pixel.
+        Pixel resolution in radians.
     - frame : str
         Coordinate frame for the input position ('icrs', 'galactic', etc.)
 
