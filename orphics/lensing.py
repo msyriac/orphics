@@ -25,6 +25,73 @@ from orphics import stats
 import os,sys
 from pyfisher import get_lensing_nl as get_nl
 
+def filter_bin_kappa(thetas,kappas,fls=None,lmin=200,lmax=6000,res=0.05*utils.arcmin,N=1025,rmin=0.,rmax=15*utils.arcmin,npts=100):
+    shape,wcs = enmap.geometry(pos=(0,0),res=res,shape=(N,N),proj='tan')
+    modrmap = enmap.modrmap(shape,wcs)
+    omap = enmap.enmap(maps.interp(thetas,kappas)(modrmap),wcs)
+    kmask = maps.mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = lmin, lmax = lmax).astype(bool)
+    if fls is not None:
+        modlmap = omap.modlmap()
+        ells = np.arange(fls.size)
+        kfilt = maps.interp(ells,fls)(modlmap)
+    else:
+        kfilt = omap*0+1.
+    kfilt[~kmask] = 0
+    fmap = maps.filter_map(omap,kfilt)
+    bin_edges = np.linspace(rmin,rmax,npts)
+    binner = stats.bin2D(modrmap,bin_edges)
+    cents,b1d = binner.bin(fmap)
+    return cents,b1d
+
+
+def kappa_nfw_profiley(mass=2e14,conc=3,z=0.7,z_s=1100.,
+              background='critical',delta=500,
+              thetamin=0.01,thetamax=50.,numthetas=1000,
+              fls = None,lmin=200,lmax=6000,
+              verbose=True):
+    
+    frame='comoving'
+    nfw = NFW(mass, conc, z, overdensity=delta, background=background[0],
+              frame=frame)
+    
+    arcmin = np.linspace(thetamin, thetamax, numthetas)
+    rad = np.pi / (60*180) * arcmin
+    if frame=='comoving':
+        Rcon = nfw.cosmo.kpc_comoving_per_arcmin
+    elif frame=='physical':
+        Rcon = nfw.cosmo.kpc_proper_per_arcmin 
+    R = Rcon(nfw.z) * arcmin*u.arcmin
+    kappa = nfw.convergence(R, z_s=z_s)
+
+    h = 0.7
+    Om = 0.3
+    Ob = 0.045
+    As = 2.1e-9
+    ns = 0.96
+    cosmo = ccl.Cosmology(Omega_c=Om-Ob, Omega_b=Ob, h=h, A_s=As, n_s=ns)
+    k = np.geomspace(1e-15, 1e15, 10000) # this wide range is needed for the Hankel transform
+    kmin = 1e-4; kmax=20.0 # 1/Mpc; but only this k-range matters
+    sel = np.logical_and(k>kmin,k<kmax)
+    Pk = k*0
+    Pk[sel] = ccl.linear_matter_power(cosmo, k[sel], 1/(1+z))
+    mdef = ccl.halos.MassDef(delta, background)
+    bias = ccl.halos.HaloBiasTinker10(mass_def=mdef)
+    bh = bias(cosmo=cosmo,M=mass, a=1/(1+nfw.z))
+    if verbose: print("Halo bias : ", bh)
+    Pgm = bh * Pk
+    r_xi = np.geomspace(1e-3, 1e4, 100) # Mpc
+    lnPgm_lnk = interp1d(np.log(k), np.log(Pgm))
+    xi = power2xi(lnPgm_lnk, r_xi)
+    rho_m = ccl.background.rho_x(cosmo, 1, 'matter')
+    sigma_2h = xi2sigma(R.to(u.Mpc).value, r_xi, xi, rho_m).T
+    kappa_2h = sigma_2h / nfw.sigma_crit(z_s)
+
+    tot_kappa = (kappa[:,0]+kappa_2h)
+    cents,b1d1h = filter_bin(rad,kappa[:,0],fls=fls,lmin=lmin,lmax=lmax)
+    cents,b1d = filter_bin(rad,tot_kappa,fls=fls,lmin=lmin,lmax=lmax)
+    cents,b1d2h = filter_bin(rad,kappa_2h,fls=fls,lmin=lmin,lmax=lmax)
+
+    return rad,kappa[:,0],kappa_2h,tot_kappa,cents,b1d1h,b1d2h,b1d
         
 
 def validate_geometry(shape,wcs,verbose=False):
