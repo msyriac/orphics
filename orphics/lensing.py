@@ -9,7 +9,6 @@ try:
 except:
     print("WARNING: Couldn't load pixell lensing. Some features will be unavailable.")
 
-from scipy.integrate import simps
 from scipy.interpolate import splrep,splev
 
 from scipy.fftpack import fftshift,ifftshift,fftfreq
@@ -23,13 +22,17 @@ from six.moves import cPickle as pickle
 
 from orphics import stats
 import os,sys
-from pyfisher import get_lensing_nl as get_nl
 
-def filter_bin_kappa(thetas,kappas,fls=None,lmin=200,lmax=6000,res=0.05*utils.arcmin,N=1025,rmin=0.,rmax=15*utils.arcmin,npts=100):
+def filter_bin_kappa1d(thetas,kappas,fls=None,lmin=200,lmax=6000,res=0.05*utils.arcmin,rstamp=30.*utils.arcmin,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin):
+    N = int(rstamp/res)
     shape,wcs = enmap.geometry(pos=(0,0),res=res,shape=(N,N),proj='tan')
     modrmap = enmap.modrmap(shape,wcs)
     omap = enmap.enmap(maps.interp(thetas,kappas)(modrmap),wcs)
-    kmask = maps.mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = lmin, lmax = lmax).astype(bool)
+    return filter_bin_kappa2d(omap,fls=fls,lmin=lmin,lmax=lmax,rmin=rmin,rmax=rmax,rwidth=rwidth)
+    
+def filter_bin_kappa2d(omap,fls=None,lmin=200,lmax=6000,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin,taper_per=12.0):
+    taper,_ = maps.get_taper(omap.shape[-2:],omap.wcs,taper_percent = taper_per)
+    kmask = maps.mask_kspace(omap.shape,omap.wcs, lxcut = None, lycut = None, lmin = lmin, lmax = lmax).astype(bool)
     if fls is not None:
         modlmap = omap.modlmap()
         ells = np.arange(fls.size)
@@ -37,20 +40,44 @@ def filter_bin_kappa(thetas,kappas,fls=None,lmin=200,lmax=6000,res=0.05*utils.ar
     else:
         kfilt = omap*0+1.
     kfilt[~kmask] = 0
-    fmap = maps.filter_map(omap,kfilt)
-    bin_edges = np.linspace(rmin,rmax,npts)
+    fmap = maps.filter_map(omap*taper,kfilt)
+    bin_edges = np.arange(rmin,rmax,rwidth)
+    modrmap = enmap.modrmap(omap.shape,omap.wcs)
     binner = stats.bin2D(modrmap,bin_edges)
     cents,b1d = binner.bin(fmap)
     return cents,b1d
 
 
-def kappa_nfw_profiley(mass=2e14,conc=3,z=0.7,z_s=1100.,
-              background='critical',delta=500,
-              thetamin=0.01,thetamax=50.,numthetas=1000,
-              fls = None,lmin=200,lmax=6000,
-              verbose=True):
+def kappa_nfw_profiley(mass=2e14,conc=None,z=0.7,z_s=1100.,
+                       background='critical',delta=500,
+                       thetamin=0.01,thetamax=50.,numthetas=1000,
+                       apply_filter = True,
+                       fls = None,lmin=200,lmax=6000,
+                       res=0.05*utils.arcmin,rstamp=30.*utils.arcmin,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin,
+                       verbose=True, h = 0.677,
+                       Om = 0.3,
+                       Ob = 0.045,
+                       As = 2.1e-9,
+                       ns = 0.96
+                       ):
+
+    from profiley.helpers.filtering import Filter
+    from profiley.nfw import NFW
+    from astropy import units as u
+    import pyccl as ccl
+    from profiley.helpers.lss import power2xi, xi2sigma
     
     frame='comoving'
+
+    if conc is None:
+        from colossus.cosmology import cosmology
+        from colossus.halo import concentration
+        # Only this or WMAP7 can be used
+        cosmology.setCosmology('planck13')
+        # Define mass (in solar masses) and redshift
+        # Compute concentration using Klypin et al. 2016 model
+        conc = concentration.concentration(M=mass * h , z=z, mdef='500c', model='klypin16_m')
+
     nfw = NFW(mass, conc, z, overdensity=delta, background=background[0],
               frame=frame)
     
@@ -62,12 +89,7 @@ def kappa_nfw_profiley(mass=2e14,conc=3,z=0.7,z_s=1100.,
         Rcon = nfw.cosmo.kpc_proper_per_arcmin 
     R = Rcon(nfw.z) * arcmin*u.arcmin
     kappa = nfw.convergence(R, z_s=z_s)
-
-    h = 0.7
-    Om = 0.3
-    Ob = 0.045
-    As = 2.1e-9
-    ns = 0.96
+    
     cosmo = ccl.Cosmology(Omega_c=Om-Ob, Omega_b=Ob, h=h, A_s=As, n_s=ns)
     k = np.geomspace(1e-15, 1e15, 10000) # this wide range is needed for the Hankel transform
     kmin = 1e-4; kmax=20.0 # 1/Mpc; but only this k-range matters
@@ -87,9 +109,13 @@ def kappa_nfw_profiley(mass=2e14,conc=3,z=0.7,z_s=1100.,
     kappa_2h = sigma_2h / nfw.sigma_crit(z_s)
 
     tot_kappa = (kappa[:,0]+kappa_2h)
-    cents,b1d1h = filter_bin(rad,kappa[:,0],fls=fls,lmin=lmin,lmax=lmax)
-    cents,b1d = filter_bin(rad,tot_kappa,fls=fls,lmin=lmin,lmax=lmax)
-    cents,b1d2h = filter_bin(rad,kappa_2h,fls=fls,lmin=lmin,lmax=lmax)
+
+    if apply_filter:
+        cents,b1d1h = filter_bin_kappa1d(rad,kappa[:,0],fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+        cents,b1d = filter_bin_kappa1d(rad,tot_kappa,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+        cents,b1d2h = filter_bin_kappa1d(rad,kappa_2h,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+    else:
+        cents = b1d1h = b1d = b1d2h = None
 
     return rad,kappa[:,0],kappa_2h,tot_kappa,cents,b1d1h,b1d2h,b1d
         
@@ -602,6 +628,7 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
 
 
 def NFWMatchedFilterSN(clusterCosmology,log10Moverh,c,z,ells,Nls,kellmax,overdensity=500.,critical=True,atClusterZ=True,arcStamp=100.,pxStamp=0.05,saveId=None,verbose=False,rayleighSigmaArcmin=None,returnKappa=False,winAtLens=None):
+    from scipy.integrate import simps
     if rayleighSigmaArcmin is not None: assert rayleighSigmaArcmin>=pxStamp
     M = 10.**log10Moverh
 
