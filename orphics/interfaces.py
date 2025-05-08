@@ -14,6 +14,62 @@ except NameError:
     basestring = str
 
 
+def agora_redshift_to_halocat_files(z_min, z_max, base_filename='agora_halolc_rot_{}_v050223.npz'):
+    from astropy.cosmology import FlatLambdaCDM
+    from astropy import units as u
+    # Convert redshift to comoving distance in Mpc/h
+    cosmo = FlatLambdaCDM(H0=67.77, Om0=0.307, Ob0=0.048) # Agora cosmology
+    d_min = cosmo.comoving_distance(z_min).to(u.Mpc).value * cosmo.h
+    d_max = cosmo.comoving_distance(z_max).to(u.Mpc).value * cosmo.h
+
+    # Each slice is 25 Mpc/h thick, and slice numbers start from 4,
+    # but add buffer in each direction
+    slice_start = max(int(d_min // 25) - 1,4)
+    slice_end = min(int(d_max // 25) + 1,200)
+
+    # Generate list of corresponding filenames
+    filenames = [base_filename.format(i) for i in range(slice_start, slice_end + 1)]
+    return filenames
+
+
+
+def get_agora_halos(z_min = 0.30, z_max = 0.35,
+                    mass_min = 3e14, mass_max = 3.3e14,
+                    mmap_mode='r',croot='/data5/sims/agora_sims/full/halocat',
+                    verbose=False,massdef='m500'):
+    files = redshift_to_halocat_files(z_min, z_max)
+    oras = []
+    odecs = []
+    ozs = []
+    oms = []
+
+    for fcat in files:
+
+        cat = f"{croot}/{fcat}"
+        if verbose: print(" ::: loading agora:", cat)
+        dat = np.load(cat,mmap_mode=mmap_mode)
+
+        mh = dat[f'tot{massdef}']
+        ras = dat['totra']
+        decs = dat['totdec']
+        zs = dat['totz']
+        h = 0.6777 # Agora cosmology
+        Mx00c = mh / h # convert to Msun 
+
+        keep = (Mx00c > mass_min) & (Mx00c < mass_max) & (zs > z_min) & (zs < z_max)
+        ras = ras[keep] 
+        decs = decs[keep]
+        zs = zs[keep]
+        masses = Mx00c[keep]
+
+        oras = np.append(oras,ras)
+        odecs = np.append(odecs,decs)
+        ozs = np.append(ozs,zs)
+        oms = np.append(oms,masses)
+
+    return oras,odecs,ozs,oms
+    
+
 def load_sdss_redmapper(path, lams=True, zs=True):
     from orphics import catalogs
 
@@ -28,86 +84,6 @@ def load_sdss_redmapper(path, lams=True, zs=True):
     )
 
 
-class DR2(object):
-    def __init__(self, path, region, nsplits=4):
-        possible_seasons = ["s13", "s14", "s15", "s16"]
-        possible_arrays = ["pa1", "pa2", "pa3"]
-        possible_freqs = ["f150", "f090"]
-        self.path = path
-        self.region = region
-        self.nsplits = nsplits
-        self.arrays = []
-        for season in possible_seasons:
-            for array in possible_arrays:
-                for freq in possible_freqs:
-                    gfiles = glob.glob(
-                        "%s/%s_%s_%s_%s*" % (path, season, region, array, freq)
-                    )
-                    if len(gfiles) > 0:
-                        self.arrays.append("%s_%s_%s" % (season, array, freq))
-
-    def _expand(self, array):
-        err_msg = "array_id has to be an integer or an underscore separated string of form season_array_freq."
-        if isinstance(array, int):
-            array = self.arrays[array]
-        else:
-            assert isinstance(array, basestring), err_msg
-        assert array in self.arrays, "No array %s found." % (array)
-        tup = array.split("_")
-        return tup
-
-    def _fstr(self, season, array, freq, splitnum, var, srcfree):
-        strsrc = "_srcfree" if (srcfree and not (var)) else ""
-        strvar = "ivar" if var else "map"
-        strsplit = "coadd" if splitnum is None else "set%d" % splitnum
-        fstr = "%s/%s_%s_%s_%s_nohwp_night_3pass_4way_%s_%s%s.fits" % (
-            self.path,
-            season,
-            self.region,
-            array,
-            freq,
-            strsplit,
-            strvar,
-            strsrc,
-        )
-        return fstr
-
-    def get_map(
-        self,
-        array_id=None,
-        splits=False,
-        srcfree=True,
-        ivar=False,
-        filenames=False,
-        **kwargs
-    ):
-        """
-        """
-        from pixell import enmap
-
-        season, array, freq = self._expand(array_id)
-        if splits:
-            rmap = []
-            for i in range(self.nsplits):
-                fstr = self._fstr(season, array, freq, i, ivar, srcfree)
-                imap = fstr if filenames else enmap.read_map(fstr, **kwargs)
-                if imap.ndim == 2:
-                    imap = imap[None]
-                rmap.append(imap)
-            return rmap if filenames else enmap.enmap(np.stack(rmap), imap.wcs)
-        else:
-            fstr = self._fstr(season, array, freq, None, ivar, srcfree)
-            return fstr if filenames else enmap.read_map(fstr, **kwargs)
-
-    def get_beam(self, ells, array_id=None):
-        from orphics import maps
-
-        season, array, freq = self._expand(array_id)
-        if "150" in freq:
-            fwhm = 1.4
-        if "090" in freq:
-            fwhm = 1.4 * 150.0 / 90.0
-        return maps.gauss_beam(ells, fwhm)
 
 
 class WebSkySlicer(object):
