@@ -2,7 +2,7 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from pixell import enmap, utils
+from pixell import enmap, utils, bench
 from scipy.special import factorial
 try:
     from pixell import lensing as enlensing
@@ -10,6 +10,8 @@ except:
     print("WARNING: Couldn't load pixell lensing. Some features will be unavailable.")
 
 from scipy.interpolate import splrep,splev
+
+from contextlib import nullcontext
 
 from scipy.fftpack import fftshift,ifftshift,fftfreq
 from scipy.interpolate import interp1d
@@ -48,24 +50,26 @@ def filter_bin_kappa2d(omap,fls=None,lmin=200,lmax=6000,rmin=0.,rmax=15*utils.ar
     return cents,b1d
 
 
-def kappa_nfw_profiley(mass=2e14,conc=None,z=0.7,z_s=1100.,
-                       background='critical',delta=500,
-                       thetamin=0.01,thetamax=50.,numthetas=1000,
-                       apply_filter = True,
-                       fls = None,lmin=200,lmax=6000,
-                       res=0.05*utils.arcmin,rstamp=30.*utils.arcmin,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin,
-                       verbose=True, h = 0.677,
-                       Om = 0.3,
-                       Ob = 0.045,
-                       As = 2.1e-9,
-                       ns = 0.96
-                       ):
-
+def kappa_nfw_profiley1d(thetas,mass=2e14,conc=None,z=0.7,z_s=1100.,
+                         background='critical',delta=500,
+                         R_off_Mpc = None,
+                         R_off_Mpc_max = 1.0,
+                         N_off = 50,
+                         verbose=True,
+                         h = 0.677,
+                         Om = 0.3,
+                         Ob = 0.045,
+                         As = 2.1e-9,
+                         ns = 0.96,
+                         debug_time = False
+                         ):
     from profiley.helpers.filtering import Filter
     from profiley.nfw import NFW
+    from profiley.numeric import offset
     from astropy import units as u
     import pyccl as ccl
     from profiley.helpers.lss import power2xi, xi2sigma
+    bshow = (lambda x: bench.show(x)) if debug_time else (lambda x: nullcontext())
     
     frame='comoving'
 
@@ -81,43 +85,88 @@ def kappa_nfw_profiley(mass=2e14,conc=None,z=0.7,z_s=1100.,
     nfw = NFW(mass, conc, z, overdensity=delta, background=background[0],
               frame=frame)
     
-    arcmin = np.linspace(thetamin, thetamax, numthetas)
-    rad = np.pi / (60*180) * arcmin
     if frame=='comoving':
         Rcon = nfw.cosmo.kpc_comoving_per_arcmin
     elif frame=='physical':
         Rcon = nfw.cosmo.kpc_proper_per_arcmin 
-    R = Rcon(nfw.z) * arcmin*u.arcmin
-    kappa = nfw.convergence(R, z_s=z_s)
+    R = Rcon(nfw.z) * thetas*u.radian
+    kappa1 = nfw.convergence(R, z_s=z_s)
     
-    cosmo = ccl.Cosmology(Omega_c=Om-Ob, Omega_b=Ob, h=h, A_s=As, n_s=ns)
-    k = np.geomspace(1e-15, 1e15, 10000) # this wide range is needed for the Hankel transform
-    kmin = 1e-4; kmax=20.0 # 1/Mpc; but only this k-range matters
-    sel = np.logical_and(k>kmin,k<kmax)
-    Pk = k*0
-    Pk[sel] = ccl.linear_matter_power(cosmo, k[sel], 1/(1+z))
-    mdef = ccl.halos.MassDef(delta, background)
-    bias = ccl.halos.HaloBiasTinker10(mass_def=mdef)
-    bh = bias(cosmo=cosmo,M=mass, a=1/(1+nfw.z))
-    if verbose: print("Halo bias : ", bh)
-    Pgm = bh * Pk
-    r_xi = np.geomspace(1e-3, 1e4, 100) # Mpc
-    lnPgm_lnk = interp1d(np.log(k), np.log(Pgm))
-    xi = power2xi(lnPgm_lnk, r_xi)
-    rho_m = ccl.background.rho_x(cosmo, 1, 'matter')
-    sigma_2h = xi2sigma(R.to(u.Mpc).value, r_xi, xi, rho_m).T
-    kappa_2h = sigma_2h / nfw.sigma_crit(z_s)
+    # Miscentering
+    if R_off_Mpc is not None:
+        with bshow("miscenter"):
+            Roff = np.linspace(0, R_off_Mpc_max, N_off) # Mpc
+            weights = np.exp(-Roff**2 / (2*(R_off_Mpc)**2))
+            # Some units gymnastics here because offset doesn't support units
+            kappa_1h = offset((kappa1.T).to(u.Mpc).value, R.to(u.Mpc).value, Roff, weights=weights)[0] * u.Mpc
+    else:
+        kappa_1h = kappa1[:,0]
+    
+    # 2-halo
+    with bshow("two-halo"):
+        # This part can be sped up by caching the Pk
+        cosmo = ccl.Cosmology(Omega_c=Om-Ob, Omega_b=Ob, h=h, A_s=As, n_s=ns)
+        k = np.geomspace(1e-15, 1e15, 10000) # this wide range is needed for the Hankel transform
+        kmin = 1e-4; kmax=20.0 # 1/Mpc; but only this k-range matters
+        sel = np.logical_and(k>kmin,k<kmax)
+        Pk = k*0
+        Pk[sel] = ccl.linear_matter_power(cosmo, k[sel], 1/(1+z))
+        mdef = ccl.halos.MassDef(delta, background)
+        bias = ccl.halos.HaloBiasTinker10(mass_def=mdef)
+        bh = bias(cosmo=cosmo,M=mass, a=1/(1+nfw.z))
+        if verbose: print("Halo bias : ", bh)
+        Pgm = bh * Pk
+        r_xi = np.geomspace(1e-3, 1e4, 100) # Mpc
+        lnPgm_lnk = interp1d(np.log(k), np.log(Pgm))
+        xi = power2xi(lnPgm_lnk, r_xi)
+        rho_m = ccl.background.rho_x(cosmo, 1, 'matter')
+        sigma_2h = xi2sigma(R.to(u.Mpc).value, r_xi, xi, rho_m).T
+        kappa_2h = sigma_2h / nfw.sigma_crit(z_s)
 
-    tot_kappa = (kappa[:,0]+kappa_2h)
+    
+    return kappa_1h, kappa_2h #.value
+
+
+def kappa_nfw_profiley(mass=2e14,conc=None,z=0.7,z_s=1100.,
+                       background='critical',delta=500,
+                       thetamin=0.01*utils.arcmin,thetamax=50.*utils.arcmin,numthetas=1000,
+                       R_off_Mpc = None,
+                       R_off_Mpc_max = 5.0,
+                       N_off = 50,
+                       apply_filter = True,
+                       fls = None,lmin=200,lmax=6000,
+                       res=0.05*utils.arcmin,rstamp=30.*utils.arcmin,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin,
+                       verbose=True, h = 0.677,
+                       Om = 0.3,
+                       Ob = 0.045,
+                       As = 2.1e-9,
+                       ns = 0.96
+                       ):
+
+    thetas = np.linspace(thetamin, thetamax, numthetas)
+
+    kappa_1h,kappa_2h = kappa_nfw_profiley1d(thetas,mass=mass,conc=conc,z=z,z_s=z_s,
+                                             background=background,delta=delta,
+                                             R_off_Mpc = R_off_Mpc,
+                                             R_off_Mpc_max = R_off_Mpc_max,
+                                             N_off = N_off,
+                                             verbose=verbose, h = h,
+                                             Om = Om,
+                                             Ob = Ob,
+                                             As = As,
+                                             ns = ns
+                                             )
+    
+    tot_kappa = (kappa_1h+kappa_2h)
 
     if apply_filter:
-        cents,b1d1h = filter_bin_kappa1d(rad,kappa[:,0],fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
-        cents,b1d = filter_bin_kappa1d(rad,tot_kappa,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
-        cents,b1d2h = filter_bin_kappa1d(rad,kappa_2h,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+        cents,b1d1h = filter_bin_kappa1d(thetas,kappa_1h,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+        cents,b1d = filter_bin_kappa1d(thetas,tot_kappa,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+        cents,b1d2h = filter_bin_kappa1d(thetas,kappa_2h,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
     else:
         cents = b1d1h = b1d = b1d2h = None
 
-    return rad,kappa[:,0],kappa_2h,tot_kappa,cents,b1d1h,b1d2h,b1d
+    return thetas,kappa_1h,kappa_2h,tot_kappa,cents,b1d1h,b1d2h,b1d
         
 
 def validate_geometry(shape,wcs,verbose=False):

@@ -14,9 +14,15 @@ except NameError:
     basestring = str
 
 
-def agora_redshift_to_halocat_files(z_min, z_max, base_filename='agora_halolc_rot_{}_v050223.npz'):
+def agora_redshift_to_halocat_files(z_min, z_max, lensed=False):
     from astropy.cosmology import FlatLambdaCDM
     from astropy import units as u
+
+    if lensed:
+        base_filename = 'agora_halos_lenra_lendec_mag_rotreal_rotimag_deflectnside16384_{}.npy'
+    else:
+        base_filename='agora_halolc_rot_{}_v050223.npz'
+    
     # Convert redshift to comoving distance in Mpc/h
     cosmo = FlatLambdaCDM(H0=67.77, Om0=0.307, Ob0=0.048) # Agora cosmology
     d_min = cosmo.comoving_distance(z_min).to(u.Mpc).value * cosmo.h
@@ -35,23 +41,36 @@ def agora_redshift_to_halocat_files(z_min, z_max, base_filename='agora_halolc_ro
 
 def get_agora_halos(z_min = 0.30, z_max = 0.35,
                     mass_min = 3e14, mass_max = 3.3e14,
-                    mmap_mode='r',croot='/data5/sims/agora_sims/full/halocat',
-                    verbose=False,massdef='m500'):
-    files = agora_redshift_to_halocat_files(z_min, z_max)
+                    mmap_mode='r',lensed=True,
+                    verbose=False,massdef='m500',
+                    lensed_croot='/data5/sims/agora_sims/full/halocat_lensed',
+                    unlensed_croot='/data5/sims/agora_sims/full/halocat'):
+
+    
+    lfiles = agora_redshift_to_halocat_files(z_min, z_max,lensed=True)
+    ufiles = agora_redshift_to_halocat_files(z_min, z_max,lensed=False)
     oras = []
     odecs = []
     ozs = []
     oms = []
 
-    for fcat in files:
 
-        cat = f"{croot}/{fcat}"
+    for lcat,ucat in zip(lfiles,ufiles):
+
         if verbose: print(" ::: loading agora:", cat)
-        dat = np.load(cat,mmap_mode=mmap_mode)
+        dat = np.load(f"{unlensed_croot}/{ucat}",mmap_mode=mmap_mode)
+        ldat = np.load(f"{lensed_croot}/{lcat}",mmap_mode=mmap_mode)
 
+        
         mh = dat[f'tot{massdef}']
-        ras = dat['totra']
-        decs = dat['totdec']
+
+        if lensed:
+            ras = ldat[:,0]
+            decs = ldat[:,1]
+        else:
+            ras = dat['totra']
+            decs = dat['totdec']
+            
         zs = dat['totz']
         h = 0.6777 # Agora cosmology
         Mx00c = mh / h # convert to Msun 
