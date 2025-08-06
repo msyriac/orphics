@@ -27,6 +27,83 @@ from six.moves import cPickle as pickle
 from orphics import stats
 import os,sys
 
+class FixedLens(object):
+    """
+    A simulator for generating CMB maps lensed by a fixed radially symmetric
+    convergence profile.
+
+    Parameters
+    ----------
+    thetas : ndarray
+        1D array of angular distances (in radians) corresponding to the convergence profile.
+    kappa_1d : ndarray
+        1D array representing the total convergence profile (e.g., sum of 1-halo and 2-halo terms), 
+        corresponding to thetas.
+    width_deg : float, optional
+        Width of the simulated map in degrees. Used to define the stamp size. Default is 2.0.
+    res_arcmin : float, optional
+        Resolution of the map in arcminutes per pixel. Default is 0.5.
+    pad_fact : int, optional
+        Padding factor applied to the map width to simulate non-periodic boundary conditions. Default is 2.
+        The simulation will be on a template that is pad_fact * width_deg wide.
+    dfact : int, optional
+        Upsampling factor by for performing lensing. Default is 3. The pixel size for the template 
+        on which lensing is performed will be res_arcmin / dfact.
+
+    """
+    def __init__(self,thetas, kappa_1d,
+                 width_deg=2.0,res_arcmin=0.5, # for stamps
+                 pad_fact=2,dfact=3, # for simulation
+                 ):
+
+        # Make the high-res geometry
+        self.pad_fact = pad_fact
+        self.ushape,self.uwcs = maps.rect_geometry(width_deg=width_deg*pad_fact,px_res_arcmin=res_arcmin/dfact,proj="tan")
+
+        # Store the unlensed CMB theory
+        theory =  cosmology.default_theory()
+        self.ells = np.arange(10000)
+        self.cltt = theory.uCl('TT',self.ells)
+
+        # Make the deflection field from the kappa profile
+        self.thetas = thetas
+        self.kappa_1d = kappa_1d
+        self.umodrmap = enmap.modrmap(self.ushape,self.uwcs)
+        ukappa = enmap.enmap(maps.interp(thetas,tot_kappa)(self.umodrmap),self.uwcs)
+        self.grad_phi = alpha_from_kappa(ukappa)
+
+
+
+    def generate_sim(self,seed):
+        """
+        Generate a simulated CMB map lensed by the fixed lens.
+
+        Parameters
+        ----------
+        seed : int
+            Seed for the random number generator to ensure reproducibility.
+
+        Returns
+        -------
+        umap : enmap
+            Unlensed high-resolution CMB map.
+        lmap : enmap
+            Lensed high-resolution CMB map using the precomputed deflection field.
+        dmap : enmap
+            Center-cropped and downsampled lensed map for analysis.
+        """
+        
+        np.random.seed(seed)
+        # Random unlensed
+        umap = enmap.rand_map(self.ushape, self.uwcs, self.cltt)
+        # Lensed
+        lmap = enlensing.lens_map(umap, self.grad_phi)
+        # Downgraded
+        dmap = enmap.downgrade_fft(lmap, self.dfact)
+        # Cropped
+        return umap, lmap, maps.get_central(dmap,1./self.pad_fact)
+
+
 def filter_bin_kappa1d(thetas,kappas,fls=None,lmin=200,lmax=6000,res=0.05*utils.arcmin,rstamp=30.*utils.arcmin,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin):
     N = int(rstamp/res)
     shape,wcs = enmap.geometry(pos=(0,0),res=res,shape=(N,N),proj='tan')
