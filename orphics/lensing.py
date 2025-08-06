@@ -4,6 +4,8 @@ np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
 from pixell import enmap, utils, bench
 from scipy.special import factorial
+from scipy.optimize import curve_fit
+
 try:
     from pixell import lensing as enlensing
 except:
@@ -129,7 +131,8 @@ def kappa_nfw_profiley1d(thetas,mass=2e14,conc=None,z=0.7,z_s=1100.,
 
 def kappa_nfw_profiley(mass=2e14,conc=None,z=0.7,z_s=1100.,
                        background='critical',delta=500,
-                       thetamin=0.01*utils.arcmin,thetamax=50.*utils.arcmin,numthetas=1000,
+                       thetamin=0.001*utils.arcmin,thetamax=240.*utils.arcmin,numthetas=500,
+                       theta_extrap = 20*utils.arcmin,
                        R_off_Mpc = None,
                        R_off_Mpc_max = 5.0,
                        N_off = 50,
@@ -143,9 +146,10 @@ def kappa_nfw_profiley(mass=2e14,conc=None,z=0.7,z_s=1100.,
                        ns = 0.96
                        ):
 
-    thetas = np.linspace(thetamin, thetamax, numthetas)
+    # These are the radii at which we will do the expensive profiley calculation
+    ithetas = np.linspace(thetamin, theta_extrap, numthetas)
 
-    kappa_1h,kappa_2h = kappa_nfw_profiley1d(thetas,mass=mass,conc=conc,z=z,z_s=z_s,
+    kappa_1h,kappa_2h = kappa_nfw_profiley1d(ithetas,mass=mass,conc=conc,z=z,z_s=z_s,
                                              background=background,delta=delta,
                                              R_off_Mpc = R_off_Mpc,
                                              R_off_Mpc_max = R_off_Mpc_max,
@@ -156,7 +160,17 @@ def kappa_nfw_profiley(mass=2e14,conc=None,z=0.7,z_s=1100.,
                                              As = As,
                                              ns = ns
                                              )
+
+    # We extrapolate with a power law above that
+    t_extra = np.linspace(theta_extrap, thetamax, numthetas)
+    othetas, okappa_1h =  stats.extrapolate_power_law(ithetas, kappa_1h.value, t_extra, x_percentile=30.0)
+    othetas, okappa_2h =  stats.extrapolate_power_law(ithetas, kappa_2h.value, t_extra, x_percentile=30.0)
     
+    # And at zero radius fill with the initial value
+    thetas = np.append([0.],othetas)
+    kappa_1h = np.append([okappa_1h[0]],okappa_1h)
+    kappa_2h = np.append([okappa_2h[0]],okappa_2h)
+        
     tot_kappa = (kappa_1h+kappa_2h)
 
     if apply_filter:

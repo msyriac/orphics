@@ -314,7 +314,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
         else:
             return pl
 
-
+        
 
 def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None,cmap="planck"):
     from pixell import enmap

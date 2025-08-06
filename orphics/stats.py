@@ -8,6 +8,28 @@ from scipy.optimize import curve_fit
 import itertools
 
 
+def extrapolate_power_law(x, y, x_extra, x_percentile=30.0):
+    power_law = lambda x, a, b:  a * x**b
+
+    # Only use large x values for fitting (e.g., top 30%)
+    threshold = np.percentile(x, 100-x_percentile)
+    mask = x >= threshold
+    x_tail = x[mask]
+    y_tail = y[mask]
+
+    # Fit the power law
+    params, _ = curve_fit(power_law, x_tail, y_tail)
+    a, b = params
+
+    # Extrapolate to higher x
+    y_extra = power_law(x_extra, a, b) 
+
+    xout = np.append(x, x_extra)
+    yout = np.append(y, y_extra)
+
+    return xout, yout
+
+
 def nsigma_from_pte(pte):
     from scipy.special import erfinv
     return erfinv ( (1-pte)) * np.sqrt(2)
