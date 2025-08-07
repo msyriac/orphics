@@ -726,7 +726,6 @@ class Stats(object):
             if not(skip_stats):
                 for k,label in enumerate(self.vectors.keys()):
                     self.stats[label] = get_stats(self.vectors[label])
-            #self.vectors = {}
 
     
     def dump(self,path):
