@@ -24,7 +24,7 @@ from orphics.stats import bin2D
 import time
 from six.moves import cPickle as pickle
 
-from orphics import stats
+from orphics import stats, cosmology
 import os,sys
 
 class FixedLens(object):
@@ -58,7 +58,9 @@ class FixedLens(object):
 
         # Make the high-res geometry
         self.pad_fact = pad_fact
+        self.dfact = dfact
         self.ushape,self.uwcs = maps.rect_geometry(width_deg=width_deg*pad_fact,px_res_arcmin=res_arcmin/dfact,proj="tan")
+        self.dshape,self.dwcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=res_arcmin,proj="tan")
 
         # Store the unlensed CMB theory
         theory =  cosmology.default_theory()
@@ -69,7 +71,7 @@ class FixedLens(object):
         self.thetas = thetas
         self.kappa_1d = kappa_1d
         self.umodrmap = enmap.modrmap(self.ushape,self.uwcs)
-        ukappa = enmap.enmap(maps.interp(thetas,tot_kappa)(self.umodrmap),self.uwcs)
+        ukappa = enmap.enmap(maps.interp(thetas,kappa_1d)(self.umodrmap),self.uwcs)
         self.grad_phi = alpha_from_kappa(ukappa)
 
 
@@ -93,15 +95,14 @@ class FixedLens(object):
             Center-cropped and downsampled lensed map for analysis.
         """
         
-        np.random.seed(seed)
         # Random unlensed
-        umap = enmap.rand_map(self.ushape, self.uwcs, self.cltt)
+        umap = enmap.rand_map(self.ushape, self.uwcs, self.cltt, seed=seed)
         # Lensed
         lmap = enlensing.lens_map(umap, self.grad_phi)
         # Downgraded
         dmap = enmap.downgrade_fft(lmap, self.dfact)
         # Cropped
-        return umap, lmap, maps.get_central(dmap,1./self.pad_fact)
+        return umap, lmap, (maps.get_central(dmap,1./self.pad_fact) if self.pad_fact!=1 else dmap)
 
 
 def filter_bin_kappa1d(thetas,kappas,fls=None,lmin=200,lmax=6000,res=0.05*utils.arcmin,rstamp=30.*utils.arcmin,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin):
