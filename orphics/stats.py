@@ -777,6 +777,7 @@ def npspace(minim,maxim,num,scale="lin"):
 class bin2D(object):
     def __init__(self, modrmap, bin_edges):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
+        self.cents = self.centers # backwards compatibility
         self.digitized = np.digitize(modrmap.reshape(-1), bin_edges,right=True)
         self.bin_edges = bin_edges
         self.modrmap = modrmap

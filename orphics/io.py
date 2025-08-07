@@ -2,12 +2,10 @@ from __future__ import print_function
 import matplotlib
 import matplotlib as mpl
 from cycler import cycler
-#mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-# import seaborn as sns
-# sns.set()
+import json
+import hashlib
 
 
 import numpy as np
@@ -59,6 +57,13 @@ def get_hash(file_name):
         # pipe contents of the file through
         md5_returned = hashlib.md5(data).hexdigest()
     return md5_returned
+
+def hash_dict(d):
+    # Serialize with sorted keys for order-independence
+    serialized = json.dumps(d, sort_keys=True, separators=(',', ':'))
+    # Encode string to bytes before hashing
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
 
 ## PARSING
 
