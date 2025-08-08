@@ -9,8 +9,118 @@ from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
 from . import cosmology
+from scipy.special import i0  # Modified Bessel function I0
 
-def thumbnail_healpix(hmap,pos=(0,0),r=10*utils.arcmin,res=None,frame='icrs'):
+def radial_window(r, r0, r1, window="kaiser", beta=6.0):
+    """
+    Smoothly taper from 1 to 0 between radii r0 and r1.
+
+    Parameters
+    ----------
+    r : ndarray
+        Radial distances at which to calculate the taper (radians).
+    r0 : float
+        Start of taper (window = 1 here).
+    r1 : float
+        End of taper (window = 0 here).
+    window : {"kaiser", "cosine", "quintic"}
+        Type of taper window.
+    beta : float
+        Shape parameter for the Kaiser window.
+
+    Returns
+    -------
+    w : ndarray
+        Taper window values (same shape as r), between 0 and 1.
+    """
+    w = np.ones_like(r)
+
+    taper = (r >= r0) & (r <= r1)
+    outer = r > r1
+
+    x = (r[taper] - r0) / (r1 - r0)
+
+    if window == "kaiser":
+        w[taper] = i0(beta * np.sqrt(1.0 - x**2)) / i0(beta)
+    elif window == "cosine":
+        w[taper] = 0.5 * (1.0 + np.cos(np.pi * x))
+    elif window == "quintic":
+        w[taper] = 1.0 - (10.0 * x**3 - 15.0 * x**4 + 6.0 * x**5)
+    else:
+        raise ValueError('window must be "kaiser", "cosine", or "quintic"')
+
+    w[outer] = 0.0
+    return w
+
+
+def apodize_profile(thetas,
+                    profile,
+                    roll_start,
+                    roll_width,
+                    window="kaiser",
+                    beta=6.0):
+    """
+    Apply radial taper to a 1D profile.
+
+    Parameters
+    ----------
+    thetas : ndarray
+        Radii (radians).
+    profile : ndarray
+        Profile values.
+    roll_start : float
+        Taper begins here (radians).
+    roll_width : float
+        Taper width (radians).
+    window : str
+        Taper function type.
+    beta : float
+        Kaiser beta value (if used).
+
+    Returns
+    -------
+    profile_tapered : ndarray
+    """
+    r0 = roll_start
+    r1 = roll_start + roll_width
+    taper = radial_window(thetas, r0, r1, window, beta)
+    return profile * taper
+
+
+def radial_mask(shape,wcs,
+                roll_start,
+                roll_width,
+                window="kaiser",
+                beta=6.0):
+    """
+    Build a circular 2D mask from distance-to-center map.
+
+    Parameters
+    ----------
+    shape (tuple):
+        The shape of the output map.
+    wcs (object):
+        The WCS object defining the coordinate system of the map.
+    roll_start : float
+        Taper begins here (radians).
+    roll_width : float
+        Taper width (radians).
+    window : str
+        Taper function type.
+    beta : float
+        Kaiser beta value (if used).
+
+    Returns
+    -------
+    mask : 2D ndarray
+        Values in [0, 1], same shape as modrmap.
+    """
+    r0 = roll_start
+    r1 = roll_start + roll_width
+    modrmap = enmap.modrmap(shape,wcs)
+    return radial_window(modrmap, r0, r1, window, beta)
+
+def thumbnail_healpix(hmap,pos=(0,0),r=10*utils.arcmin,res=None,frame='icrs',proj='tan'):
     """
     Extract a gnomonic-projected thumbnail from a HEALPix map.
 
@@ -70,7 +180,7 @@ def thumbnail_healpix(hmap,pos=(0,0),r=10*utils.arcmin,res=None,frame='icrs'):
 
     # Reshape to 2D grid
     omap = values.reshape((N, N))
-    _,wcs = enmap.geometry(pos=(0,0),res=res,shape=(N,N),proj='tan')
+    _,wcs = enmap.geometry(pos=(0,0),res=res,shape=(N,N),proj=proj)
     return enmap.enmap(omap,wcs)
 
 def matched_filter(imap,fwhm_arcmin,cls=None,noise_uk_arcmin=None,taper_per=12.0):
@@ -232,6 +342,7 @@ def gapfill_edge_conv_flat(map, mask, ivar=None, alpha=-3, edge_rad=1*utils.arcm
     The inpainting should be valid up to a radius of tol**(1/alpha)*rmin
     from the hole edge. For the default alpha=-3, rmin=2 and tol=1e-8, this
     gives 15 degrees, which is more than enough for typical gapfilling."""
+    if mask.dtype != np.bool_: raise ValueError
     refpix = np.array(map.shape[-2:])//2
     rmax   = tol**(1/alpha) * rmin
     r      = enmap.shift(map.distance_from(map.pix2sky(refpix)[:,None],rmax=rmax).astype(map.dtype),-refpix,keepwcs=True)
@@ -591,19 +702,26 @@ def south_galactic_mask(shape,wcs,nside,order=0):
     return galactic_mask(shape,wcs,nside,np.deg2rad(90),np.deg2rad(180),order=order)
 
 
-def rms_from_ivar(ivar,parea=None,cylindrical=True):
+def rms_from_ivar(ivar,parea=None,cylindrical=True,safe=True,unsafe_tol=1e-3):
     """
     Return rms noise for each pixel in a map in physical units
     (uK-arcmin) given a map of the inverse variance per pixel.
     Optionally, provide a map of the pixel area.
     """
+    assert np.all(np.isfinite(ivar))
     if parea is None:
         shape,wcs = ivar.shape, ivar.wcs
         parea = psizemap(shape,wcs) if cylindrical else enmap.pixsizemap(shape,wcs)
     with np.errstate(divide='ignore', invalid='ignore',over='ignore'):
         var = (1./ivar)
     var[ivar<=0] = 0
-    assert np.all(np.isfinite(var))
+    if safe:
+        if not(np.all(np.isfinite(var))): raise ValueError
+    else:
+        bad = ~np.isfinite(var)
+        unsafe = var[bad].size / var.size
+        if unsafe>1e-3: raise ValueError
+        var[bad] = 0
     return np.sqrt(var*parea)*180*60./np.pi
 
     

@@ -1,6 +1,8 @@
 from __future__ import print_function
 import numpy as np
 import os,sys,time
+from contextlib import contextmanager
+import traceback
 
 """
 Copied to pyfisher
@@ -25,6 +27,16 @@ causing hours of endless confusion and frustration! - Sincerely, past frustrated
 #     MPI.COMM_WORLD.Abort(1)
 # sys.excepthook = cleanup
 
+
+@contextmanager
+def mpi_abort_on_exception(comm):
+    try:
+        yield
+    except Exception as e:
+        if comm.Get_rank() == 0:
+            print(f"Exception: {e}", file=sys.stderr)
+            traceback.print_exc()
+        comm.Abort(1)
 
 class fakeMpiComm:
     """
@@ -61,6 +73,8 @@ except:
     MPI.COMM_WORLD = fakeMpiComm()
     
 
+
+    
 def mpi_distribute(num_tasks,avail_cores,allow_empty=False):
     # copied to mapsims.convert_noise_templates
     if not(allow_empty): assert avail_cores<=num_tasks

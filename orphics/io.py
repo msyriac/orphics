@@ -2,12 +2,10 @@ from __future__ import print_function
 import matplotlib
 import matplotlib as mpl
 from cycler import cycler
-#mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-# import seaborn as sns
-# sns.set()
+import json
+import hashlib
 
 
 import numpy as np
@@ -60,6 +58,13 @@ def get_hash(file_name):
         md5_returned = hashlib.md5(data).hexdigest()
     return md5_returned
 
+def hash_dict(d):
+    # Serialize with sorted keys for order-independence
+    serialized = json.dumps(d, sort_keys=True, separators=(',', ':'))
+    # Encode string to bytes before hashing
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+
 ## PARSING
 
 def but_her_emails(string=None,filename=None):
@@ -95,7 +100,7 @@ class LoggerWriter:
         self.level(sys.stderr)
 
     
-def get_logger(logname)        :
+def get_logger(logname):
     logging.basicConfig(filename=logname+str(time.time()*10)+".log",level=logging.DEBUG,format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',datefmt='%m-%d %H:%M',filemode='w')
     console = logging.StreamHandler()
     console.setLevel(logging.DEBUG)
@@ -259,7 +264,7 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
         if verbose: cprint("Saved histogram plot to "+ save_file,color="g")
     else:
         plt.show()
-
+    plt.close()
     return ret
         
 
@@ -314,7 +319,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
         else:
             return pl
 
-
+        
 
 def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None,cmap="planck"):
     from pixell import enmap

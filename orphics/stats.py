@@ -8,6 +8,26 @@ from scipy.optimize import curve_fit
 import itertools
 
 
+def extrapolate_power_law(x, y, x_extra, x_percentile=30.0):
+    power_law = lambda x, a, b:  a * x**b
+
+    # Only use large x values for fitting (e.g., top 30%)
+    threshold = np.percentile(x, 100-x_percentile)
+    mask = x >= threshold
+    x_tail = x[mask]
+    y_tail = y[mask]
+
+    # Fit the power law
+    params, _ = curve_fit(power_law, x_tail, y_tail)
+    a, b = params
+
+    # Extrapolate to higher x
+    y_extra = power_law(x_extra, a, b) 
+
+    xout = np.append(x, x_extra)
+    yout = np.append(y, y_extra)
+
+    return xout, yout
 
 def nsigma_from_pte(pte):
     from scipy.special import erfinv
@@ -705,7 +725,6 @@ class Stats(object):
             if not(skip_stats):
                 for k,label in enumerate(self.vectors.keys()):
                     self.stats[label] = get_stats(self.vectors[label])
-            #self.vectors = {}
 
     
     def dump(self,path):
@@ -756,6 +775,7 @@ def npspace(minim,maxim,num,scale="lin"):
 class bin2D(object):
     def __init__(self, modrmap, bin_edges):
         self.centers = (bin_edges[1:]+bin_edges[:-1])/2.
+        self.cents = self.centers # backwards compatibility
         self.digitized = np.digitize(modrmap.reshape(-1), bin_edges,right=True)
         self.bin_edges = bin_edges
         self.modrmap = modrmap
