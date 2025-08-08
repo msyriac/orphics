@@ -342,6 +342,7 @@ def gapfill_edge_conv_flat(map, mask, ivar=None, alpha=-3, edge_rad=1*utils.arcm
     The inpainting should be valid up to a radius of tol**(1/alpha)*rmin
     from the hole edge. For the default alpha=-3, rmin=2 and tol=1e-8, this
     gives 15 degrees, which is more than enough for typical gapfilling."""
+    if mask.dtype != np.bool_: raise ValueError
     refpix = np.array(map.shape[-2:])//2
     rmax   = tol**(1/alpha) * rmin
     r      = enmap.shift(map.distance_from(map.pix2sky(refpix)[:,None],rmax=rmax).astype(map.dtype),-refpix,keepwcs=True)
@@ -701,19 +702,26 @@ def south_galactic_mask(shape,wcs,nside,order=0):
     return galactic_mask(shape,wcs,nside,np.deg2rad(90),np.deg2rad(180),order=order)
 
 
-def rms_from_ivar(ivar,parea=None,cylindrical=True):
+def rms_from_ivar(ivar,parea=None,cylindrical=True,safe=True,unsafe_tol=1e-3):
     """
     Return rms noise for each pixel in a map in physical units
     (uK-arcmin) given a map of the inverse variance per pixel.
     Optionally, provide a map of the pixel area.
     """
+    assert np.all(np.isfinite(ivar))
     if parea is None:
         shape,wcs = ivar.shape, ivar.wcs
         parea = psizemap(shape,wcs) if cylindrical else enmap.pixsizemap(shape,wcs)
     with np.errstate(divide='ignore', invalid='ignore',over='ignore'):
         var = (1./ivar)
     var[ivar<=0] = 0
-    assert np.all(np.isfinite(var))
+    if safe:
+        if not(np.all(np.isfinite(var))): raise ValueError
+    else:
+        bad = ~np.isfinite(var)
+        unsafe = var[bad].size / var.size
+        if unsafe>1e-3: raise ValueError
+        var[bad] = 0
     return np.sqrt(var*parea)*180*60./np.pi
 
     

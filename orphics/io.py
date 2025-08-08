@@ -264,7 +264,7 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
         if verbose: cprint("Saved histogram plot to "+ save_file,color="g")
     else:
         plt.show()
-
+    plt.close()
     return ret
         
 
