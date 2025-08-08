@@ -8,6 +8,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from orphics import maps, cosmology
 from pixell import bench
+from scipy.constants import h, k, c
 
 # For szar copies
 default_constants = {'A_tsz': 5.6,
@@ -64,14 +65,54 @@ def planck(nu_hz, T):
     x = hplanck * nu_hz / (kboltz * T)
     return (2.0 * hplanck * nu_hz**3 / clight**2) / (np.expm1(x))
 
-import numpy as np
-import hmvec as hm
-from scipy.constants import h, k, c
 
 # tSZ frequency factor (dimensionless)
 def g_tsz(nu_ghz, T_cmb=2.726):
     x = (h * nu_ghz * 1e9) / (k * T_cmb)
     return x * (np.exp(x) + 1.0) / (np.exp(x) - 1.0) - 4.0
+
+# Copied from szar
+def dl_filler(ells,ls,cls,fill_type="extrapolate",fill_positive=False,silence=False):
+    ells = np.asarray(ells)
+    if not(silence):
+        if ells.max()>ls.max() and fill_type=="extrapolate":
+            warnings.warn("Warning: Requested ells go higher than available." + \
+                  " Extrapolating above highest ell.")
+        elif ells.max()>ls.max() and fill_type=="constant_dl":
+            warnings.warn("Warning: Requested ells go higher than available." + \
+                  " Filling with constant ell^2C_ell above highest ell.")
+    if fill_type=="constant_dl":
+        fill_value = (0,cls[-1])
+    elif fill_type=="extrapolate":
+        fill_value = "extrapolate"
+    elif fill_type=="zeros":
+        fill_value = 0
+    else:
+        raise ValueError
+    dls = interp1d(ls,cls,bounds_error=False,fill_value=fill_value)(ells)
+    if fill_positive: dls[dls<0] = 0
+    return dls
+
+
+def power_y_template(ells,A_tsz=None,fill_type="extrapolate",silence=False):
+    """
+    fill_type can be "zeros" , "extrapolate" or "constant_dl"
+
+    ptsz = Tcmb^2 gnu^2 * yy
+    ptsz = Atsz * battaglia * gnu^2 / gnu150^2
+    yy = Atsz * battaglia / gnu150^2 / Tcmb^2
+
+    """
+    if A_tsz is None: A_tsz = default_constants['A_tsz']
+    ells = np.asarray(ells)
+    assert np.all(ells>=0)
+    root = os.path.dirname(__file__)+f"/../data/"
+    ls,icls = np.loadtxt(root+"/foregrounds/sz_template_battaglia.csv",unpack=True,delimiter=',')
+    dls = dl_filler(ells,ls,icls,fill_type=fill_type,fill_positive=True,silence=silence)
+    nu0 = 150.0 ; tcmb = TCMB_uK
+    with np.errstate(divide='ignore'): cls = A_tsz * dls*2.*np.pi*np.nan_to_num(1./ells/(ells+1.)) / ffunc(nu0)**2./tcmb**2.
+    return cls
+
 
 def compute_cl_yy(
         ell,                          # multipoles: array-like
@@ -93,6 +134,7 @@ def compute_cl_yy(
     C_ell_tsz : array
         Thermal SZ power spectrum in µK^2 units (thermodynamic)
     """
+    import hmvec as hm
 
     # grids
     zs = np.linspace(zmin, zmax, nz)
@@ -143,75 +185,6 @@ def compute_tsz_power(
     return Cyy * g_i * g_j * TCMB_uK**2.
 
 
-def cib_power_spectra(
-        ell,                       # scalar or ndarray of multipoles
-        nu_i_ghz: float,           # channel-1 effective frequency  (GHz)
-        nu_j_ghz: float,           # channel-2 effective frequency  (GHz)
-        S_cut_i_mJy: float,        # flux-cut applied to map-i      (mJy)
-        S_cut_j_mJy: float,        # flux-cut applied to map-j      (mJy)
-
-        # amplitudes at the pivot (µK_CMB²)
-        A_P0=6.8,                  # Poisson   amplitude at ν0, ell0, S0_REF
-        A_C0=4.8,                  # Clustered amplitude at ν0, ell0
-        # spectral / spatial indices
-        beta_p=1.75,               # emissivity index – Poisson
-        beta_c=1.75,               # emissivity index – clustered
-        n_cl=1.2,                  # clustered power-law index (Cell ∝ ell^{0.8})
-        # pivots & reference mask
-        ell0=3000,                 # pivot multipole
-        nu0_ghz=150.0,             # pivot frequency   (GHz)
-        S0_ref_mJy=15.0,           # reference flux cut for A_P0 (mJy)
-        # Poisson scaling exponent γ = 3-α  (α≈2.5 → γ≈0.5)
-        gamma=0.5,
-        # dust temperature used in the colour term  (K)
-        T_dust=9.7):
-    """
-     CIB clustered + Poisson template (Dunkley et al. 2013-style)
-    
-    Returns a dict with Poisson ('Bp_ell'), clustered ('Bc_ell') and total
-    ('Btot_ell') CIB Bell spectra in µK_CMB².
-
-    Only the Poisson term is rescaled for the supplied flux cuts.
-    The clustered term is assumed to be negligibly affected by masking.
-    """
-
-    def mu_colour(nu_ghz, beta):
-        """
-        Colour factor μ(ν,β) = ν^β  B_ν(T_dust) · [dB_ν/dT|_{T_CMB}]⁻¹
-        Both B_ν and dB_ν/dT are in SI units, but the ratio is dimensionless
-        once we convert dB/dT to µK_CMB using ItoDeltaT.
-        """
-        nu_hz = nu_ghz * 1e9
-        return (nu_ghz**beta) * planck(nu_hz, T_dust) * ItoDeltaT(nu_ghz)
-
-    # --------------------------------------------------------------------------------------
-    # geometric-mean effective flux mask for a cross-spectrum
-    S_eff_mJy = np.sqrt(S_cut_i_mJy * S_cut_j_mJy)
-    A_P = A_P0 * (S_eff_mJy / S0_ref_mJy)**gamma   # rescaled Poisson amplitude
-
-    # colour factors
-    mu_i_p = mu_colour(nu_i_ghz, beta_p)
-    mu_j_p = mu_colour(nu_j_ghz, beta_p)
-    mu_i_c = mu_colour(nu_i_ghz, beta_c)
-    mu_j_c = mu_colour(nu_j_ghz, beta_c)
-    mu0_p  = mu_colour(nu0_ghz, beta_p)
-    mu0_c  = mu_colour(nu0_ghz, beta_c)
-
-    # multipole dependence
-    ell = np.asarray(ell, dtype=float)
-    ell_ratio = ell / ell0
-
-    # Poisson: Cell ∝ ell²
-    Bp = A_P * (ell_ratio**2) * (mu_i_p * mu_j_p) / (mu0_p**2)
-
-    # Clustered: Cell ∝ ell^{2-n_cl}
-    Bc = A_C0 * (ell_ratio**(2. - n_cl)) * (mu_i_c * mu_j_c) / (mu0_c**2)
-
-    return {
-        "Bp_ell":  Bp,
-        "Bc_ell":  Bc,
-        "Btot_ell": Bp + Bc
-    }
 
 
 # Lagache et al. (2019) source model
