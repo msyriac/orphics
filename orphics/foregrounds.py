@@ -3,13 +3,14 @@ Utilities for ILC noise, source counts and associated power spectra, etc..
 
 """
 
-import glob,os,sys,itertools
+import glob,os,sys,itertools,warnings
 import numpy as np
 from scipy.interpolate import interp1d
 from orphics import maps, cosmology, io
 from pixell import bench
 from scipy.constants import h, k, c
 from scipy.optimize import least_squares
+from typing import Union, Callable, List
 
 # For szar copies
 default_constants = {'A_tsz': 5.6,
@@ -598,23 +599,6 @@ def dl_filler(ells,ls,cls,fill_type="extrapolate",fill_positive=False,silence=Fa
     if fill_positive: dls[dls<0] = 0
     return dls
 
-def power_y(ells,A_tsz=None,fill_type="extrapolate",silence=False):
-    """
-    fill_type can be "zeros" , "extrapolate" or "constant_dl"
-
-    ptsz = Tcmb^2 gnu^2 * yy
-    ptsz = Atsz * battaglia * gnu^2 / gnu150^2
-    yy = Atsz * battaglia / gnu150^2 / Tcmb^2
-
-    """
-    if A_tsz is None: A_tsz = default_constants['A_tsz']
-    ells = np.asarray(ells)
-    assert np.all(ells>=0)
-    ls,icls = np.loadtxt(os.path.dirname(__file__)+f"/../data/foregrounds/sz_template_battaglia.csv",unpack=True,delimiter=',')
-    dls = dl_filler(ells,ls,icls,fill_type=fill_type,fill_positive=True,silence=silence)
-    nu0 = default_constants['nu0'] ; tcmb = default_constants['TCMBmuk']
-    with np.errstate(divide='ignore'): cls = A_tsz * dls*2.*np.pi*np.nan_to_num(1./ells/(ells+1.)) / ffunc(nu0)**2./tcmb**2.
-    return cls
 
 def ffunc(nu,tcmb=None):
     """
@@ -628,13 +612,15 @@ def ffunc(nu,tcmb=None):
     return ans
 
 def power_ksz_reion(ells,A_rksz=1,fill_type="extrapolate",silence=False):
-    ls,icls = np.loadtxt(os.path.dirname(__file__)+f"/../data/foregrounds/early_ksz.txt",unpack=True)
+    root = os.path.dirname(__file__)+f"/../data/"
+    ls,icls = np.loadtxt(root+f"foregrounds/early_ksz.txt",unpack=True)
     dls = dl_filler(ells,ls,icls,fill_type=fill_type,fill_positive=True,silence=silence)
     with np.errstate(divide='ignore',over='ignore'): cls = A_rksz * dls*2.*np.pi*np.nan_to_num(1./ells/(ells+1.))
     return cls
 
 def power_ksz_late(ells,A_lksz=1,fill_type="extrapolate",silence=False):
-    ls,icls = np.loadtxt(os.path.dirname(__file__)+f"/../data/foregrounds/late_ksz.txt",unpack=True)
+    root = os.path.dirname(__file__)+f"/../data/"
+    ls,icls = np.loadtxt(root+f"foregrounds/late_ksz.txt",unpack=True)
     dls = dl_filler(ells,ls,icls,fill_type=fill_type,fill_positive=True,silence=silence)
     with np.errstate(divide='ignore'): cls = A_lksz * dls*2.*np.pi*np.nan_to_num(1./ells/(ells+1.))
     return cls
@@ -718,7 +704,8 @@ def wnoise_cl(sigma_uk_arcmin):
 
         
 
-def fg_cl(ell, p, nu1, nu2, cl_tsz_tmpl, pivot_cib=150.):
+def fg_cl(ell, p, nu1, nu2, cl_tsz_tmpl, pivot_cib=150., pivot_dust=353.,
+          ell0_dust=80.):
     """Foregrounds only (no CMB, no noise)."""
     ell0 = 3000.
 
@@ -733,10 +720,38 @@ def fg_cl(ell, p, nu1, nu2, cl_tsz_tmpl, pivot_cib=150.):
     # Thermal SZ
     cl_tsz = cltsz(p["Atsz"],nu1,nu2,cl_tsz_tmpl)
 
+    
+    # Galactic dust
+    Ad   = p["Adust_353"]                 # amplitude at 353 GHz
+    beta = p["beta_dust"]
+    alpha_d = p["alpha_dust"]
 
-    return cl_ps + cl_cib + cl_tsz 
+    cl_dust = (Ad *
+               (ell/ell0_dust)**(-alpha_d) *
+               ((nu1*nu2)/(pivot_dust**2))**(beta/2.0))
 
-def model_vec(all_params, params, ell, freqs, dT_guess, beam_fwhms, lknees, alphas, cl_cmb_tmpl, cl_tsz_tmpl):
+
+    return cl_ps + cl_cib + cl_tsz + cl_dust
+
+
+def get_noise(ell,i,j,sig_i,sig_j,lknees,alphas,atm_corr=0.):
+    if i == j:
+        if lknees[i]>0:
+            return maps.rednoise(ell, sig_i, lknees[i],alpha=alphas[i])
+        else:
+            return wnoise_cl(sig_i)
+
+    else:                                         # crosses
+        sig_geom   = np.sqrt(sig_i * sig_j)
+        lk_cross   = np.sqrt(lknees[i] * lknees[j])
+        alpha_cross = 0.5 * (alphas[i] + alphas[j])
+
+        # keep only the power-law term so it decays at high ell
+        wnoise   = sig_geom*(np.pi/180./60.)**2
+        corr_red = (lk_cross / np.maximum(ell, 1.0))**(-alpha_cross) * wnoise
+        return atm_corr * corr_red
+
+def model_vec(all_params, params, ell, freqs, dT_guess, beams, lknees, alphas, cl_cmb_tmpl, cl_tsz_tmpl):
     """CMB x A_cmb  +  foregrounds  +  noise-bias (autos only)."""
     p = dict(zip(all_params, params))
     Acmb   = p["A_cmb"]
@@ -744,20 +759,16 @@ def model_vec(all_params, params, ell, freqs, dT_guess, beam_fwhms, lknees, alph
 
     for i, j in itertools.combinations_with_replacement(range(len(freqs)), 2):
         nu1, nu2 = freqs[i], freqs[j]
-        bf1, bf2 = beam_fwhms[i], beam_fwhms[j]
-        b1 = maps.gauss_beam(ell,bf1)
-        b2 = maps.gauss_beam(ell,bf2)
+        b1, b2 = beams[i](ell), beams[j](ell)
 
         # signal + foregrounds
         mod = (Acmb * cl_cmb_tmpl + fg_cl(ell, p, nu1, nu2, cl_tsz_tmpl))*b1 * b2
 
         # add noise bias to autos
-        if i == j:
-            sigma  = dT_guess[i] * p[f"rN_{nu1}"]            # scaled RMS
-            if lknees[i]>0:
-                mod  = mod + maps.rednoise(ell, sigma, lknees[i],alpha=alphas[i])
-            else:
-                mod += wnoise_cl(sigma)
+        sig_i  = dT_guess[i] * p[f"rN_{nu1}"]            # scaled RMS
+        sig_j  = dT_guess[i] * p[f"rN_{nu1}"]            # scaled RMS
+
+        mod = mod + get_noise(ell,i,j,sig_i,sig_j,lknees,alphas,p["Aatm_corr"])
 
         blocks.append(mod)
 
@@ -768,53 +779,66 @@ def quick_fit(
         cl_dict: dict,          # {(i,j): C_ell} with i <= j
         freqs: np.ndarray,      # [nu0, nu1, ...]  in GHz
         dT_guess: np.ndarray,   # guessed RMS per channel  (uK*arcmin)
-        beam_fwhms: np.ndarray, # beam FWHM (arcmin per channel)
+        beams: Union[List[float], List[Callable[[float], float]]], # beam FWHM (arcmin per channel), or array of beam fn at each ells
         lknees: np.ndarray,
         alphas: np.ndarray,
         fsky: float,
-        fixed_params: dict = { "alpha_cib": 3.5 },
+        fixed_params: dict = { "alpha_cib": 3.5, "Aatm_corr": 0., "beta_dust": 1.6, "alpha_dust": 2.42, "Adust_353": 0. },
         priors: dict = {
             "A_cmb": (1.0, 0.03),        # mean, std dev
             "rN_150": (1.0, 0.3),
             "rN_90":  (1.0, 0.3),
             "A_tsz": (1.0, 0.4),        # mean, std dev
         },
+        eval_ells: np.ndarray=None,
         verbose: bool = True,
-        plot: bool=True):
+        plot: bool=True,delta_ell: np.ndarray=20):
 
-    clyy = power_y_template(ell)
+    fclyy = lambda x: power_y_template(x)
     theory = cosmology.default_theory()
-    cltt = theory.lCl('TT',ell)
+    fcltt = lambda x: theory.lCl('TT',x) + power_ksz_reion(x) + power_ksz_late(x)
+    
 
     return fg_fit(
         ell,
-        cl_dict,          # {(i,j): C_ell} with i <= j
-        freqs,      # [nu0, nu1, ...]  in GHz
-        dT_guess,   # guessed RMS per channel  (uK*arcmin)
-        beam_fwhms, # beam FWHM (arcmin per channel)
+        cl_dict,   
+        freqs,     
+        dT_guess,  
+        beams,
         lknees,
         alphas,
         fsky,
-        cltt,
-        clyy,
+        fcltt,
+        fclyy,
         fixed_params,
-        priors,verbose,plot)
-    
+        priors,eval_ells,verbose,plot,delta_ell)
+
+def _expand_beams(beams,ells,nfreqs):
+    if len(beams)!=nfreqs: raise ValueError
+    if all(callable(b) for b in beams):
+        return beams
+    elif all(isinstance(b, (float, int)) for b in beams):
+        return [lambda x: maps.gauss_beam(x,b) for b in beams]
+    else:
+        raise TypeError("beams must be either a list of float FWHMs or a list of callables")
+
 def fg_fit(
         ell: np.ndarray,
         cl_dict: dict,          # {(i,j): C_ell} with i <= j
         freqs: np.ndarray,      # [nu0, nu1, ...]  in GHz
         dT_guess: np.ndarray,   # guessed RMS per channel  (uK*arcmin)
-        beam_fwhms: np.ndarray, # beam FWHM (arcmin per channel)
+        beams: Union[List[float], List[Callable[[float], float]]], # beam FWHM (arcmin per channel), or array of beam fn at each ells
         lknees: np.ndarray,
         alphas: np.ndarray,
         fsky: float,
-        cl_cmb_tmpl: np.ndarray,
-        cl_yy: np.ndarray,
+        fcl_cmb_tmpl: callable,
+        fcl_yy: callable,
         fixed_params: dict = None,
         priors: dict=None,
+        eval_ells: np.ndarray=None,
         verbose: bool = True,
         plot: bool=True,
+        delta_ell: np.ndarray=20,
 ):
     """
     Fit all foreground / calibration / noise parameters **except**
@@ -830,31 +854,43 @@ def fg_fit(
     if fixed_params is None:
         fixed_params = {}
 
-    # ---------------------------------------------------------------
-    # 1. Assemble DATA vector  (autos + crosses, fixed order)
-    pairs     = list(itertools.combinations_with_replacement(range(len(freqs)), 2))
-    data_vec  = np.concatenate([cl_dict[(i, j)] for i, j in pairs])
+    if delta_ell is not None:
+        edges     = np.arange(ell.min(), ell.max()+delta_ell, delta_ell)
+        # list of arrays; idx_bins[k] gives the ℓ–indices in bin k
+        idx_bins  = [np.where((ell >= lo) & (ell < hi))[0] for lo, hi in zip(edges[:-1], edges[1:])]
+        nbin      = len(idx_bins)
 
-    # ---------------------------------------------------------------
+
+    def bin_1d(arr):
+        """Average over each ell-bin."""
+        if delta_ell is not None:
+            return np.array([arr[idx].mean() for idx in idx_bins])
+        else:
+            return arr
+
+    
+    pairs     = list(itertools.combinations_with_replacement(range(len(freqs)), 2))
+    data_vec = np.concatenate([bin_1d(cl_dict[(i, j)]) for i, j in pairs])
+
 
     # white-noise bias for every channel (μK²·rad²)
     N_guess = [wnoise_cl(dT) for dT in dT_guess]
 
     # CMB template *initial* amplitude (use 1.0; you can update later
     # with the best–fit Acmb if you want to iterate)
-    CMB_guess = cl_cmb_tmpl.copy()        # already in μK²·rad²
+    cl_cmb_tmpl = fcl_cmb_tmpl(ell)        # already in μK²·rad²
 
     sigma_blk = []
     pref_auto  = np.sqrt(2.0 / ((2*ell + 1) * fsky))
     pref_cross = np.sqrt(1.0 / ((2*ell + 1) * fsky))
 
     # Pre-compute beams once (needed to beam the CMB term)
-    beams = [maps.gauss_beam(ell, fwhm) for fwhm in beam_fwhms]
+    beams = _expand_beams(beams,ell,len(freqs))
 
     for i, j in pairs:
         # beam the CMB template for each channel
-        Cl_cmb_i = CMB_guess * beams[i]**2
-        Cl_cmb_j = CMB_guess * beams[j]**2
+        Cl_cmb_i = cl_cmb_tmpl * beams[i](ell)**2
+        Cl_cmb_j = cl_cmb_tmpl * beams[j](ell)**2
 
         if i == j:
             # auto-spectrum variance: 2/(2ell+1) * (C_s + N)^2
@@ -866,25 +902,48 @@ def fg_fit(
 
         sigma_blk.append(var)
 
-    sigma_vec = np.concatenate(sigma_blk)     # fixed weighting
-    # ---------------------------------------------------------------
+
+
+    def bin_sigma(sig_ell):
+        # var(mean) = Σ σ_i² / N²    → σ_bin = sqrt( Σ σ_i² ) / N
+        if delta_ell is not None:
+            return np.array([np.sqrt((sig_ell[idx]**2).sum()) / len(idx) for idx in idx_bins])
+        else:
+            return sig_ell
+
+    sigma_vec = np.concatenate([bin_sigma(s) for s in sigma_blk])
+
+    
     # 3. Build the full PARAMS list (order matters for model_vec)
     all_params  = [f"Aps_{nu}" for nu in freqs]       # Poisson amps
     all_params += [f"rN_{nu}"  for nu in freqs]       # noise scales
-    all_params += ["Acib_150", "alpha_cib", "Atsz", "A_cmb"]
+    all_params += ["Acib_150", "alpha_cib", "Atsz", "A_cmb", "Aatm_corr",
+                   "Adust_353", "beta_dust", "alpha_dust"]
 
+    lbounds  = [0. for nu in freqs]       # Poisson amps
+    lbounds += [0.  for nu in freqs]       # noise scales
+    lbounds += [0, 0, 0, 0, 0,0,0,0]
+
+    ubounds  = [np.inf for nu in freqs]       # Poisson amps
+    ubounds += [np.inf  for nu in freqs]       # noise scales
+    ubounds += [np.inf, np.inf, np.inf, np.inf, np.inf,np.inf,np.inf,np.inf]
+    
     # default starting values (same order as all_params)
     p0_full  = [1e-5]*len(freqs)                 # Aps_nu
     p0_full += [1.0  ]*len(freqs)                # rN_nu
-    p0_full += [1e-5, 3.5, 1, 1.]
+    p0_full += [1e-5, 3.5, 1, 1.,0.,
+                10.,1.6,2.4]
 
     # map name -> default guess
     p0_dict  = dict(zip(all_params, p0_full))
+    lb_dict  = dict(zip(all_params, lbounds))
+    ub_dict  = dict(zip(all_params, ubounds))
 
-    # ---------------------------------------------------------------
-    # 4. Separate free vs. fixed parameters
+    # Separate free vs. fixed parameters
     free_names = [n for n in all_params if n not in fixed_params]
     free_p0    = [p0_dict[n] for n in free_names]          # initial guesses
+    free_lbounds    = [lb_dict[n] for n in free_names]          # initial guesses
+    free_ubounds    = [ub_dict[n] for n in free_names]          # initial guesses
 
     # helper: merge free vector with fixed dict -> full ordered list
     def assemble_full(par_free):
@@ -894,14 +953,20 @@ def fg_fit(
             merged.append(fixed_params[name] if name in fixed_params else next(it))
         return merged
 
-    # ---------------------------------------------------------------
-    # 5. Residuals function for least_squares
+    cl_yy_temp = fcl_yy(ell)
+    
+    # Residuals function for least_squares
     def resid(par_free):
         full_par = assemble_full(par_free)
-        model = model_vec(all_params, full_par, ell, freqs,
-                          dT_guess, beam_fwhms, lknees,alphas,
-                          cl_cmb_tmpl, cl_yy)
+        model_full = model_vec(all_params, full_par, ell, freqs,
+                          dT_guess, beams, lknees,alphas,
+                          cl_cmb_tmpl, cl_yy_temp)
 
+        model = np.concatenate([bin_1d(model_full[k*len(ell):(k+1)*len(ell)])
+                                       for k in range(len(pairs))])
+
+        if not(np.all(np.isfinite(data_vec))): raise ValueError
+        if not(np.all(np.isfinite(model))): raise ValueError
         residual = (data_vec - model) / sigma_vec
 
         # Optional Gaussian priors
@@ -916,24 +981,41 @@ def fg_fit(
         return np.concatenate([residual, np.array(prior_terms)])
 
 
-    # ---------------------------------------------------------------
-    # 6. Run the fit
-    result   = least_squares(resid, free_p0)
+    # Run the fit
+    result   = least_squares(resid, free_p0, bounds=(free_lbounds,free_ubounds))
     best_fit = dict(zip(all_params, assemble_full(result.x)))
     chi2     = np.sum(result.fun**2)
     dof      = data_vec.size - len(result.x)      # DOF counts ONLY free params
 
+    if eval_ells is None:
+        eval_ells = ell
+    cl_yy = fcl_yy(eval_ells)
     model_dict = evaluate_model_dict(
-        ell,
+        eval_ells,
         best_fit,
         freqs,
         dT_guess,
-        beam_fwhms,
+        beams,
         lknees,
         alphas,
-        cl_cmb_tmpl,
+        fcl_cmb_tmpl(eval_ells),
         cl_yy,
     )
+    if eval_ells is not None: # evaluate at same ells for residuals
+        rmodel_dict = evaluate_model_dict(
+            ell,
+            best_fit,
+            freqs,
+            dT_guess,
+            beams,
+            lknees,
+            alphas,
+            cl_cmb_tmpl,
+            cl_yy_temp,
+        )
+    else:
+        rmodel_dict = model_dict
+        
 
     best = best_fit
     if verbose:
@@ -949,27 +1031,42 @@ def fg_fit(
                 fi = freqs[i]
                 fj = freqs[j]
                 print(f"Processing {fi} x {fj}")
-                print(sum(model_dict[(i,j)]['noise']))
 
-                bf1, bf2 = beam_fwhms[i], beam_fwhms[j]
-                b1 = maps.gauss_beam(ell,bf1)
-                b2 = maps.gauss_beam(ell,bf2)
+                b1 = beams[i](eval_ells)
+                b2 = beams[j](eval_ells)
                 beamprod = b1*b2
+
+                if not(np.all(np.isfinite(model_dict['total'][(i,j)]))):
+                    print("Bad ells: ", eval_ells[~np.isfinite(model_dict['total'][(i,j)])])
+                    raise ValueError
 
                 pl = io.Plotter("Dell")
                 pl.add(ell,cl_dict[(i,j)],label=f'observed {fi} x {fj}')
-                pl.add(ell,model_dict[(i,j)]['total'],color='k',label='total')
-                pl.add(ell,beamprod*model_dict[(i,j)]['cmb'],ls='--',label='cmb',alpha=0.5)
-                pl.add(ell,beamprod*model_dict[(i,j)]['foreground'],ls=':',label='fg',alpha=0.5)
-                pl.add(ell,model_dict[(i,j)]['noise'],ls='--',label='noise',alpha=0.5)
+                pl.add(eval_ells,model_dict['total'][(i,j)],color='k',label='total')
+                pl.add(eval_ells,beamprod*model_dict['cmb'][(i,j)],ls='--',label='cmb',alpha=0.5)
+                pl.add(eval_ells,beamprod*model_dict['foreground'][(i,j)],ls=':',label='fg',alpha=0.5)
+                pl.add(eval_ells,model_dict['noise'][(i,j)],ls='--',label='noise',alpha=0.5)
+
+                # Galactic dust
+                Ad   = best["Adust_353"]                 # amplitude at 353 GHz
+                beta = best["beta_dust"]
+                alpha_d = best["alpha_dust"]
+                pivot_dust=353.
+                ell0_dust=80.
+                cl_dust = (Ad *
+                           (eval_ells/ell0_dust)**(-alpha_d) *
+                           ((fi*fj)/(pivot_dust**2))**(beta/2.0))
+                
+                pl.add(eval_ells,cl_dust*beamprod,label='dust')
 
                 cl_tsz = beamprod*cltsz(best["Atsz"],fi,fj,cl_yy) 
-                pl.add(ell,cl_tsz,label='tsz')
+                pl.add(eval_ells,cl_tsz,label='tsz')
                 pl._ax.set_ylim(1e-2,1e4)
                 pl.legend('outside')
+                pl._ax.set_xlim(2,ell.max()+500)
                 pl.done(f'cls_{fi}x{fj}.png')
 
-                res[f'{fi}x{fj}'] = cl_dict[(i,j)] - model_dict[(i,j)]['total']
+                res[f'{fi}x{fj}'] = cl_dict[(i,j)] - rmodel_dict['total'][(i,j)]
 
         pl = io.Plotter("rCl")
         for i in range(len(freqs)):
@@ -977,9 +1074,10 @@ def fg_fit(
                 fi = freqs[i]
                 fj = freqs[j]
 
-                pl.add(ell,res[f'{fi}x{fj}']/cl_dict[(i,j)],label=f'residual {fi} x {fj}')
+                pl.add(ell,res[f'{fi}x{fj}']/cl_dict[(i,j)],label=f'residual {fi} x {fj}',alpha=0.5)
         pl.hline(y=0)
         pl._ax.set_ylim(-1,1)
+        pl._ax.set_xlim(2,ell.max()+500)
         pl.done(f'res.png')
 
         
@@ -992,7 +1090,7 @@ def evaluate_model_dict(
     best: dict,
     freqs: np.ndarray,
     dT_guess: np.ndarray,
-    beam_fwhms: np.ndarray,
+    beams: np.ndarray,
     lknees: np.ndarray,
     alphas: np.ndarray,
     cl_cmb_tmpl: np.ndarray,
@@ -1010,34 +1108,36 @@ def evaluate_model_dict(
     }
     """
     model_dict = {}
+    model_dict['total'] = {}
+    model_dict['cmb'] = {}
+    model_dict['foreground'] = {}
+    model_dict['noise'] = {}
 
+    def _clean(y):
+        y[ell<2] = 0
+        return y
+    
+    beams = _expand_beams(beams,ell,len(freqs))
+    
     for i, j in itertools.combinations_with_replacement(range(len(freqs)), 2):
         nu1, nu2 = freqs[i], freqs[j]
-        bf1, bf2 = beam_fwhms[i], beam_fwhms[j]
-        b1 = maps.gauss_beam(ell,bf1)
-        b2 = maps.gauss_beam(ell,bf2)
+        b1 = beams[i](ell)
+        b2 = beams[j](ell)
         beamprod = b1*b2
 
         cmb   = best["A_cmb"] * cl_cmb_tmpl
         fg    = fg_cl(ell, best, nu1, nu2, cl_yy)
-        noise = np.zeros_like(ell)
 
-        if i == j:
-            sigma_scaled = best[f"rN_{nu1}"] * dT_guess[i]
-
-            if lknees[i]>0:
-                noise = maps.rednoise(ell, sigma_scaled, lknees[i], alphas[i])
-            else:
-                noise = noise*0  + wnoise_cl(sigma_scaled)
+        sig_i = best[f"rN_{nu1}"] * dT_guess[i]
+        sig_j = best[f"rN_{nu2}"] * dT_guess[j]
+        noise = get_noise(ell,i,j,sig_i,sig_j,lknees,alphas,best["Aatm_corr"])
 
         total = (cmb + fg)*beamprod + noise
 
-        model_dict[(i, j)] = {
-            'total': total.copy(),
-            'cmb': cmb.copy(),
-            'foreground': fg.copy(),
-            'noise': noise.copy(),
-        }
-        print(model_dict[(i, j)]['noise'])
+        
+        model_dict['total'][(i, j)] = _clean(total).copy()
+        model_dict['cmb'][(i, j)] = _clean(cmb).copy()
+        model_dict['foreground'][(i, j)] = _clean(fg).copy()
+        model_dict['noise'][(i, j)] = _clean(noise).copy()
 
     return model_dict
