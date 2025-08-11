@@ -713,7 +713,7 @@ def fg_cl(ell, p, nu1, nu2, cl_tsz_tmpl, pivot_cib=150., pivot_dust=353.,
     cl_ps = np.sqrt(p[f"Aps_{nu1}"] * p[f"Aps_{nu2}"])
 
     # Clustered CIB
-    Acib150, alpha = p["Acib_150"], p["alpha_cib"]
+    Acib150, alpha = p["Acib_150"], p["alpha_cib"] # change name to beta
     cl_cib = np.sqrt((Acib150 * (nu1/pivot_cib)**alpha) *
                      (Acib150 * (nu2/pivot_cib)**alpha)) * (ell/ell0)**(-1.2)
 
@@ -1025,6 +1025,18 @@ def fg_fit(
         print(f"\nχ² / dof = {chi2:.1f} / {dof}")
         
     if plot:
+
+        import healpy as hp
+        from pixell import curvedsky as cs
+        nalm_090 = hp.read_alm("/data5/act/foregrounds/new_foregrounds/fg_nonoise_alms_0093_w2applied.fits")
+        nalm_150 = hp.read_alm("/data5/act/foregrounds/new_foregrounds/fg_nonoise_alms_0145_w2applied.fits")
+        print(nalm_090.shape)
+        ncls = {}
+        ncls['90_90'] = cs.alm2cl(nalm_090,nalm_090)
+        ncls['150_150'] = cs.alm2cl(nalm_150,nalm_150)
+        ncls['90_150'] = cs.alm2cl(nalm_090,nalm_150)
+        nells = np.arange(ncls['90_90'].size)
+        
         res = {}
         for i in range(len(freqs)):
             for j in range(i, len(freqs)):   # j >= i to cover autos + unique crosses
@@ -1048,19 +1060,28 @@ def fg_fit(
                 pl.add(eval_ells,model_dict['noise'][(i,j)],ls='--',label='noise',alpha=0.5)
 
                 # Galactic dust
-                Ad   = best["Adust_353"]                 # amplitude at 353 GHz
-                beta = best["beta_dust"]
-                alpha_d = best["alpha_dust"]
-                pivot_dust=353.
-                ell0_dust=80.
-                cl_dust = (Ad *
-                           (eval_ells/ell0_dust)**(-alpha_d) *
-                           ((fi*fj)/(pivot_dust**2))**(beta/2.0))
                 
-                pl.add(eval_ells,cl_dust*beamprod,label='dust')
+                Ad   = best["Adust_353"]                 # amplitude at 353 GHz
+                if Ad>0:
+                    beta = best["beta_dust"]
+                    alpha_d = best["alpha_dust"]
+                    pivot_dust=353.
+                    ell0_dust=80.
+                    cl_dust = (Ad *
+                               (eval_ells/ell0_dust)**(-alpha_d) *
+                               ((fi*fj)/(pivot_dust**2))**(beta/2.0))
+
+                    pl.add(eval_ells,cl_dust*beamprod,label='dust')
+
 
                 cl_tsz = beamprod*cltsz(best["Atsz"],fi,fj,cl_yy) 
                 pl.add(eval_ells,cl_tsz,label='tsz')
+
+                nb1 = beams[i](nells)                                                                                                                                                      
+                nb2 = beams[j](nells)                                                                                                                                                      
+                nbeamprod = nb1*nb2    
+                pl.add(nells,nbeamprod*ncls[f"{fi}_{fj}"],label='Niall FG')
+                
                 pl._ax.set_ylim(1e-2,1e4)
                 pl.legend('outside')
                 pl._ax.set_xlim(2,ell.max()+500)

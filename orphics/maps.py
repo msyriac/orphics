@@ -12,6 +12,65 @@ from . import cosmology
 from scipy.special import i0  # Modified Bessel function I0
 
 
+import numpy as np
+
+def cross_split_spectrum(alms1, alms2=None):
+    """
+    Compute the average cross-power spectrum between splits from spherical harmonic coefficients (alms).
+
+    This function is used to calculate the signal-only spectrum from split data. It takes two arrays
+    of spherical harmonic coefficients (alms), each with shape (nsplits, alm_size), and computes
+    the average cross-spectrum over all unique split pairs (i != j). This suppresses noise bias
+    under the assumption that noise is uncorrelated between splits.
+
+    Parameters
+    ----------
+    alms1 : ndarray
+        An array of shape (nsplits, alm_size), containing spherical harmonic coefficients
+        for each split. Must have ndim = 2.
+    alms2 : ndarray or None, optional
+        An optional second array of the same shape as `alms1`. If None (default), `alms2` is set to `alms1`.
+
+    Returns
+    -------
+    ndarray
+        The average cross-spectrum computed from all unique (i != j) split pairs.
+        Shape is (alm_size,).
+
+    Raises
+    ------
+    ValueError
+        If the input arrays do not have two dimensions or if the number of splits does not match.
+    """
+    _shape_err = ValueError("This function is for cross-split spectra, so alms should have multiple splits.")
+    if alms1.ndim != 2:
+        raise _shape_err
+    if alms2 is None:
+        alms2 = alms1
+    elif alms2.ndim != 2:
+        raise _shape_err
+
+    nsplits = alms1.shape[0]
+    if alms2.shape[0] != nsplits:
+        raise ValueError("Number of splits should be the same.")
+
+    # Initialize spectrum accumulator
+    spec = 0
+    count = 0
+
+    for i in range(nsplits):
+        for j in range(nsplits):
+            if i == j:
+                continue  # Skip auto-spectra
+            # Compute cross-spectrum for the (i, j) pair
+            spec += cs.alm2cl(alms1[i],alms2[j])
+            count += 1
+
+    if count == 0:
+        raise ValueError("No cross-spectra computed (need at least two splits).")
+
+    return spec / count
+
 # Copied and modified from soapack
 def sanitize_beam(ells,lbeam,sval=1e-3,verbose=True):
     """
@@ -2634,30 +2693,40 @@ def symmat_from_data(data):
 
 
 
-def change_alm_lmax(alms, lmax, dtype=np.complex128):
-    ilmax  = hp.Alm.getlmax(alms.shape[-1])
-    olmax  = lmax
+def change_alm_lmax(alms, lmax, dtype=np.complex128, new=False, mmax_out=None):
+    if not(new):
+        ilmax  = hp.Alm.getlmax(alms.shape[-1])
+        olmax  = lmax
 
-    oshape     = list(alms.shape)
-    oshape[-1] = hp.Alm.getsize(olmax)
-    oshape     = tuple(oshape)
+        oshape     = list(alms.shape)
+        oshape[-1] = hp.Alm.getsize(olmax)
+        oshape     = tuple(oshape)
 
-    alms_out   = np.zeros(oshape, dtype = dtype)
-    flmax      = min(ilmax, olmax)
+        alms_out   = np.zeros(oshape, dtype = dtype)
+        flmax      = min(ilmax, olmax)
 
-    for m in range(flmax+1):
-        lminc = m
-        lmaxc = flmax
+        for m in range(flmax+1):
+            lminc = m
+            lmaxc = flmax
 
-        idx_isidx = hp.Alm.getidx(ilmax, lminc, m)
-        idx_ieidx = hp.Alm.getidx(ilmax, lmaxc, m)
-        idx_osidx = hp.Alm.getidx(olmax, lminc, m)
-        idx_oeidx = hp.Alm.getidx(olmax, lmaxc, m)
+            idx_isidx = hp.Alm.getidx(ilmax, lminc, m)
+            idx_ieidx = hp.Alm.getidx(ilmax, lmaxc, m)
+            idx_osidx = hp.Alm.getidx(olmax, lminc, m)
+            idx_oeidx = hp.Alm.getidx(olmax, lmaxc, m)
 
-        alms_out[..., idx_osidx:idx_oeidx+1] = alms[..., idx_isidx:idx_ieidx+1].copy()
+            alms_out[..., idx_osidx:idx_oeidx+1] = alms[..., idx_isidx:idx_ieidx+1].copy()
+
+        return alms_out
+
+    else:
+        ilmax  = hp.Alm.getlmax(alms.shape[-1], mmax_out)
+        immax  = mmax_out or ilmax          # fall back to full m-range
+        ommax  = mmax_out or lmax
+
+        return hp.sphtfunc.resize_alm(alms, ilmax, immax, lmax, ommax)
 
 
-    return alms_out
+
 
 
 
