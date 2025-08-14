@@ -79,17 +79,18 @@ def sanitize_beam(ells,lbeam,sval=1e-3,verbose=True):
     Gaussian is chosen such that it has the same value as the input beam at the ell where the input
     beam is sval.
     """
-    if verbose: print("Sanitizing beam... Make sure this call is not made during a signal simulation.")
     if not(np.all(np.diff(ells))==1): raise ValueError
     if ells[0]!=0: raise ValueError
     lbeam = lbeam.copy()/lbeam[0]
+    if sval is None:
+        return lbeam
+    if verbose: print("Sanitizing beam... Make sure this call is not made during a signal simulation.")
     oells = ells[lbeam<sval]
     olbeam = lbeam[lbeam<sval]
     if oells.size==0:
         return lbeam
-    oell = ells[oells[0]-1]
-    olb = lbeam[oells[0]-1]
-    print(oell,olb)
+    oell = ells[int(oells[0])-1]
+    olb = lbeam[int(oells[0])-1]
     theta2 = -(16.*np.log(2.)) * np.log(olb) / oell**2.
     assert theta2>0
     theta = np.sqrt(theta2)
@@ -2693,37 +2694,11 @@ def symmat_from_data(data):
 
 
 
-def change_alm_lmax(alms, lmax, dtype=np.complex128, new=False, mmax_out=None):
-    if not(new):
-        ilmax  = hp.Alm.getlmax(alms.shape[-1])
-        olmax  = lmax
-
-        oshape     = list(alms.shape)
-        oshape[-1] = hp.Alm.getsize(olmax)
-        oshape     = tuple(oshape)
-
-        alms_out   = np.zeros(oshape, dtype = dtype)
-        flmax      = min(ilmax, olmax)
-
-        for m in range(flmax+1):
-            lminc = m
-            lmaxc = flmax
-
-            idx_isidx = hp.Alm.getidx(ilmax, lminc, m)
-            idx_ieidx = hp.Alm.getidx(ilmax, lmaxc, m)
-            idx_osidx = hp.Alm.getidx(olmax, lminc, m)
-            idx_oeidx = hp.Alm.getidx(olmax, lmaxc, m)
-
-            alms_out[..., idx_osidx:idx_oeidx+1] = alms[..., idx_isidx:idx_ieidx+1].copy()
-
-        return alms_out
-
-    else:
-        ilmax  = hp.Alm.getlmax(alms.shape[-1], mmax_out)
-        immax  = mmax_out or ilmax          # fall back to full m-range
-        ommax  = mmax_out or lmax
-
-        return hp.sphtfunc.resize_alm(alms, ilmax, immax, lmax, ommax)
+def change_alm_lmax(alms, lmax, mmax_out=None):
+    ilmax  = hp.Alm.getlmax(alms.shape[-1], mmax_out)
+    immax  = mmax_out or ilmax          # fall back to full m-range
+    ommax  = mmax_out or lmax
+    return np.asarray(hp.sphtfunc.resize_alm(alms, ilmax, immax, lmax, ommax))
 
 
 

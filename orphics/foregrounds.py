@@ -1077,8 +1077,9 @@ def fg_fit(
                 cl_tsz = beamprod*cltsz(best["Atsz"],fi,fj,cl_yy) 
                 pl.add(eval_ells,cl_tsz,label='tsz')
 
-                nb1 = beams[i](nells)                                                                                                                                                      
-                nb2 = beams[j](nells)                                                                                                                                                      
+                nb1 = beams[i](nells)
+                nb2 = beams[j](nells)
+                
                 nbeamprod = nb1*nb2    
                 pl.add(nells,nbeamprod*ncls[f"{fi}_{fj}"],label='Niall FG')
                 
