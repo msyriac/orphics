@@ -11,6 +11,28 @@ import healpy as hp
 from . import cosmology
 from scipy.special import i0  # Modified Bessel function I0
 
+def analytical_tf(modlmap, kfilter, bin_edges):
+    """
+    Simple analytic filter for k-space masking.
+    Copied from pspipe.  Inaccurate at low ell.
+    """
+    lmap  = modlmap
+    twod_index = lmap.copy()
+    bin_lo = bin_edges[:-1]
+    bin_hi = bin_edges[1:]
+    nbins = len(bin_lo)
+    tf = np.zeros(nbins)
+    for ii in range(nbins):
+        id = np.where((lmap >= bin_lo[ii]) & (lmap <= bin_hi[ii]))
+        twod_index *= 0
+        twod_index[id] = 1
+        bin_area = np.sum(twod_index)
+        masked_bin_area= np.sum(twod_index * kfilter)
+        tf[ii] = masked_bin_area / bin_area
+
+    return tf
+
+
 def radial_window(r, r0, r1, window="kaiser", beta=6.0):
     """
     Smoothly taper from 1 to 0 between radii r0 and r1.
