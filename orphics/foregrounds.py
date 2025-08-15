@@ -839,6 +839,7 @@ def fg_fit(
         verbose: bool = True,
         plot: bool=True,
         delta_ell: np.ndarray=20,
+        cl_masks=None,      #  {(i,j): bool-array | slice | 1-D index}
 ):
     """
     Fit all foreground / calibration / noise parameters **except**
@@ -868,9 +869,16 @@ def fg_fit(
         else:
             return arr
 
+    if cl_masks is None:
+        cl_masks = {}                                    # empty dict -> no special masks
+    full_mask = np.ones_like(ell, dtype=bool)            # keep every multipole
     
     pairs     = list(itertools.combinations_with_replacement(range(len(freqs)), 2))
-    data_vec = np.concatenate([bin_1d(cl_dict[(i, j)]) for i, j in pairs])
+    # Masks for every pair  (same order as `pairs`)
+    pair_masks = [cl_masks.get((i, j), full_mask) for i, j in pairs]
+    
+    data_vec = np.concatenate([bin_1d(cl_dict[(i, j)][m]) for (i, j), m in zip(pairs, pair_masks)])
+    # data_vec = np.concatenate([bin_1d(cl_dict[(i, j)]) for i, j in pairs])
 
 
     # white-noise bias for every channel (μK²·rad²)
@@ -911,8 +919,8 @@ def fg_fit(
         else:
             return sig_ell
 
-    sigma_vec = np.concatenate([bin_sigma(s) for s in sigma_blk])
-
+    # sigma_vec = np.concatenate([bin_sigma(s) for s in sigma_blk])
+    sigma_vec = np.concatenate([bin_sigma(s[m]) for s,m in zip(sigma_blk, pair_masks)])
     
     # 3. Build the full PARAMS list (order matters for model_vec)
     all_params  = [f"Aps_{nu}" for nu in freqs]       # Poisson amps
@@ -962,8 +970,10 @@ def fg_fit(
                           dT_guess, beams, lknees,alphas,
                           cl_cmb_tmpl, cl_yy_temp)
 
-        model = np.concatenate([bin_1d(model_full[k*len(ell):(k+1)*len(ell)])
-                                       for k in range(len(pairs))])
+        # model = np.concatenate([bin_1d(model_full[k*len(ell):(k+1)*len(ell)])
+        #                                for k in range(len(pairs))])
+        model  = np.concatenate([bin_1d(model_full[k*len(ell):(k+1)*len(ell)][m])
+                             for k, m in enumerate(pair_masks)])
 
         if not(np.all(np.isfinite(data_vec))): raise ValueError
         if not(np.all(np.isfinite(model))): raise ValueError
