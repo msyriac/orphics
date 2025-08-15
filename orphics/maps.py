@@ -17,7 +17,7 @@ def analytical_tf(modlmap, kfilter, bin_edges):
     Inaccurate at low ell. 
     """
     binner2d =  stats.bin2D(modlmap,bin_edges)
-    return binner2d.bin(kfilter)
+    return binner2d.bin(kfilter.astype(int))
 
 def cross_split_spectrum(alms1, alms2=None):
     """
