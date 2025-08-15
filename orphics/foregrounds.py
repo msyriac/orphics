@@ -1173,3 +1173,296 @@ def evaluate_model_dict(
         model_dict['noise'][(i, j)] = _clean(noise).copy()
 
     return model_dict
+
+
+def _planck_Bnu_ratio(nu_ghz, nu0_ghz, Tdust_K):
+    """
+    Ratio B_nu(Tdust)/B_nu0(Tdust) using Planck's law.
+    Constants cancel in the ratio.
+    """
+    nu  = np.asarray(nu_ghz, dtype=float) * 1e9
+    nu0 = float(nu0_ghz) * 1e9
+    y   = hplanck * nu  / (kboltz * Tdust_K)
+    y0  = hplanck * nu0 / (kboltz * Tdust_K)
+    # B_nu ∝ nu^3 / (exp(y) - 1)
+    num   = (nu**3)  / np.expm1(y)
+    denom = (nu0**3) / np.expm1(y0)
+    return num / denom
+
+def _g_nu_ratio(nu_ghz, nu0_ghz):
+    """
+    Ratio g(nu0)/g(nu) where g(nu) = dB_nu/dT evaluated at Tcmb.
+    Constants cancel in the ratio.
+    """
+    nu  = np.asarray(nu_ghz, dtype=float) * 1e9
+    nu0 = float(nu0_ghz) * 1e9
+    x  = hplanck * nu  / (kboltz * TCMB)
+    x0 = hplanck * nu0 / (kboltz * TCMB)
+    # dB/dT ∝ x^4 * exp(x) / (exp(x) - 1)^2
+    g  = (x**4)  * np.exp(x)  / (np.expm1(x)**2)
+    g0 = (x0**4) * np.exp(x0) / (np.expm1(x0)**2)
+    return g0 / g
+
+def dust_mu(nu_ghz, beta_d=1.5, Tdust_K=19.6, nu0_ghz=353.0):
+    """
+    mu(nu; beta_d, Tdust) normalized to nu0:
+      mu(nu)/mu(nu0) = (nu/nu0)^beta_d * [B_nu(Td)/B_nu0(Td)] * [g(nu0)/g(nu)]
+    This is the usual modified-blackbody scaling expressed in K_CMB units.
+    """
+    nu  = np.asarray(nu_ghz, dtype=float)
+    nu0 = float(nu0_ghz)
+    return ((nu / nu0) ** beta_d) * _planck_Bnu_ratio(nu, nu0, Tdust_K) * _g_nu_ratio(nu, nu0)
+
+def dust_C_ell_Louis25(ell, nu_i_ghz, nu_j_ghz, a_amp,
+               XY="TT",
+               alpha=None,
+               beta_d=1.5, Tdust_K=19.6,
+               ell0=500.0, nu0_ghz=353.0):
+    """
+    DR6-style dust D_ell model:
+      D_ell^{XY}(nu_i, nu_j) = a_amp^{XY} * (ell/ell0)^{alpha_g^{XY}}
+                               * [ mu(nu_i)/mu(nu0) ] * [ mu(nu_j)/mu(nu0) ]
+    converted into C_ells
+
+    Parameters
+    ----------
+    ell : array-like of multipoles
+    nu_i_ghz, nu_j_ghz : float
+        Frequencies in GHz for the two maps being crossed.
+    a_amp : float
+        Amplitude at the pivot scale (ell0) and pivot frequency (nu0), in D_ell units (uK^2).
+    XY : {"TT","TE","EE"}
+        Spectrum type; controls the default alpha if 'alpha' is not provided.
+    alpha : float or None
+        Angular power-law index. If None, uses -0.6 for TT and -0.4 for TE/EE.
+    beta_d : float
+        Dust spectral index in temperature units.
+    Tdust_K : float
+        Effective dust temperature in Kelvin.
+    ell0 : float
+        Pivot multipole (default 500).
+    nu0_ghz : float
+        Pivot frequency in GHz (default 353).
+
+    Returns
+    -------
+    C_ell : ndarray
+        Dust bandpower in C_ell units (uK^2) for the given ell.
+    """
+    if alpha is None:
+        if XY.upper() == "TT":
+            alpha = -0.6
+        else:  # TE or EE
+            alpha = -0.4
+
+    ell = np.asarray(ell, dtype=float)
+    # Safe (ell/ell0)^alpha: set l<=0 to 0 since the model is defined on l>=2 in practice
+    scale_ell = np.zeros_like(ell, dtype=float)
+    pos = ell > 0
+    scale_ell[pos] = (ell[pos] / float(ell0)) ** float(alpha)
+
+    s_i = dust_mu(nu_i_ghz, beta_d=beta_d, Tdust_K=Tdust_K, nu0_ghz=nu0_ghz)
+    s_j = dust_mu(nu_j_ghz, beta_d=beta_d, Tdust_K=Tdust_K, nu0_ghz=nu0_ghz)
+
+    D = float(a_amp) * scale_ell * (s_i * s_j)
+    C = np.zeros_like(D)
+    valid = ell >= 2
+    C[valid] = D[valid] * (2.0 * np.pi) / (ell[valid] * (ell[valid] + 1.0))
+    return C
+
+
+
+def fit_cross_leastsq(
+    data,                       # dict: (nu_i, nu_j) -> (bp, err) or {"bp":..., "err":...}
+    P,                          # (Nb, L) binning matrix
+    ell_cuts,                   # dict: (nu_i, nu_j) -> keep mask (Nb,) OR list of (lmin, lmax) to EXCLUDE
+    theory_func,                    # callable: theory_func(ell, nu_i, nu_j, params_dict) -> C_ell array (length L)
+    params0,                    # dict: name -> initial value
+    fixed=None,                 # dict OR list/set of names to fix (if dict, values override params0)
+    bounds=None,                # dict: name -> (lo, hi); others default to (-inf, +inf)
+    ell=None,                   # array of ells (length L). If None, uses np.arange(L)
+    method="trf",               # scipy least_squares method
+    max_nfev=2000,
+    xtol=1e-10,
+    verbose=0
+):
+    """
+    Nonlinear weighted least-squares fit of cross-frequency bandpowers.
+    Bandpowers must not have noise bias. Uncertainties must be provided.
+
+    Returns
+    -------
+    result : dict with keys
+        - params        : dict of best-fit parameter values (all, including fixed)
+        - free_names    : list of free-parameter names in fit order
+        - x             : best-fit vector of free parameters
+        - chi2          : total chi^2 at solution
+        - dof           : degrees of freedom
+        - cov           : covariance matrix for free params (None if singular)
+        - perr          : 1-sigma errors for free params (None if singular)
+        - model_bp      : dict mapping pair -> model bandpowers (same shape as input; excluded bins set to np.nan)
+        - residuals_bp  : dict mapping pair -> (data-model)/err for included bins (1d)
+        - success, message: scipy termination info
+    """
+    # ---------- shapes and bookkeeping ----------
+    P = np.asarray(P, dtype=float)
+    Nb, L = P.shape
+    if ell is None:
+        ell = np.arange(L, dtype=float)
+    else:
+        ell = np.asarray(ell, dtype=float)
+        if ell.shape[0] != L:
+            raise ValueError("ell length must match P.shape[1].")
+
+
+    # Standardize data dict entries and build per-pair masks
+    pairs = []
+    bandpowers = {}
+    errors = {}
+    keep_masks = {}
+
+    # Precompute per-bin ell support once for fast cut generation
+    # A bin is excluded if P has non-zero weight on any ell in a cut range
+    ell_indices = np.arange(L)
+    has_weight = P != 0.0  # (Nb, L) bool
+
+    for pair, item in data.items():
+        pairs.append(pair)
+        if isinstance(item, dict):
+            bp = np.asarray(item["bp"], dtype=float)
+            er = np.asarray(item["err"], dtype=float)
+        else:
+            bp = np.asarray(item[0], dtype=float)
+            er = np.asarray(item[1], dtype=float)
+        if bp.shape != (Nb,) or er.shape != (Nb,):
+            raise ValueError(f"Bandpowers/errors for pair {pair} must have shape (Nb,) matching P.")
+
+        bandpowers[pair] = bp
+        errors[pair] = er
+
+        # Build keep mask
+        cuts = ell_cuts.get(pair, None)
+        if cuts is None:
+            keep_masks[pair] = np.ones(Nb, dtype=bool)
+        elif isinstance(cuts, (list, tuple)) and len(cuts) > 0 and np.ndim(cuts[0]) == 1:
+            # List of (lmin,lmax) to EXCLUDE
+            excl_bins = np.zeros(Nb, dtype=bool)
+            for (lmin, lmax) in cuts:
+                lsel = (ell_indices >= int(lmin)) & (ell_indices <= int(lmax))
+                if not np.any(lsel):
+                    continue
+                # exclude bins that place any weight in the excluded ells
+                excl_bins |= np.any(has_weight[:, lsel], axis=1)
+            keep_masks[pair] = ~excl_bins
+        else:
+            # Assume a boolean keep mask over bins was provided
+            km = np.asarray(cuts, dtype=bool)
+            if km.shape != (Nb,):
+                raise ValueError(f"ell_cuts for pair {pair} must be a list of (lmin,lmax) or a boolean (Nb,) mask.")
+            keep_masks[pair] = km
+
+    # ---------- parameters: split free vs fixed and set bounds ----------
+    all_names = list(params0.keys())
+    fixed = {} if fixed is None else ( {name: params0[name] for name in fixed} if not isinstance(fixed, dict) else fixed.copy() )
+
+    free_names = [n for n in all_names if n not in fixed]
+    if len(free_names) == 0:
+        raise ValueError("No free parameters to fit (all are fixed).")
+
+    x0 = np.array([params0[n] for n in free_names], dtype=float)
+
+    if bounds is None:
+        lo = np.full_like(x0, -np.inf, dtype=float)
+        hi = np.full_like(x0,  np.inf, dtype=float)
+    else:
+        lo = np.array([bounds.get(n, (-np.inf, np.inf))[0] for n in free_names], dtype=float)
+        hi = np.array([bounds.get(n, (-np.inf, np.inf))[1] for n in free_names], dtype=float)
+
+    # ---------- residual builder ----------
+    # Pre-allocate indexers for speed (which bins are kept per pair)
+    kept_idx = {pair: np.nonzero(keep_masks[pair])[0] for pair in pairs}
+
+    def pack_params(x):
+        d = {n: v for n, v in zip(free_names, x)}
+        if fixed:
+            d.update(fixed)
+        return d
+
+    # Flatten data and errors once to avoid repeated concatenation inside residuals
+    data_vec = []
+    err_vec  = []
+    pair_offsets = {}  # start, stop in the stacked residual vector
+    cursor = 0
+    for pair in pairs:
+        idx = kept_idx[pair]
+        data_vec.append(bandpowers[pair][idx])
+        err_vec.append(errors[pair][idx])
+        pair_offsets[pair] = (cursor, cursor + idx.size)
+        cursor += idx.size
+    data_vec = np.concatenate(data_vec) if len(data_vec) else np.empty(0)
+    err_vec  = np.concatenate(err_vec)  if len(err_vec)  else np.empty(0)
+    inv_err  = 1.0 / err_vec
+
+    # Cache for model outputs we want to return
+    model_bp_full = {pair: np.full(Nb, np.nan, dtype=float) for pair in pairs}
+
+    def residuals(x):
+        pars = pack_params(x)
+        out = np.empty_like(data_vec)
+        # build stacked model over all pairs
+        for pair in pairs:
+            nu_i, nu_j = pair
+            cl = theory_func(ell, nu_i, nu_j, pars)  # length L
+            bp_model = P @ cl  # length Nb
+            model_bp_full[pair][keep_masks[pair]] = bp_model[keep_masks[pair]]
+            s, e = pair_offsets[pair]
+            idx = kept_idx[pair]
+            out[s:e] = (bandpowers[pair][idx] - bp_model[idx]) * inv_err[s:e]
+        return out
+
+    # ---------- solve ----------
+    lsq = least_squares(residuals, x0, bounds=(lo, hi), method=method,
+                        max_nfev=max_nfev, xtol=xtol, verbose=verbose)
+
+    # chi^2 and dof
+    r = lsq.fun
+    chi2 = float(np.dot(r, r))
+    dof = max(r.size - lsq.x.size, 1)
+
+    # covariance (approx) from J^T J
+    cov = None
+    perr = None
+    if lsq.jac is not None and lsq.jac.size > 0:
+        JTJ = lsq.jac.T @ lsq.jac
+        # scale by reduced chi^2
+        try:
+            JTJ_inv = np.linalg.inv(JTJ)
+            cov = JTJ_inv * (chi2 / dof)
+            perr = np.sqrt(np.diag(cov))
+        except np.linalg.LinAlgError:
+            cov = None
+            perr = None
+
+    # assemble full params dict
+    best = pack_params(lsq.x)
+
+    # residuals per pair (included bins only)
+    residuals_bp = {}
+    cursor = 0
+    for pair in pairs:
+        s, e = pair_offsets[pair]
+        residuals_bp[pair] = r[s:e].copy()
+
+    return {
+        "params": best,
+        "free_names": free_names,
+        "x": lsq.x,
+        "chi2": chi2,
+        "dof": dof,
+        "cov": cov,
+        "perr": perr,
+        "model_bp": model_bp_full,
+        "residuals_bp": residuals_bp,
+        "success": bool(lsq.success),
+        "message": lsq.message,
+    }
