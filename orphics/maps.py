@@ -12,8 +12,6 @@ from . import cosmology
 from scipy.special import i0  # Modified Bessel function I0
 
 
-import numpy as np
-
 def cross_split_spectrum(alms1, alms2=None):
     """
     Compute the average cross-power spectrum between splits from spherical harmonic coefficients (alms).
@@ -72,7 +70,7 @@ def cross_split_spectrum(alms1, alms2=None):
     return spec / count
 
 # Copied and modified from soapack
-def sanitize_beam(ells,lbeam,sval=1e-3,verbose=True):
+def sanitize_beam(ells,lbeam,sval=1e-3,verbose=True,fells=None):
     """
     Normalizes the beam.
     Then replaces it with a Gaussian wherever the beam is less than sval. The
@@ -82,8 +80,17 @@ def sanitize_beam(ells,lbeam,sval=1e-3,verbose=True):
     if not(np.all(np.diff(ells))==1): raise ValueError
     if ells[0]!=0: raise ValueError
     lbeam = lbeam.copy()/lbeam[0]
+    
     if sval is None:
+        if fells is not None: raise NotImplementedError
         return lbeam
+
+    if fells is not None:
+        if not(np.all(np.diff(fells))==1): raise ValueError
+        if fells[0]!=0: raise ValueError
+        lbeam = interp(ells,lbeam,bounds_error=False,fill_value=-np.inf)(fells)
+        ells = fells
+    
     if verbose: print("Sanitizing beam... Make sure this call is not made during a signal simulation.")
     oells = ells[lbeam<sval]
     olbeam = lbeam[lbeam<sval]
@@ -101,6 +108,7 @@ def sanitize_beam(ells,lbeam,sval=1e-3,verbose=True):
     obeam = lbeam.copy()
     obeam[lbeam<sval] = bfunc(ells[lbeam<sval])
     return obeam
+        
 
 def apply_harmonic_coadd_weights(alms, weights, target_beam):
     """
