@@ -193,7 +193,7 @@ def kappa_nfw_profiley1d(thetas,mass=2e14,conc=None,z=0.7,z_s=1100.,
         Pk[sel] = ccl.linear_matter_power(cosmo, k[sel], 1/(1+z))
         mdef = ccl.halos.MassDef(delta, background)
         bias = ccl.halos.HaloBiasTinker10(mass_def=mdef)
-        bh = bias(cosmo=cosmo,M=mass, a=1/(1+nfw.z))
+        bh = bias(cosmo=cosmo,M=mass, a=1/(1+float(nfw.z)))
         if verbose: print("Halo bias : ", bh)
         Pgm = bh * Pk
         r_xi = np.geomspace(1e-3, 1e4, 100) # Mpc
