@@ -143,7 +143,7 @@ def kappa_nfw_profiley1d(thetas,mass=2e14,conc=None,z=0.7,z_s=1100.,
                          ns = 0.96,
                          debug_time = False
                          ):
-    from profiley.helpers.filtering import Filter
+    from profiley.filtering import Filter
     from profiley.nfw import NFW
     from profiley.numeric import offset
     from astropy import units as u
