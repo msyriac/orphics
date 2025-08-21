@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import json
 import hashlib
-
-
+import pickle
+import yaml
 import numpy as np
 import os,sys,logging,time
 import contextlib
@@ -46,6 +46,19 @@ def dateversion():
     from datetime import datetime
     return datetime.now().strftime("%Y%m%d")
 
+
+def save_pickle(path, data):
+    with open(path, "wb") as f:
+        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+def load_pickle(path):
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+def print_dict(data):
+    o = json.dumps(data,sort_keys=True, indent=4)
+    print(o)
+    
 # Checksum
 
 def get_hash(file_name):
@@ -115,7 +128,6 @@ def get_logger(logname):
 ### FILE I/O
 
 def config_from_yaml(filename):
-    import yaml
     with open(filename) as f:
         config = yaml.safe_load(f)
     return config
