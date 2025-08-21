@@ -49,11 +49,14 @@ class FixedLens(object):
     dfact : int, optional
         Upsampling factor by for performing lensing. Default is 3. The pixel size for the template 
         on which lensing is performed will be res_arcmin / dfact.
+    skip_lensing : bool, optional
+        Sets whether the generated map will have lensing. Default is False and will generate maps
+        with convergence profiles.
 
     """
     def __init__(self,thetas, kappa_1d,
                  width_deg=2.0,res_arcmin=0.5, # for stamps
-                 pad_fact=2,dfact=3, # for simulation
+                 pad_fact=2,dfact=3, skip_lensing=False # for simulation
                  ):
 
         # Make the high-res geometry
@@ -98,7 +101,10 @@ class FixedLens(object):
         # Random unlensed
         umap = enmap.rand_map(self.ushape, self.uwcs, self.cltt, seed=seed)
         # Lensed
-        lmap = enlensing.lens_map(umap, self.grad_phi)
+        if self.skip_lensing:
+            lmap = umap.copy()
+        else:
+            lmap = enlensing.lens_map(umap, self.grad_phi)
         # Downgraded
         dmap = enmap.downgrade_fft(lmap, self.dfact)
         # Cropped
@@ -143,7 +149,7 @@ def kappa_nfw_profiley1d(thetas,mass=2e14,conc=None,z=0.7,z_s=1100.,
                          ns = 0.96,
                          debug_time = False
                          ):
-    from profiley.filtering import Filter
+    from profiley.helpers.filtering import Filter
     from profiley.nfw import NFW
     from profiley.numeric import offset
     from astropy import units as u
