@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, annotations
 import matplotlib
 import matplotlib as mpl
 from cycler import cycler
@@ -13,6 +13,11 @@ import os,sys,logging,time
 import contextlib
 import itertools
 import traceback
+from pathlib import Path
+from typing import Iterable, Sequence, Union
+from string import Template
+import html
+
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
@@ -958,3 +963,141 @@ class WhiskerPlot(object):
         plt.tight_layout()
         plt.savefig(ofname,dpi=dpi,bbox_inches='tight',**kwargs)
         plt.close(self.fig)
+
+
+
+# Plot gallery
+
+HtmlStr = str
+Pathish = Union[str, Path]
+
+_TEMPLATE = Template("""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>$title</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark light; }
+  html, body { height: 100%; margin: 0; background:#111; color:#eee; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  .wrap { height: 100%; display: grid; grid-template-rows: 1fr auto; }
+  .stage { display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; }
+  img#viewer { max-width: 98vw; max-height: 95vh; object-fit: contain; box-shadow: 0 8px 32px rgba(0,0,0,.4); }
+  .hud { display:flex; justify-content:space-between; gap:1rem; padding:.5rem .75rem; background: rgba(0,0,0,.6); font-size:.9rem; }
+  .filename { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn { opacity:.8; user-select:none; cursor: pointer; }
+  .btn:hover { opacity:1; }
+  .clickzone { position:absolute; top:0; bottom:0; width:50%; }
+  .left { left:0; }
+  .right { right:0; }
+  .clickzone:active { background: rgba(255,255,255,.03); }
+  .help { position: fixed; right: .75rem; bottom: 3.25rem; font-size:.8rem; opacity:.6; }
+  .kbd { padding:.1rem .35rem; border:1px solid #555; border-radius:.3rem; background:#222; }
+  @media (prefers-color-scheme: light) {
+    body { background:#fafafa; color:#111; }
+    .hud { background: rgba(255,255,255,.7); }
+    .kbd { background:#fff; border-color:#ccc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <img id="viewer" alt="">
+    <div class="clickzone left" title="Prev (k/←)"></div>
+    <div class="clickzone right" title="Next (j/→)"></div>
+  </div>
+  <div class="hud">
+    <div id="counter">– / –</div>
+    <div class="filename" id="fname" title=""></div>
+    <div class="btn" id="openbtn" title="Open image in new tab">Open</div>
+  </div>
+</div>
+<div class="help">Keys: <span class="kbd">j</span>/<span class="kbd">→</span> next, <span class="kbd">k</span>/<span class="kbd">←</span> prev, <span class="kbd">f</span> fullscreen, <span class="kbd">g</span> goto, <span class="kbd">h</span> help</div>
+<script>
+  const IMAGES = $images_json;
+  let idx = 0;
+  const imgEl = document.getElementById('viewer');
+  const counterEl = document.getElementById('counter');
+  const fnameEl = document.getElementById('fname');
+  const openBtn = document.getElementById('openbtn');
+
+  function clamp(i){ const n=IMAGES.length; return (i % n + n) % n; }
+
+  function show(i, pushHash=true) {
+    idx = clamp(i);
+    const src = IMAGES[idx];
+    imgEl.src = src;
+    imgEl.alt = src;
+    counterEl.textContent = (idx+1) + " / " + IMAGES.length;
+    fnameEl.textContent = src;
+    fnameEl.title = src;
+    if (pushHash) history.replaceState(null, '', '#' + idx);
+    [idx+1, idx-1].map(j => clamp(j)).forEach(j => {
+      const p = new Image(); p.src = IMAGES[j];
+    });
+  }
+
+  function parseHash() {
+    const h = location.hash.replace('#','');
+    const n = parseInt(h, 10);
+    return Number.isFinite(n) ? clamp(n) : 0;
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.target && ['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'j' || e.key === 'ArrowRight') { show(idx + 1); }
+    else if (e.key === 'k' || e.key === 'ArrowLeft') { show(idx - 1); }
+    else if (e.key === 'f') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+      else document.exitFullscreen().catch(()=>{});
+    } else if (e.key === 'g') {
+      const s = prompt('Go to index (1-' + IMAGES.length + '):');
+      const n = parseInt(s, 10);
+      if (Number.isFinite(n)) show(n-1);
+    } else if (e.key === 'h' || e.key === '?') {
+      alert('Shortcuts:\\n j / → : next\\n k / ← : previous\\n f : toggle fullscreen\\n g : go to index\\n');
+    }
+  });
+
+  document.querySelector('.left').addEventListener('click', () => show(idx-1));
+  document.querySelector('.right').addEventListener('click', () => show(idx+1));
+  openBtn.addEventListener('click', () => window.open(IMAGES[idx], '_blank'));
+
+  let startX = null;
+  imgEl.addEventListener('pointerdown', e => startX = e.clientX);
+  imgEl.addEventListener('pointerup', e => {
+    if (startX === null) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 30) show(idx + (dx < 0 ? 1 : -1));
+    startX = null;
+  });
+
+  window.addEventListener('hashchange', ()=> show(parseHash(), false));
+  show(parseHash());
+</script>
+</body>
+</html>
+""")
+
+def _coerce_paths(images: Iterable[Pathish]) -> Sequence[str]:
+    out = []
+    for p in images:
+        s = str(p if isinstance(p, str) else Path(p))
+        out.append(s.replace("\\\\", "/").replace("\\", "/"))
+    return out
+
+def generate_gallery_html(images: Iterable[Pathish], title: str = "PNG Viewer") -> HtmlStr:
+    imgs = list(_coerce_paths(images))
+    if not imgs:
+        raise ValueError("No images provided.")
+    return _TEMPLATE.substitute(
+        title=html.escape(title),
+        images_json=json.dumps(imgs, ensure_ascii=False),
+    )
+
+def write_gallery_html(output_path: Pathish, images: Iterable[Pathish], title: str = "PNG Viewer") -> Path:
+    out = Path(output_path)
+    out.write_text(generate_gallery_html(images, title=title), encoding="utf-8")
+    return out.resolve()
