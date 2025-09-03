@@ -77,6 +77,8 @@ class FixedLens(object):
         ukappa = enmap.enmap(maps.interp(thetas,kappa_1d)(self.umodrmap),self.uwcs)
         self.grad_phi = alpha_from_kappa(ukappa)
 
+        # Save lensing setting
+        self.skip_lensing = skip_lensing
 
 
     def generate_sim(self,seed):
