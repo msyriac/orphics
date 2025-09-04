@@ -161,3 +161,23 @@ def test_stack_2d_array():
     assert np.allclose(got_sum, expected_sum)
     assert got_count == expected_count
         
+
+
+def test_var_equals_diag_cov():
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+
+    acc = Statistics(comm=comm, dtype=np.float64)
+
+    # Rank r contributes (r+1) copies of [r, 2r, 3r]
+    r = float(rank)
+    m_r = rank + 1
+    x_r = np.array([r, 2*r, 3*r], dtype=np.float64)
+    X = np.tile(x_r, (m_r, 1))
+    acc.extend("profiles", X)
+
+    acc.allreduce()
+
+    var_vec = acc.var("profiles", ddof=1)
+    cov_mat = acc.cov("profiles", ddof=1)
+    np.testing.assert_allclose(var_vec, np.diag(cov_mat), rtol=0, atol=1e-12)

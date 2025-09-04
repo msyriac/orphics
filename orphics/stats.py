@@ -1368,6 +1368,29 @@ class Statistics:
         C = self._CROSS[label]
         return (C - np.outer(S, S) / n) / (n - ddof)
 
+    def var(self, label, ddof: int = 1) -> np.ndarray:
+        """
+        Per-dimension variance for a stats-mode label.
+        ddof=1 -> sample variance; ddof=0 -> population variance.
+
+        Requires .allreduce() to have been called.
+        """
+        self._check_reduced()
+        if label not in self._CROSS:
+            raise KeyError(f"{label!r} is not a stats-mode label.")
+        n = self._N[label]
+        if n <= ddof:
+            d = self._SUM[label].shape[0]
+            return np.full(d, np.nan, dtype=self.dtype)
+
+        S = self._SUM[label]                   # shape (d,)
+        C = self._CROSS[label]                 # shape (d,d)
+        # diagonal of centered second moment: diag(C - (1/n) * S S^T)
+        # = diag(C) - (S**2)/n
+        centered_diag = np.diag(C) - (S * S) / n
+        return centered_diag / (n - ddof)
+    
+
     def stack_sum(self, label: Hashable) -> np.ndarray:
         """
         Return the global elementwise sum of arrays stacked under a label.
