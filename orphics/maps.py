@@ -17,7 +17,7 @@ def analytical_tf(modlmap, kfilter, bin_edges):
     Inaccurate at low ell. 
     """
     binner2d =  stats.bin2D(modlmap,bin_edges)
-    return binner2d.bin(kfilter)
+    return binner2d.bin(kfilter.astype(int))
 
 def cross_split_spectrum(alms1, alms2=None):
     """
@@ -75,6 +75,150 @@ def cross_split_spectrum(alms1, alms2=None):
         raise ValueError("No cross-spectra computed (need at least two splits).")
 
     return spec / count
+
+def error_fsky(mask):
+    # Effective sky fraction for variance
+    m2 = wfactor(2,mask)
+    m4 = wfactor(4,mask)
+    if m4 <= 0.0:
+        raise ValueError("Mask has zero <W^4>; check the input mask.")
+    f_sky_eff = (m2**2) / m4
+    print(f"f_sky_eff : {f_sky_eff:.2f}")
+    return f_sky_eff
+
+
+def crossband_errors(cltt, ell_bin_edges, rmsA_ukarcmin, rmsB_ukarcmin,
+                     beamA_ell, beamB_ell, n_splits=1,mask=None,f_sky_eff=None):
+    """
+    Approximate 1-sigma errors for binned, beam-deconvolved TT cross bandpowers C_l^{AB}.
+
+    Inputs
+    ------
+    cltt : (L,) array
+        Theory C_l^TT for l = 0..L-1 (same length as beam arrays). Units match your map units.
+    ell_bin_edges : (Nb+1,) int array
+        Inclusive-exclusive bin edges in l, e.g. [2, 30, 60, ...].
+    rmsA_ukarcmin, rmsB_ukarcmin : float
+        RMS of the COADD maps A and B in uK-arcmin.
+        Each split is assumed sqrt(n_splits) noisier than its coadd (white noise).
+    beamA_ell, beamB_ell : (L,) arrays
+        Beam transfer functions B_l for maps A and B.
+    n_splits : int, default 1
+        Number of splits per map set (same for A and B). If 1, returns the usual AB cross error.
+    mask : enmap
+        Apodized pixell mask. Only its second and fourth moments are used.
+
+    Returns
+    -------
+    ell_centers : (Nb,) array
+    sigma_b : (Nb,) array
+        1-sigma errors for the BEAM-DECONVOLVED cross bandpowers.
+
+    Model (beam-deconvolved)
+    ------------------------
+    Let the observed (non-deconvolved) AB cross be C_l^{AB,obs} = C_l * B_l^A * B_l^B.
+    The deconvolved estimator divides by B_l^A B_l^B. Propagating variance gives
+
+        Var[ C_l^{AB,deconv} ] =
+            [ (C_l^{AB,obs})^2 + (C_l^{AA,obs} + N_l^A) (C_l^{BB,obs} + N_l^B) ]
+            / [ (B_l^A B_l^B)^2 * (2l+1) * f_sky_eff * M ]
+
+    which is equivalent to
+
+        Var[ C_l^{AB,deconv} ] =
+            [ C_l^2 + (C_l + N_l^A / (B_l^A)^2) (C_l + N_l^B / (B_l^B)^2) ]
+            / [ (2l+1) * f_sky_eff * M ].
+
+    Here N_l^A and N_l^B are the per-split white-noise map powers, constant in l.
+
+    Notes
+    -----
+    - f_sky_eff uses the apodization-aware moment ratio: f_sky_eff = (<W^2>)^2 / <W^4>.
+    - M = n_splits**2 independent AB cross-spectra (falls back to 1 when n_splits=1).
+    - If a bin has no l where both beams are positive, its sigma is set to NaN.
+    - This is a Knox-style approximation; it ignores mode coupling and curvature corrections.
+    """
+
+    # Validate and coerce
+    cltt = np.asarray(cltt, dtype=float)
+    beamA_ell = np.asarray(beamA_ell, dtype=float)
+    beamB_ell = np.asarray(beamB_ell, dtype=float)
+
+    if cltt.shape != beamA_ell.shape or cltt.shape != beamB_ell.shape:
+        raise ValueError("cltt, beamA_ell, and beamB_ell must have the same shape.")
+
+    if not (isinstance(n_splits, (int, np.integer)) and n_splits >= 1):
+        raise ValueError("n_splits must be a positive integer.")
+    n_splits = int(n_splits)
+
+    L = cltt.size
+    ells = np.arange(L, dtype=int)
+
+    if f_sky_eff is None:
+        f_sky_eff = error_fsky(mask)
+    else:
+        if mask is not None: raise ValueError
+
+    # Convert coadd RMS (uK-arcmin) to per-split white-noise map power (uK^2-rad^2)
+    arcmin_to_rad = (np.pi / 180.0) / 60.0
+    sigA = rmsA_ukarcmin * arcmin_to_rad
+    sigB = rmsB_ukarcmin * arcmin_to_rad
+    # For splits: sigma_split = sqrt(n_splits) * sigma_coadd  ->  N = n_splits * sigma_coadd^2
+    N_A = n_splits * sigA**2
+    N_B = n_splits * sigB**2
+
+    # Deconvolved-noise terms per l. Guard against zero or negative beams.
+    # If a beam is non-positive, mark that l as invalid for deconvolved variance.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        invBA2 = np.where(beamA_ell > 0.0, 1.0 / (beamA_ell**2), np.inf)
+        invBB2 = np.where(beamB_ell > 0.0, 1.0 / (beamB_ell**2), np.inf)
+    NAd = N_A * invBA2
+    NBd = N_B * invBB2
+
+    # Per-l variance numerator in deconvolved space
+    # S_l = C^2 + (C + NAd) * (C + NBd)
+    C = cltt
+    S_l = C*C + (C + NAd) * (C + NBd)
+
+    # Number of independent cross-split AB spectra averaged
+    M = n_splits**2  # equals 1 when n_splits=1
+
+    # Bin setup
+    ell_bin_edges = np.asarray(ell_bin_edges, dtype=int)
+    if np.any(ell_bin_edges < 0):
+        raise ValueError("ell_bin_edges must be non-negative integers.")
+    if np.max(ell_bin_edges) >= L:
+        raise ValueError("ell_bin_edges exceed available l range from inputs.")
+    nb = len(ell_bin_edges) - 1
+    ell_centers = 0.5 * (ell_bin_edges[:-1] + ell_bin_edges[1:])
+    sigma_b = np.zeros(nb, dtype=float)
+
+    twoell1 = (2 * ells + 1)
+
+    # Valid l are those where both beams are strictly positive
+    valid_l = (beamA_ell > 0.0) & (beamB_ell > 0.0)
+
+    for b in range(nb):
+        lmin = ell_bin_edges[b]
+        lmax = ell_bin_edges[b + 1] - 1
+        if lmax < lmin:
+            raise ValueError(f"Empty bin at index {b}: edges {ell_bin_edges[b:b+2]}")
+
+        idx = np.arange(lmin, lmax + 1)
+        idx = idx[valid_l[lmin:lmax + 1]]  # keep only l where both beams are positive
+        if idx.size == 0:
+            sigma_b[b] = np.nan
+            continue
+
+        w = twoell1[idx]
+        W = np.sum(w)
+        S_bar = np.sum(w * S_l[idx]) / W
+
+        # Knox-style bin variance for deconvolved AB cross
+        var_b = S_bar / (W * f_sky_eff * M)
+        sigma_b[b] = np.sqrt(var_b)
+
+    return ell_centers, sigma_b
 
 # Copied and modified from soapack
 def sanitize_beam(ells,lbeam,sval=1e-3,verbose=True,fells=None):
