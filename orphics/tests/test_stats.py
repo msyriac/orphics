@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 from mpi4py import MPI
 
-# Adjust to your path/module name
 from orphics.stats import Statistics
 
 
