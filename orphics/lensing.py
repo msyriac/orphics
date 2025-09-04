@@ -2,15 +2,18 @@ from __future__ import print_function
 import numpy as np
 np.seterr(divide='ignore', invalid='ignore')
 from orphics import maps
-from pixell import enmap, utils
+from pixell import enmap, utils, bench
 from scipy.special import factorial
+from scipy.optimize import curve_fit
+
 try:
     from pixell import lensing as enlensing
 except:
     print("WARNING: Couldn't load pixell lensing. Some features will be unavailable.")
 
-from scipy.integrate import simps
 from scipy.interpolate import splrep,splev
+
+from contextlib import nullcontext
 
 from scipy.fftpack import fftshift,ifftshift,fftfreq
 from scipy.interpolate import interp1d
@@ -21,10 +24,241 @@ from orphics.stats import bin2D
 import time
 from six.moves import cPickle as pickle
 
-from orphics import stats
+from orphics import stats, cosmology
 import os,sys
-from pyfisher import get_lensing_nl as get_nl
 
+class FixedLens(object):
+    """
+    A simulator for generating CMB maps lensed by a fixed radially symmetric
+    convergence profile.
+
+    Parameters
+    ----------
+    thetas : ndarray
+        1D array of angular distances (in radians) corresponding to the convergence profile.
+    kappa_1d : ndarray
+        1D array representing the total convergence profile (e.g., sum of 1-halo and 2-halo terms), 
+        corresponding to thetas.
+    width_deg : float, optional
+        Width of the simulated map in degrees. Used to define the stamp size. Default is 2.0.
+    res_arcmin : float, optional
+        Resolution of the map in arcminutes per pixel. Default is 0.5.
+    pad_fact : int, optional
+        Padding factor applied to the map width to simulate non-periodic boundary conditions. Default is 2.
+        The simulation will be on a template that is pad_fact * width_deg wide.
+    dfact : int, optional
+        Upsampling factor by for performing lensing. Default is 3. The pixel size for the template 
+        on which lensing is performed will be res_arcmin / dfact.
+
+    """
+    def __init__(self,thetas, kappa_1d,
+                 width_deg=2.0,res_arcmin=0.5, # for stamps
+                 pad_fact=2,dfact=3, # for simulation
+                 ):
+
+        # Make the high-res geometry
+        self.pad_fact = pad_fact
+        self.dfact = dfact
+        self.ushape,self.uwcs = maps.rect_geometry(width_deg=width_deg*pad_fact,px_res_arcmin=res_arcmin/dfact,proj="tan")
+        self.dshape,self.dwcs = maps.rect_geometry(width_deg=width_deg,px_res_arcmin=res_arcmin,proj="tan")
+
+        # Store the unlensed CMB theory
+        theory =  cosmology.default_theory()
+        self.ells = np.arange(10000)
+        self.cltt = theory.uCl('TT',self.ells)
+
+        # Make the deflection field from the kappa profile
+        self.thetas = thetas
+        self.kappa_1d = kappa_1d
+        self.umodrmap = enmap.modrmap(self.ushape,self.uwcs)
+        ukappa = enmap.enmap(maps.interp(thetas,kappa_1d)(self.umodrmap),self.uwcs)
+        self.grad_phi = alpha_from_kappa(ukappa)
+
+
+
+    def generate_sim(self,seed):
+        """
+        Generate a simulated CMB map lensed by the fixed lens.
+
+        Parameters
+        ----------
+        seed : int
+            Seed for the random number generator to ensure reproducibility.
+
+        Returns
+        -------
+        umap : enmap
+            Unlensed high-resolution CMB map.
+        lmap : enmap
+            Lensed high-resolution CMB map using the precomputed deflection field.
+        dmap : enmap
+            Center-cropped and downsampled lensed map for analysis.
+        """
+        
+        # Random unlensed
+        umap = enmap.rand_map(self.ushape, self.uwcs, self.cltt, seed=seed)
+        # Lensed
+        lmap = enlensing.lens_map(umap, self.grad_phi)
+        # Downgraded
+        dmap = enmap.downgrade_fft(lmap, self.dfact)
+        # Cropped
+        return umap, lmap, (maps.get_central(dmap,1./self.pad_fact) if self.pad_fact!=1 else dmap)
+
+
+def filter_bin_kappa1d(thetas,kappas,fls=None,lmin=200,lmax=6000,res=0.05*utils.arcmin,rstamp=30.*utils.arcmin,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin):
+    N = int(rstamp/res)
+    shape,wcs = enmap.geometry(pos=(0,0),res=res,shape=(N,N),proj='tan')
+    modrmap = enmap.modrmap(shape,wcs)
+    omap = enmap.enmap(maps.interp(thetas,kappas)(modrmap),wcs)
+    return filter_bin_kappa2d(omap,fls=fls,lmin=lmin,lmax=lmax,rmin=rmin,rmax=rmax,rwidth=rwidth)
+    
+def filter_bin_kappa2d(omap,fls=None,lmin=200,lmax=6000,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin,taper_per=12.0):
+    taper,_ = maps.get_taper(omap.shape[-2:],omap.wcs,taper_percent = taper_per)
+    kmask = maps.mask_kspace(omap.shape,omap.wcs, lxcut = None, lycut = None, lmin = lmin, lmax = lmax).astype(bool)
+    if fls is not None:
+        modlmap = omap.modlmap()
+        ells = np.arange(fls.size)
+        kfilt = maps.interp(ells,fls)(modlmap)
+    else:
+        kfilt = omap*0+1.
+    kfilt[~kmask] = 0
+    fmap = maps.filter_map(omap*taper,kfilt)
+    bin_edges = np.arange(rmin,rmax,rwidth)
+    modrmap = enmap.modrmap(omap.shape,omap.wcs)
+    binner = stats.bin2D(modrmap,bin_edges)
+    cents,b1d = binner.bin(fmap)
+    return cents,b1d
+
+
+def kappa_nfw_profiley1d(thetas,mass=2e14,conc=None,z=0.7,z_s=1100.,
+                         background='critical',delta=500,
+                         R_off_Mpc = None,
+                         R_off_Mpc_max = 1.0,
+                         N_off = 50,
+                         verbose=True,
+                         h = 0.677,
+                         Om = 0.3,
+                         Ob = 0.045,
+                         As = 2.1e-9,
+                         ns = 0.96,
+                         debug_time = False
+                         ):
+    from profiley.filtering import Filter
+    from profiley.nfw import NFW
+    from profiley.numeric import offset
+    from astropy import units as u
+    import pyccl as ccl
+    from profiley.helpers.lss import power2xi, xi2sigma
+    bshow = (lambda x: bench.show(x)) if debug_time else (lambda x: nullcontext())
+    
+    frame='comoving'
+
+    if conc is None:
+        from colossus.cosmology import cosmology
+        from colossus.halo import concentration
+        # Only this or WMAP7 can be used
+        cosmology.setCosmology('planck13')
+        # Define mass (in solar masses) and redshift
+        # Compute concentration using Klypin et al. 2016 model
+        conc = concentration.concentration(M=mass * h , z=z, mdef='500c', model='klypin16_m')
+
+    nfw = NFW(mass, conc, z, overdensity=delta, background=background[0],
+              frame=frame)
+    
+    if frame=='comoving':
+        Rcon = nfw.cosmo.kpc_comoving_per_arcmin
+    elif frame=='physical':
+        Rcon = nfw.cosmo.kpc_proper_per_arcmin 
+    R = Rcon(nfw.z) * thetas*u.radian
+    kappa1 = nfw.convergence(R, z_s=z_s)
+    
+    # Miscentering
+    if R_off_Mpc is not None:
+        with bshow("miscenter"):
+            Roff = np.linspace(0, R_off_Mpc_max, N_off) # Mpc
+            weights = np.exp(-Roff**2 / (2*(R_off_Mpc)**2))
+            # Some units gymnastics here because offset doesn't support units
+            kappa_1h = offset((kappa1.T).to(u.Mpc).value, R.to(u.Mpc).value, Roff, weights=weights)[0] * u.Mpc
+    else:
+        kappa_1h = kappa1[:,0]
+    
+    # 2-halo
+    with bshow("two-halo"):
+        # This part can be sped up by caching the Pk
+        cosmo = ccl.Cosmology(Omega_c=Om-Ob, Omega_b=Ob, h=h, A_s=As, n_s=ns)
+        k = np.geomspace(1e-15, 1e15, 10000) # this wide range is needed for the Hankel transform
+        kmin = 1e-4; kmax=20.0 # 1/Mpc; but only this k-range matters
+        sel = np.logical_and(k>kmin,k<kmax)
+        Pk = k*0
+        Pk[sel] = ccl.linear_matter_power(cosmo, k[sel], 1/(1+z))
+        mdef = ccl.halos.MassDef(delta, background)
+        bias = ccl.halos.HaloBiasTinker10(mass_def=mdef)
+        bh = bias(cosmo=cosmo,M=mass, a=1/(1+nfw.z))
+        if verbose: print("Halo bias : ", bh)
+        Pgm = bh * Pk
+        r_xi = np.geomspace(1e-3, 1e4, 100) # Mpc
+        lnPgm_lnk = interp1d(np.log(k), np.log(Pgm))
+        xi = power2xi(lnPgm_lnk, r_xi)
+        rho_m = ccl.background.rho_x(cosmo, 1, 'matter')
+        sigma_2h = xi2sigma(R.to(u.Mpc).value, r_xi, xi, rho_m).T
+        kappa_2h = sigma_2h / nfw.sigma_crit(z_s)
+
+    
+    return kappa_1h, kappa_2h #.value
+
+
+def kappa_nfw_profiley(mass=2e14,conc=None,z=0.7,z_s=1100.,
+                       background='critical',delta=500,
+                       thetamin=0.001*utils.arcmin,thetamax=240.*utils.arcmin,numthetas=500,
+                       theta_extrap = 20*utils.arcmin,
+                       R_off_Mpc = None,
+                       R_off_Mpc_max = 5.0,
+                       N_off = 50,
+                       apply_filter = True,
+                       fls = None,lmin=200,lmax=6000,
+                       res=0.05*utils.arcmin,rstamp=30.*utils.arcmin,rmin=0.,rmax=15*utils.arcmin,rwidth=0.1*utils.arcmin,
+                       verbose=True, h = 0.677,
+                       Om = 0.3,
+                       Ob = 0.045,
+                       As = 2.1e-9,
+                       ns = 0.96
+                       ):
+
+    # These are the radii at which we will do the expensive profiley calculation
+    ithetas = np.linspace(thetamin, theta_extrap, numthetas)
+
+    kappa_1h,kappa_2h = kappa_nfw_profiley1d(ithetas,mass=mass,conc=conc,z=z,z_s=z_s,
+                                             background=background,delta=delta,
+                                             R_off_Mpc = R_off_Mpc,
+                                             R_off_Mpc_max = R_off_Mpc_max,
+                                             N_off = N_off,
+                                             verbose=verbose, h = h,
+                                             Om = Om,
+                                             Ob = Ob,
+                                             As = As,
+                                             ns = ns
+                                             )
+
+    # We extrapolate with a power law above that
+    t_extra = np.linspace(theta_extrap, thetamax, numthetas)
+    othetas, okappa_1h =  stats.extrapolate_power_law(ithetas, kappa_1h.value, t_extra, x_percentile=30.0)
+    othetas, okappa_2h =  stats.extrapolate_power_law(ithetas, kappa_2h.value, t_extra, x_percentile=30.0)
+    
+    # And at zero radius fill with the initial value
+    thetas = np.append([0.],othetas)
+    kappa_1h = np.append([okappa_1h[0]],okappa_1h)
+    kappa_2h = np.append([okappa_2h[0]],okappa_2h)
+        
+    tot_kappa = (kappa_1h+kappa_2h)
+
+    if apply_filter:
+        cents,b1d1h = filter_bin_kappa1d(thetas,kappa_1h,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+        cents,b1d = filter_bin_kappa1d(thetas,tot_kappa,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+        cents,b1d2h = filter_bin_kappa1d(thetas,kappa_2h,fls=fls,lmin=lmin,lmax=lmax,res=res,rstamp=rstamp,rmin=rmin,rmax=rmax,rwidth=rwidth)
+    else:
+        cents = b1d1h = b1d = b1d2h = None
+
+    return thetas,kappa_1h,kappa_2h,tot_kappa,cents,b1d1h,b1d2h,b1d
         
 
 def validate_geometry(shape,wcs,verbose=False):
@@ -535,6 +769,7 @@ def NFWkappa(cc,massOverh,concentration,zL,thetaArc,winAtLens,overdensity=500.,c
 
 
 def NFWMatchedFilterSN(clusterCosmology,log10Moverh,c,z,ells,Nls,kellmax,overdensity=500.,critical=True,atClusterZ=True,arcStamp=100.,pxStamp=0.05,saveId=None,verbose=False,rayleighSigmaArcmin=None,returnKappa=False,winAtLens=None):
+    from scipy.integrate import simps
     if rayleighSigmaArcmin is not None: assert rayleighSigmaArcmin>=pxStamp
     M = 10.**log10Moverh
 

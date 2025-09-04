@@ -8,7 +8,596 @@ import math
 from scipy.interpolate import RectBivariateSpline,interp2d,interp1d
 import warnings
 import healpy as hp
-from . import cosmology
+from . import cosmology, stats
+from scipy.special import i0  # Modified Bessel function I0
+
+def analytical_tf(modlmap, kfilter, bin_edges):
+    """
+    Simple analytic filter for k-space masking.
+    Inaccurate at low ell. 
+    """
+    binner2d =  stats.bin2D(modlmap,bin_edges)
+    return binner2d.bin(kfilter.astype(int))
+
+def cross_split_spectrum(alms1, alms2=None):
+    """
+    Compute the average cross-power spectrum between splits from spherical harmonic coefficients (alms).
+
+    This function is used to calculate the signal-only spectrum from split data. It takes two arrays
+    of spherical harmonic coefficients (alms), each with shape (nsplits, alm_size), and computes
+    the average cross-spectrum over all unique split pairs (i != j). This suppresses noise bias
+    under the assumption that noise is uncorrelated between splits.
+
+    Parameters
+    ----------
+    alms1 : ndarray
+        An array of shape (nsplits, alm_size), containing spherical harmonic coefficients
+        for each split. Must have ndim = 2.
+    alms2 : ndarray or None, optional
+        An optional second array of the same shape as `alms1`. If None (default), `alms2` is set to `alms1`.
+
+    Returns
+    -------
+    ndarray
+        The average cross-spectrum computed from all unique (i != j) split pairs.
+        Shape is (alm_size,).
+
+    Raises
+    ------
+    ValueError
+        If the input arrays do not have two dimensions or if the number of splits does not match.
+    """
+    _shape_err = ValueError("This function is for cross-split spectra, so alms should have multiple splits.")
+    if alms1.ndim != 2:
+        raise _shape_err
+    if alms2 is None:
+        alms2 = alms1
+    elif alms2.ndim != 2:
+        raise _shape_err
+
+    nsplits = alms1.shape[0]
+    if alms2.shape[0] != nsplits:
+        raise ValueError("Number of splits should be the same.")
+
+    # Initialize spectrum accumulator
+    spec = 0
+    count = 0
+
+    for i in range(nsplits):
+        for j in range(nsplits):
+            if i == j:
+                continue  # Skip auto-spectra
+            # Compute cross-spectrum for the (i, j) pair
+            spec += cs.alm2cl(alms1[i],alms2[j])
+            count += 1
+
+    if count == 0:
+        raise ValueError("No cross-spectra computed (need at least two splits).")
+
+    return spec / count
+
+def error_fsky(mask):
+    # Effective sky fraction for variance
+    m2 = wfactor(2,mask)
+    m4 = wfactor(4,mask)
+    if m4 <= 0.0:
+        raise ValueError("Mask has zero <W^4>; check the input mask.")
+    f_sky_eff = (m2**2) / m4
+    print(f"f_sky_eff : {f_sky_eff:.2f}")
+    return f_sky_eff
+
+
+def crossband_errors(cltt, ell_bin_edges, rmsA_ukarcmin, rmsB_ukarcmin,
+                     beamA_ell, beamB_ell, n_splits=1,mask=None,f_sky_eff=None):
+    """
+    Approximate 1-sigma errors for binned, beam-deconvolved TT cross bandpowers C_l^{AB}.
+
+    Inputs
+    ------
+    cltt : (L,) array
+        Theory C_l^TT for l = 0..L-1 (same length as beam arrays). Units match your map units.
+    ell_bin_edges : (Nb+1,) int array
+        Inclusive-exclusive bin edges in l, e.g. [2, 30, 60, ...].
+    rmsA_ukarcmin, rmsB_ukarcmin : float
+        RMS of the COADD maps A and B in uK-arcmin.
+        Each split is assumed sqrt(n_splits) noisier than its coadd (white noise).
+    beamA_ell, beamB_ell : (L,) arrays
+        Beam transfer functions B_l for maps A and B.
+    n_splits : int, default 1
+        Number of splits per map set (same for A and B). If 1, returns the usual AB cross error.
+    mask : enmap
+        Apodized pixell mask. Only its second and fourth moments are used.
+
+    Returns
+    -------
+    ell_centers : (Nb,) array
+    sigma_b : (Nb,) array
+        1-sigma errors for the BEAM-DECONVOLVED cross bandpowers.
+
+    Model (beam-deconvolved)
+    ------------------------
+    Let the observed (non-deconvolved) AB cross be C_l^{AB,obs} = C_l * B_l^A * B_l^B.
+    The deconvolved estimator divides by B_l^A B_l^B. Propagating variance gives
+
+        Var[ C_l^{AB,deconv} ] =
+            [ (C_l^{AB,obs})^2 + (C_l^{AA,obs} + N_l^A) (C_l^{BB,obs} + N_l^B) ]
+            / [ (B_l^A B_l^B)^2 * (2l+1) * f_sky_eff * M ]
+
+    which is equivalent to
+
+        Var[ C_l^{AB,deconv} ] =
+            [ C_l^2 + (C_l + N_l^A / (B_l^A)^2) (C_l + N_l^B / (B_l^B)^2) ]
+            / [ (2l+1) * f_sky_eff * M ].
+
+    Here N_l^A and N_l^B are the per-split white-noise map powers, constant in l.
+
+    Notes
+    -----
+    - f_sky_eff uses the apodization-aware moment ratio: f_sky_eff = (<W^2>)^2 / <W^4>.
+    - M = n_splits**2 independent AB cross-spectra (falls back to 1 when n_splits=1).
+    - If a bin has no l where both beams are positive, its sigma is set to NaN.
+    - This is a Knox-style approximation; it ignores mode coupling and curvature corrections.
+    """
+
+    # Validate and coerce
+    cltt = np.asarray(cltt, dtype=float)
+    beamA_ell = np.asarray(beamA_ell, dtype=float)
+    beamB_ell = np.asarray(beamB_ell, dtype=float)
+
+    if cltt.shape != beamA_ell.shape or cltt.shape != beamB_ell.shape:
+        raise ValueError("cltt, beamA_ell, and beamB_ell must have the same shape.")
+
+    if not (isinstance(n_splits, (int, np.integer)) and n_splits >= 1):
+        raise ValueError("n_splits must be a positive integer.")
+    n_splits = int(n_splits)
+
+    L = cltt.size
+    ells = np.arange(L, dtype=int)
+
+    if f_sky_eff is None:
+        f_sky_eff = error_fsky(mask)
+    else:
+        if mask is not None: raise ValueError
+
+    # Convert coadd RMS (uK-arcmin) to per-split white-noise map power (uK^2-rad^2)
+    arcmin_to_rad = (np.pi / 180.0) / 60.0
+    sigA = rmsA_ukarcmin * arcmin_to_rad
+    sigB = rmsB_ukarcmin * arcmin_to_rad
+    # For splits: sigma_split = sqrt(n_splits) * sigma_coadd  ->  N = n_splits * sigma_coadd^2
+    N_A = n_splits * sigA**2
+    N_B = n_splits * sigB**2
+
+    # Deconvolved-noise terms per l. Guard against zero or negative beams.
+    # If a beam is non-positive, mark that l as invalid for deconvolved variance.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        invBA2 = np.where(beamA_ell > 0.0, 1.0 / (beamA_ell**2), np.inf)
+        invBB2 = np.where(beamB_ell > 0.0, 1.0 / (beamB_ell**2), np.inf)
+    NAd = N_A * invBA2
+    NBd = N_B * invBB2
+
+    # Per-l variance numerator in deconvolved space
+    # S_l = C^2 + (C + NAd) * (C + NBd)
+    C = cltt
+    S_l = C*C + (C + NAd) * (C + NBd)
+
+    # Number of independent cross-split AB spectra averaged
+    M = n_splits**2  # equals 1 when n_splits=1
+
+    # Bin setup
+    ell_bin_edges = np.asarray(ell_bin_edges, dtype=int)
+    if np.any(ell_bin_edges < 0):
+        raise ValueError("ell_bin_edges must be non-negative integers.")
+    if np.max(ell_bin_edges) >= L:
+        raise ValueError("ell_bin_edges exceed available l range from inputs.")
+    nb = len(ell_bin_edges) - 1
+    ell_centers = 0.5 * (ell_bin_edges[:-1] + ell_bin_edges[1:])
+    sigma_b = np.zeros(nb, dtype=float)
+
+    twoell1 = (2 * ells + 1)
+
+    # Valid l are those where both beams are strictly positive
+    valid_l = (beamA_ell > 0.0) & (beamB_ell > 0.0)
+
+    for b in range(nb):
+        lmin = ell_bin_edges[b]
+        lmax = ell_bin_edges[b + 1] - 1
+        if lmax < lmin:
+            raise ValueError(f"Empty bin at index {b}: edges {ell_bin_edges[b:b+2]}")
+
+        idx = np.arange(lmin, lmax + 1)
+        idx = idx[valid_l[lmin:lmax + 1]]  # keep only l where both beams are positive
+        if idx.size == 0:
+            sigma_b[b] = np.nan
+            continue
+
+        w = twoell1[idx]
+        W = np.sum(w)
+        S_bar = np.sum(w * S_l[idx]) / W
+
+        # Knox-style bin variance for deconvolved AB cross
+        var_b = S_bar / (W * f_sky_eff * M)
+        sigma_b[b] = np.sqrt(var_b)
+
+    return ell_centers, sigma_b
+
+# Copied and modified from soapack
+def sanitize_beam(ells,lbeam,sval=1e-3,verbose=True,fells=None):
+    """
+    Normalizes the beam.
+    Then replaces it with a Gaussian wherever the beam is less than sval. The
+    Gaussian is chosen such that it has the same value as the input beam at the ell where the input
+    beam is sval.
+    """
+    if not(np.all(np.diff(ells))==1): raise ValueError
+    if ells[0]!=0: raise ValueError
+    lbeam = lbeam.copy()/lbeam[0]
+    
+    if sval is None:
+        if fells is not None: raise NotImplementedError
+        return lbeam
+
+    if fells is not None:
+        if not(np.all(np.diff(fells))==1): raise ValueError
+        if fells[0]!=0: raise ValueError
+        lbeam = interp(ells,lbeam,bounds_error=False,fill_value=-np.inf)(fells)
+        ells = fells
+    
+    if verbose: print("Sanitizing beam... Make sure this call is not made during a signal simulation.")
+    oells = ells[lbeam<sval]
+    olbeam = lbeam[lbeam<sval]
+    if oells.size==0:
+        return lbeam
+    oell = ells[int(oells[0])-1]
+    olb = lbeam[int(oells[0])-1]
+    theta2 = -(16.*np.log(2.)) * np.log(olb) / oell**2.
+    assert theta2>0
+    theta = np.sqrt(theta2)
+    theta_fwhm = np.rad2deg(theta)*60.
+    if not(np.isfinite(theta_fwhm)): raise ValueError
+    bfunc = lambda x: gauss_beam(x,theta_fwhm)
+    if verbose: print(f"Sanitizing beam with FWHM {theta_fwhm} arcmin.")
+    obeam = lbeam.copy()
+    obeam[lbeam<sval] = bfunc(ells[lbeam<sval])
+    return obeam
+        
+
+def apply_harmonic_coadd_weights(alms, weights, target_beam):
+    """
+    Apply precomputed harmonic-space weights to a set of a_lm maps
+    and convolve the result with the target beam.
+
+    Parameters
+    ----------
+    alms : list of complex np.ndarray
+        List of input a_lm arrays, one per frequency channel.
+    weights : np.ndarray
+        Harmonic coadd weights of shape (lmax+1, nfreq).
+    target_beam : np.ndarray
+        Target beam transfer function B_ell^out (length >= lmax+1).
+
+    Returns
+    -------
+    alm_out : complex np.ndarray
+        Beam-smoothed, linearly combined a_lm array.
+    """
+    nfreq = len(alms)
+    lmax = hp.Alm.getlmax(alms[0].size)
+    nalm = alms[0].size
+
+    # combine maps using hp.almxfl
+    alm_out = np.zeros(nalm, dtype=alms[0].dtype)
+    tgt = target_beam[: lmax + 1].copy()
+    for k in range(nfreq):
+        alm_out += hp.almxfl(alms[k], weights[:, k])                  # apply weight per channel
+
+    alm_out = hp.almxfl(alm_out, tgt)
+    return alm_out
+
+def calculate_harmonic_coadd_weights(lmax, cl_model, resp_factors, beams):
+    """
+    Compute harmonic-space weights for linear coaddition of maps,
+    subject to a specified response vector per channel.
+
+    Parameters
+    ----------
+    lmax : int
+        Maximum multipole for the harmonic weights.
+    cl_model : dict[(i, j)] -> 1-D np.ndarray
+        Model power spectra C_ell for every i <= j pair, built for the
+        *observed* sky (i.e. including the channel beams), or alternatively
+        simply the non-beam-deconvolved noise power spectrum determined
+        somehow.
+    resp_factors : array_like
+        Per-channel scalar response vector (e.g. 1 for CMB, tSZ weights, etc.).
+    beams : list of np.ndarray
+        Beam transfer functions B_ell per channel (length >= lmax+1).
+
+    Returns
+    -------
+    weights : np.ndarray
+        Harmonic coadd weights of shape (lmax+1, nfreq).
+    """
+    nfreq = len(beams)
+    for b in beams:
+        if b.size<(lmax+1): raise ValueError("Input beam transfer does not cover full multipole range.")
+
+    # covariance cube C_ell(i, j)
+    cov = np.zeros((lmax + 1, nfreq, nfreq))
+    for i in range(nfreq):
+        for j in range(i, nfreq):
+            spec = cl_model[(i, j)][: lmax + 1]
+            cov[:, i, j] = cov[:, j, i] = spec
+
+    if not(np.all(np.isfinite(cov))): raise ValueError
+
+    
+    # response vector a_ell
+    resp = np.ones(nfreq) if resp_factors is None else np.asarray(resp_factors)
+    if resp.size != nfreq:
+        raise ValueError("resp_factors length mismatch")
+
+    beams_mat = np.vstack([b[: lmax + 1] for b in beams])       # (nfreq, lmax+1)
+    if not(np.all(np.isfinite(beams_mat))): raise ValueError
+
+    a_mat = (resp[:, None] * beams_mat)                        # (nfreq, lmax+1)
+    a_mat = a_mat.T                                            # (lmax+1, nfreq)
+    if not(np.all(np.isfinite(a_mat))): raise ValueError
+
+    # ILC weights
+    c_inv = np.zeros_like(cov)          # pre-allocate (lmax+1, nfreq, nfreq)
+    c_inv[2:] = np.linalg.inv(cov[2:,])  # invert only the ell = 2...lmax blocks
+    if not(np.all(np.isfinite(c_inv))): raise ValueError
+    num = np.einsum("lij,lj->li", c_inv, a_mat)               # C^{-1} a
+    if not(np.all(np.isfinite(num))): raise ValueError
+    den = np.einsum("li,li->l", a_mat, num)                   # a^T C^{-1} a
+    w = num*0.
+    w[2:,:] = num[2:,:] / den[2:, None]                                      # (lmax+1, nfreq)
+    if not(np.all(np.isfinite(w))):
+        ells = np.arange(lmax+1)
+        print(den[:])
+        for i in range(nfreq):
+            
+            print(i,beams_mat[i,:])
+            print(i,ells[~np.isfinite(w[:,i])],w[:,i][~np.isfinite(w[:,i])])
+        raise ValueError
+
+    return w
+
+
+def harmonic_coaddition(
+        alms,
+        beams,
+        cl_model,
+        target_beam,
+        resp_factors=None,
+        return_weights=True
+):
+    """
+    Harmonic coadditon without explicit deconvolution.
+    If cl_model is the empirically determined total power spectrum,
+    this corresponds to harmonic ILC. If it is instead just the
+    (non-beam-deconvolved) noise spectra of each map, then this
+    corresponds to what the ACT community calls "k-space" co-addition.
+
+    All alm inputs should be observed skies (i.e. the beam has not
+    been deconvolved). The cl_model should correspondingly be
+    ~ Cl*beam^2 + noise_power, or noise_power, corresponding to the
+    cases described earlier. The final map is convolved with the
+    provided target beam.
+
+    Parameters
+    ----------
+    alms : list of complex np.ndarray
+        a_lm coefficients per frequency channel (healpix format).
+    beams : list of 1-D np.ndarray
+        Channel beam transfer functions B_ell (length >= lmax+1),
+        starting at ell=0.
+    cl_model : dict[(i, j)] -> 1-D np.ndarray
+        Model power spectra C_ell for every i <= j pair, built for the
+        *observed* sky (i.e. including the channel beams), or alternatively
+        simply the non-beam-deconvolved noise power spectrum determined
+        somehow.
+    target_beam : 1-D np.ndarray
+        Desired output beam B_ell^out (length >= lmax+1), starting at ell=0.
+    resp_factors : 1-D array_like, optional
+        Scalar response r_k for the component of interest in each channel.
+        Defaults to unity for all channels (CMB temperature).
+    return_weights : bool, optional
+        If True, the weight matrix w[ell, k] is returned in addition
+        to the output a_lm.    
+
+    Returns
+    -------
+    alm_out : complex np.ndarray
+        Reconstructed component a_lm, automatically convolved with
+        `target_beam`.
+    w_ell_k : np.ndarray, optional
+        Weight matrix of shape (lmax+1, nfreq) if return_weights is True.    
+    """
+
+    nfreq = len(alms)
+    if len(beams)!=nfreq: raise ValueError("beams length mismatch")
+    lmax = hp.Alm.getlmax(alms[0].size)
+
+    w = calculate_harmonic_coadd_weights(lmax,cl_model,resp_factors,beams)
+    alm_out = apply_harmonic_coadd_weights(alms,w,target_beam)
+    
+    if return_weights:
+        return alm_out, w
+    return alm_out
+
+
+def radial_window(r, r0, r1, window="kaiser", beta=6.0):
+    """
+    Smoothly taper from 1 to 0 between radii r0 and r1.
+
+    Parameters
+    ----------
+    r : ndarray
+        Radial distances at which to calculate the taper (radians).
+    r0 : float
+        Start of taper (window = 1 here).
+    r1 : float
+        End of taper (window = 0 here).
+    window : {"kaiser", "cosine", "quintic"}
+        Type of taper window.
+    beta : float
+        Shape parameter for the Kaiser window.
+
+    Returns
+    -------
+    w : ndarray
+        Taper window values (same shape as r), between 0 and 1.
+    """
+    w = np.ones_like(r)
+
+    taper = (r >= r0) & (r <= r1)
+    outer = r > r1
+
+    x = (r[taper] - r0) / (r1 - r0)
+
+    if window == "kaiser":
+        w[taper] = i0(beta * np.sqrt(1.0 - x**2)) / i0(beta)
+    elif window == "cosine":
+        w[taper] = 0.5 * (1.0 + np.cos(np.pi * x))
+    elif window == "quintic":
+        w[taper] = 1.0 - (10.0 * x**3 - 15.0 * x**4 + 6.0 * x**5)
+    else:
+        raise ValueError('window must be "kaiser", "cosine", or "quintic"')
+
+    w[outer] = 0.0
+    return w
+
+
+def apodize_profile(thetas,
+                    profile,
+                    roll_start,
+                    roll_width,
+                    window="kaiser",
+                    beta=6.0):
+    """
+    Apply radial taper to a 1D profile.
+
+    Parameters
+    ----------
+    thetas : ndarray
+        Radii (radians).
+    profile : ndarray
+        Profile values.
+    roll_start : float
+        Taper begins here (radians).
+    roll_width : float
+        Taper width (radians).
+    window : str
+        Taper function type.
+    beta : float
+        Kaiser beta value (if used).
+
+    Returns
+    -------
+    profile_tapered : ndarray
+    """
+    r0 = roll_start
+    r1 = roll_start + roll_width
+    taper = radial_window(thetas, r0, r1, window, beta)
+    return profile * taper
+
+
+def radial_mask(shape,wcs,
+                roll_start,
+                roll_width,
+                window="kaiser",
+                beta=6.0):
+    """
+    Build a circular 2D mask from distance-to-center map.
+
+    Parameters
+    ----------
+    shape (tuple):
+        The shape of the output map.
+    wcs (object):
+        The WCS object defining the coordinate system of the map.
+    roll_start : float
+        Taper begins here (radians).
+    roll_width : float
+        Taper width (radians).
+    window : str
+        Taper function type.
+    beta : float
+        Kaiser beta value (if used).
+
+    Returns
+    -------
+    mask : 2D ndarray
+        Values in [0, 1], same shape as modrmap.
+    """
+    r0 = roll_start
+    r1 = roll_start + roll_width
+    modrmap = enmap.modrmap(shape,wcs)
+    return radial_window(modrmap, r0, r1, window, beta)
+
+def thumbnail_healpix(hmap,pos=(0,0),r=10*utils.arcmin,res=None,frame='icrs',proj='tan'):
+    """
+    Extract a gnomonic-projected thumbnail from a HEALPix map.
+
+    Parameters:
+    - hmap : np.ndarray
+        HEALPix map (1D array).
+    - pos : tuple
+        (dec, ra) in radians; center of the thumbnail.
+    - r : float
+        Half-size of the thumbnail in radians.
+    - res : float
+        Pixel resolution in radians.
+    - frame : str
+        Coordinate frame for the input position ('icrs', 'galactic', etc.)
+
+    Returns:
+    - omap : 2D numpy array of shape (N, N)
+        Interpolated values on a gnomonic grid.
+    """
+    from astropy.coordinates import SkyCoord, SkyOffsetFrame
+    import astropy.units as u
+
+    if hmap.ndim>2: raise ValueError
+    if hmap.ndim==2:
+        if hmap.shape[0]!=1: raise ValueError
+        hmap = hmap[0]
+
+    if res is None:
+        npix = hmap.size
+        nside = hp.npix2nside(npix)
+        res = 8192/nside*0.5*utils.arcmin/2
+
+    
+    dec0, ra0 = pos
+    N = int(2 * r / res)
+
+    # Define central sky position and offset frame
+    center = SkyCoord(ra=ra0*u.rad, dec=dec0*u.rad, frame=frame)
+    offset_frame = SkyOffsetFrame(origin=center)
+
+    # Create grid in tangent plane (x, y in degrees)
+    grid_vals = np.linspace(-r, r, N)
+    x, y = np.meshgrid(grid_vals, grid_vals)
+    x = x.ravel()
+    y = y.ravel()
+
+    # Convert tangent-plane grid to sky coordinates
+    offset_coords = SkyCoord(lon=x*u.rad, lat=y*u.rad, frame=offset_frame)
+    sky_coords = offset_coords.transform_to(frame)
+
+    # Convert to HEALPix angles: theta (colatitude), phi (longitude)
+    theta = 0.5 * np.pi - sky_coords.dec.radian
+    phi = sky_coords.ra.radian
+
+    # Interpolate HEALPix map at those angles
+    values = hp.get_interp_val(hmap, theta, phi)
+
+    # Reshape to 2D grid
+    omap = values.reshape((N, N))
+    _,wcs = enmap.geometry(pos=(0,0),res=res,shape=(N,N),proj=proj)
+    return enmap.enmap(omap,wcs)
 
 def matched_filter(imap,fwhm_arcmin,cls=None,noise_uk_arcmin=None,taper_per=12.0):
     taper = 1.0
@@ -49,7 +638,8 @@ def block_smooth(imap,factor,slow=False):
     return omap
 
 
-def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
+def rand_map(shape,wcs,pol=False,lensed_cls=True,fwhm=None,lmax=6000,
+             dtype=np.float32,return_theory=False):
     theory = cosmology.default_theory()
     ells = np.arange(lmax+1)
     if lensed_cls:
@@ -58,17 +648,35 @@ def rand_map(shape,wcs,pol=False,lensed_cls=True,lmax=6000,dtype=np.float32):
         cfunc = theory.uCl
     if not(len(shape)==2):
         raise ValueError
+    if fwhm:
+        bells = gauss_beam(fwhm,ells)**2.
+    else:
+        bells = 1.0
+    ttspec = cfunc('TT',ells)
     if pol:
+        tespec = cfunc('TE',ells)
+        eespec = cfunc('EE',ells)
+        bbspec = cfunc('BB',ells)
         shape = (3,) + shape[-2:]
         ps = np.zeros((3,3,lmax+1))
-        ps[0,0] = cfunc('TT',ells)
-        ps[0,1] = cfunc('TE',ells)
-        ps[1,0] = cfunc('TE',ells)
-        ps[1,1] = cfunc('EE',ells)
-        ps[2,2] = cfunc('BB',ells)
+        ps[0,0] = ttspec*bells
+        ps[0,1] = tespec*bells
+        ps[1,0] = tespec*bells
+        ps[1,1] = eespec*bells
+        ps[2,2] = bbspec*bells
     else:
-        ps = cfunc('TT',ells)
-    return cs.rand_map(shape,wcs,ps,dtype=dtype)
+        ps = ttspec*bells
+    omap = cs.rand_map(shape,wcs,ps,dtype=dtype)
+    if return_theory:
+        odict = {}
+        odict['TT'] = ttspec
+        if pol:
+            odict['TE'] = tespec
+            odict['EE'] = eespec
+            odict['BB'] = bbspec
+        return omap,odict
+    else:
+        return omap
         
         
         
@@ -150,6 +758,7 @@ def gapfill_edge_conv_flat(map, mask, ivar=None, alpha=-3, edge_rad=1*utils.arcm
     The inpainting should be valid up to a radius of tol**(1/alpha)*rmin
     from the hole edge. For the default alpha=-3, rmin=2 and tol=1e-8, this
     gives 15 degrees, which is more than enough for typical gapfilling."""
+    if mask.dtype != np.bool_: raise ValueError
     refpix = np.array(map.shape[-2:])//2
     rmax   = tol**(1/alpha) * rmin
     r      = enmap.shift(map.distance_from(map.pix2sky(refpix)[:,None],rmax=rmax).astype(map.dtype),-refpix,keepwcs=True)
@@ -351,7 +960,7 @@ def area_sqdeg(mask,threshold=0.5):
     return area(mask,threshold)/utils.degree**2.
     
 
-def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
+def cmb_ps(lmax,lensed=True,theory=None):
     from . import cosmology
     if theory is None: theory = cosmology.default_theory()
     ells = np.arange(lmax)
@@ -362,8 +971,11 @@ def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=No
     ps[1,0] = ps[0,1].copy()
     ps[1,1] = clfunc('EE')
     ps[2,2] = clfunc('BB')
+    return ps
+    
+def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=None):
     if len(shape)==2: shape = (3,)+shape
-    return cs.rand_map(shape,wcs,ps,lmax=lmax,dtype=dtype,seed=seed)
+    return cs.rand_map(shape,wcs,cmb_ps(lmax,lensed=lensed,theory=theory),lmax=lmax,dtype=dtype,seed=seed)
 
 def mask_srcs(shape,wcs,srcs_deg,radius_arcmin):
     """
@@ -428,6 +1040,8 @@ def kspace_coadd_alms(kmaps,kbeams,kncovs,fkbeam=1):
     kbeams are the beams
     kncovs are the noise spectra for weighting, *not* beam deconvolved
     fkbeam is the final beam applied
+
+    W = b_l 
     """
 
     kmaps = np.asarray(kmaps)
@@ -487,10 +1101,15 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
 
 
 def galactic_mask(shape,wcs,nside,theta1,theta2,order=0):
+    warnings.warn("Deprecated: Use galactic_mask_equ instead")
     npix = hp.nside2npix(nside)
     orig = np.ones(npix)
     orig[hp.query_strip(nside,theta1,theta2)] = 0
     return reproject.healpix2map(orig, shape, wcs, rot='gal,equ',method='spline',order=order,extensive=False)
+
+def galactic_mask_equ(shape,wcs,nside,theta1,theta2,order=0):
+    return galactic_mask(shape,wcs,nside,np.pi/2.-theta1,np.pi/2.-theta2,order=order)
+
 
 def north_galactic_mask(shape,wcs,nside,order=0):
     return galactic_mask(shape,wcs,nside,0,np.deg2rad(90),order=order)
@@ -499,19 +1118,26 @@ def south_galactic_mask(shape,wcs,nside,order=0):
     return galactic_mask(shape,wcs,nside,np.deg2rad(90),np.deg2rad(180),order=order)
 
 
-def rms_from_ivar(ivar,parea=None,cylindrical=True):
+def rms_from_ivar(ivar,parea=None,cylindrical=True,safe=True,unsafe_tol=1e-3):
     """
     Return rms noise for each pixel in a map in physical units
     (uK-arcmin) given a map of the inverse variance per pixel.
     Optionally, provide a map of the pixel area.
     """
+    assert np.all(np.isfinite(ivar))
     if parea is None:
         shape,wcs = ivar.shape, ivar.wcs
         parea = psizemap(shape,wcs) if cylindrical else enmap.pixsizemap(shape,wcs)
     with np.errstate(divide='ignore', invalid='ignore',over='ignore'):
         var = (1./ivar)
     var[ivar<=0] = 0
-    assert np.all(np.isfinite(var))
+    if safe:
+        if not(np.all(np.isfinite(var))): raise ValueError
+    else:
+        bad = ~np.isfinite(var)
+        unsafe = var[bad].size / var.size
+        if unsafe>1e-3: raise ValueError
+        var[bad] = 0
     return np.sqrt(var*parea)*180*60./np.pi
 
     
@@ -2229,30 +2855,14 @@ def symmat_from_data(data):
 
 
 
-def change_alm_lmax(alms, lmax, dtype=np.complex128):
-    ilmax  = hp.Alm.getlmax(alms.shape[-1])
-    olmax  = lmax
-
-    oshape     = list(alms.shape)
-    oshape[-1] = hp.Alm.getsize(olmax)
-    oshape     = tuple(oshape)
-
-    alms_out   = np.zeros(oshape, dtype = dtype)
-    flmax      = min(ilmax, olmax)
-
-    for m in range(flmax+1):
-        lminc = m
-        lmaxc = flmax
-
-        idx_isidx = hp.Alm.getidx(ilmax, lminc, m)
-        idx_ieidx = hp.Alm.getidx(ilmax, lmaxc, m)
-        idx_osidx = hp.Alm.getidx(olmax, lminc, m)
-        idx_oeidx = hp.Alm.getidx(olmax, lmaxc, m)
-
-        alms_out[..., idx_osidx:idx_oeidx+1] = alms[..., idx_isidx:idx_ieidx+1].copy()
+def change_alm_lmax(alms, lmax, mmax_out=None):
+    ilmax  = hp.Alm.getlmax(alms.shape[-1], mmax_out)
+    immax  = mmax_out or ilmax          # fall back to full m-range
+    ommax  = mmax_out or lmax
+    return np.asarray(hp.sphtfunc.resize_alm(alms, ilmax, immax, lmax, ommax))
 
 
-    return alms_out
+
 
 
 

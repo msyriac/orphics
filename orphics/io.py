@@ -1,20 +1,23 @@
-from __future__ import print_function
+from __future__ import print_function, annotations
 import matplotlib
 import matplotlib as mpl
 from cycler import cycler
-#mpl.rcParams['axes.prop_cycle'] = cycler(color=['#2424f0','#df6f0e','#3cc03c','#d62728','#b467bd','#ac866b','#e397d9','#9f9f9f','#ecdd72','#77becf'])
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-# import seaborn as sns
-# sns.set()
-
-
+import json
+import hashlib
+import pickle
+import yaml
 import numpy as np
 import os,sys,logging,time
 import contextlib
 import itertools
 import traceback
+from pathlib import Path
+from typing import Iterable, Sequence, Union
+from string import Template
+import html
+
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
@@ -48,6 +51,19 @@ def dateversion():
     from datetime import datetime
     return datetime.now().strftime("%Y%m%d")
 
+
+def save_pickle(path, data):
+    with open(path, "wb") as f:
+        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+def load_pickle(path):
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+def print_dict(data):
+    o = json.dumps(data,sort_keys=True, indent=4)
+    print(o)
+    
 # Checksum
 
 def get_hash(file_name):
@@ -59,6 +75,13 @@ def get_hash(file_name):
         # pipe contents of the file through
         md5_returned = hashlib.md5(data).hexdigest()
     return md5_returned
+
+def hash_dict(d):
+    # Serialize with sorted keys for order-independence
+    serialized = json.dumps(d, sort_keys=True, separators=(',', ':'))
+    # Encode string to bytes before hashing
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
 
 ## PARSING
 
@@ -95,7 +118,7 @@ class LoggerWriter:
         self.level(sys.stderr)
 
     
-def get_logger(logname)        :
+def get_logger(logname):
     logging.basicConfig(filename=logname+str(time.time()*10)+".log",level=logging.DEBUG,format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',datefmt='%m-%d %H:%M',filemode='w')
     console = logging.StreamHandler()
     console.setLevel(logging.DEBUG)
@@ -109,8 +132,14 @@ def get_logger(logname)        :
     
 ### FILE I/O
 
+def print_keys_tree(d, indent=0):
+    for key, value in d.items():
+        print("  " * indent + str(key))
+        if isinstance(value, dict):
+            print_keys_tree(value, indent + 1)
+
+
 def config_from_yaml(filename):
-    import yaml
     with open(filename) as f:
         config = yaml.safe_load(f)
     return config
@@ -259,7 +288,7 @@ def hist(data,bins=10,save_file=None,verbose=True,**kwargs):
         if verbose: cprint("Saved histogram plot to "+ save_file,color="g")
     else:
         plt.show()
-
+    plt.close()
     return ret
         
 
@@ -314,7 +343,7 @@ def plot_img(array,filename=None,verbose=True,ftsize=14,high_res=False,flip=True
         else:
             return pl
 
-
+        
 
 def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,crange=None,cmap="planck"):
     from pixell import enmap
@@ -351,7 +380,7 @@ class Plotter(object):
                  yscale="linear",ftsize=14,thk=1,labsize=None,major_tick_size=5,
                  minor_tick_size=3,scalefn = None,projection=None,
                  secax_fns=None,secax_label=None,
-                 secay_fns=None,secay_label=None,**kwargs):
+                 secay_fns=None,secay_label=None,title=None,**kwargs):
         self.scalefn = None
         if scheme is not None:
             if scheme=='Dell' or scheme=='Dl':
@@ -407,6 +436,7 @@ class Plotter(object):
         self.thk = thk
         
         self._fig=plt.figure(**kwargs)
+        if title is not None: self._fig.suptitle(title)
         self._ax=self._fig.add_subplot(1,1,1,projection=projection)
 
 
@@ -838,7 +868,53 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
 class WhiskerPlot(object):
     def __init__(self,means,errs,labels,colors=None,xmin=0.4,xmax=1.0,xlabel='$S_8$',
                  xspanmin=None,xspanmax=None,xspanalpha=None,xspancolor='k',blind=True,xwidth=4,
-                 spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,bolds = None):
+                 spacing=None,xoffset=1.01,one_sided=False,text=True,fontsize=14,bolds = None,
+                 ref_xmin=None,refs=None,ref_ftsize=6, text_ftsize=13,vline=None):
+        """
+        Create a whisker plot.
+
+        Parameters
+        ----------
+        means : list
+            List of means.
+        errs : list
+            List of errors. Can be a list of lists for asymmetric errors.
+        labels : list
+            List of labels.
+        colors : list
+            List of colors.
+        xmin : float
+            Minimum x value.
+        xmax : float
+            Maximum x value.
+        xlabel : str
+            X-axis label.
+        xspanmin : float
+            Minimum x value for a shaded region.
+        xspanmax : float
+            Maximum x value for a shaded region.
+        xspanalpha : float
+            Alpha value for the shaded region.
+        xspancolor : str
+            Color for the shaded region.
+        blind : bool
+            Whether to blind the x-axis.
+        xwidth : float
+            Width of the figure.
+        spacing : float
+            Spacing between the whiskers.
+        xoffset : float
+            Offset for the text labels.
+        one_sided : bool
+            Whether to plot one-sided error bars.
+        text : bool
+            Whether to add text labels.
+        fontsize : int
+            Font size.
+        bolds : list
+            List of bold labels.                    
+        """
+        
         plt.rcParams["font.family"] = "serif"
         plt.rcParams["mathtext.fontset"] = "dejavuserif"
         if spacing is None: spacing = 0.8
@@ -852,12 +928,15 @@ class WhiskerPlot(object):
         ax=f.add_subplot(111)
         ypos_start = 1
         ypos = ypos_start
+        if not(vline is None):
+            ax.axvline(x=vline,ls='--',alpha=0.3,color='k')
+        
         if xspanmin is not None and xspanmax is not None:
             ax.axvspan(xspanmin, xspanmax,
                        alpha=(0.2 if xspanalpha is None else xspanalpha),
                        color=xspancolor)
 
-        for mean, err,label,color,bold in zip(means,errs,labels,colors,bolds):
+        for i,(mean, err,label,color,bold) in enumerate(zip(means,errs,labels,colors,bolds)):
             if one_sided:
                 ax.plot(err,ypos,marker='<',color=color)
                 ax.hlines(ypos,xmin=xmin,xmax=err,label=label,color=color)
@@ -866,7 +945,9 @@ class WhiskerPlot(object):
                     err = np.asarray(err)[:,None]
                 ax.errorbar(mean, ypos, xerr=err ,fmt='o',color=color,capsize=5)
             if text:
-                ax.text( xoffset, ypos-(yinc*ydec), label, fontsize=13,color=color,weight=bold)
+                ax.text( xoffset, ypos-(yinc*ydec), label, fontsize=text_ftsize,color=color,weight=bold)
+                if refs is not None:
+                    if refs[i] is not None: ax.text( ref_xmin, ypos-(yinc*ydec), refs[i], fontsize=ref_ftsize,color=color,weight=bold)
             ypos -= ydec
 
         ax.tick_params(axis='x',which='minor',top='on',direction='in')
@@ -879,7 +960,6 @@ class WhiskerPlot(object):
         ye = max(ypos_start+ydec,ypos-ydec*0.05)
         ax.set_ylim(ys,ye)
         ax.set_xlabel(xlabel, fontsize=fontsize)
-
         # Turn off tick labels
         ax.set_yticklabels([])
         if blind: ax.set_xticklabels([])
@@ -889,3 +969,142 @@ class WhiskerPlot(object):
     def savefig(self,ofname,dpi=200,**kwargs):
         plt.tight_layout()
         plt.savefig(ofname,dpi=dpi,bbox_inches='tight',**kwargs)
+        plt.close(self.fig)
+
+
+
+# Plot gallery
+
+HtmlStr = str
+Pathish = Union[str, Path]
+
+_TEMPLATE = Template("""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>$title</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark light; }
+  html, body { height: 100%; margin: 0; background:#111; color:#eee; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  .wrap { height: 100%; display: grid; grid-template-rows: 1fr auto; }
+  .stage { display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; }
+  img#viewer { max-width: 98vw; max-height: 95vh; object-fit: contain; box-shadow: 0 8px 32px rgba(0,0,0,.4); }
+  .hud { display:flex; justify-content:space-between; gap:1rem; padding:.5rem .75rem; background: rgba(0,0,0,.6); font-size:.9rem; }
+  .filename { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn { opacity:.8; user-select:none; cursor: pointer; }
+  .btn:hover { opacity:1; }
+  .clickzone { position:absolute; top:0; bottom:0; width:50%; }
+  .left { left:0; }
+  .right { right:0; }
+  .clickzone:active { background: rgba(255,255,255,.03); }
+  .help { position: fixed; right: .75rem; bottom: 3.25rem; font-size:.8rem; opacity:.6; }
+  .kbd { padding:.1rem .35rem; border:1px solid #555; border-radius:.3rem; background:#222; }
+  @media (prefers-color-scheme: light) {
+    body { background:#fafafa; color:#111; }
+    .hud { background: rgba(255,255,255,.7); }
+    .kbd { background:#fff; border-color:#ccc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <img id="viewer" alt="">
+    <div class="clickzone left" title="Prev (k/←)"></div>
+    <div class="clickzone right" title="Next (j/→)"></div>
+  </div>
+  <div class="hud">
+    <div id="counter">– / –</div>
+    <div class="filename" id="fname" title=""></div>
+    <div class="btn" id="openbtn" title="Open image in new tab">Open</div>
+  </div>
+</div>
+<div class="help">Keys: <span class="kbd">j</span>/<span class="kbd">→</span> next, <span class="kbd">k</span>/<span class="kbd">←</span> prev, <span class="kbd">f</span> fullscreen, <span class="kbd">g</span> goto, <span class="kbd">h</span> help</div>
+<script>
+  const IMAGES = $images_json;
+  let idx = 0;
+  const imgEl = document.getElementById('viewer');
+  const counterEl = document.getElementById('counter');
+  const fnameEl = document.getElementById('fname');
+  const openBtn = document.getElementById('openbtn');
+
+  function clamp(i){ const n=IMAGES.length; return (i % n + n) % n; }
+
+  function show(i, pushHash=true) {
+    idx = clamp(i);
+    const src = IMAGES[idx];
+    imgEl.src = src;
+    imgEl.alt = src;
+    counterEl.textContent = (idx+1) + " / " + IMAGES.length;
+    fnameEl.textContent = src;
+    fnameEl.title = src;
+    if (pushHash) history.replaceState(null, '', '#' + idx);
+    [idx+1, idx-1].map(j => clamp(j)).forEach(j => {
+      const p = new Image(); p.src = IMAGES[j];
+    });
+  }
+
+  function parseHash() {
+    const h = location.hash.replace('#','');
+    const n = parseInt(h, 10);
+    return Number.isFinite(n) ? clamp(n) : 0;
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.target && ['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'j' || e.key === 'ArrowRight') { show(idx + 1); }
+    else if (e.key === 'k' || e.key === 'ArrowLeft') { show(idx - 1); }
+    else if (e.key === 'f') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+      else document.exitFullscreen().catch(()=>{});
+    } else if (e.key === 'g') {
+      const s = prompt('Go to index (1-' + IMAGES.length + '):');
+      const n = parseInt(s, 10);
+      if (Number.isFinite(n)) show(n-1);
+    } else if (e.key === 'h' || e.key === '?') {
+      alert('Shortcuts:\\n j / → : next\\n k / ← : previous\\n f : toggle fullscreen\\n g : go to index\\n');
+    }
+  });
+
+  document.querySelector('.left').addEventListener('click', () => show(idx-1));
+  document.querySelector('.right').addEventListener('click', () => show(idx+1));
+  openBtn.addEventListener('click', () => window.open(IMAGES[idx], '_blank'));
+
+  let startX = null;
+  imgEl.addEventListener('pointerdown', e => startX = e.clientX);
+  imgEl.addEventListener('pointerup', e => {
+    if (startX === null) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 30) show(idx + (dx < 0 ? 1 : -1));
+    startX = null;
+  });
+
+  window.addEventListener('hashchange', ()=> show(parseHash(), false));
+  show(parseHash());
+</script>
+</body>
+</html>
+""")
+
+def _coerce_paths(images: Iterable[Pathish]) -> Sequence[str]:
+    out = []
+    for p in images:
+        s = str(p if isinstance(p, str) else Path(p))
+        out.append(s.replace("\\\\", "/").replace("\\", "/"))
+    return out
+
+def generate_gallery_html(images: Iterable[Pathish], title: str = "PNG Viewer") -> HtmlStr:
+    imgs = list(_coerce_paths(images))
+    if not imgs:
+        raise ValueError("No images provided.")
+    return _TEMPLATE.substitute(
+        title=html.escape(title),
+        images_json=json.dumps(imgs, ensure_ascii=False),
+    )
+
+def write_gallery_html(output_path: Pathish, images: Iterable[Pathish], title: str = "PNG Viewer") -> Path:
+    out = Path(output_path)
+    out.write_text(generate_gallery_html(images, title=title), encoding="utf-8")
+    return out.resolve()
