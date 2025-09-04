@@ -6,6 +6,12 @@ import scipy
 from scipy.stats import binned_statistic as binnedstat,chi2
 from scipy.optimize import curve_fit
 import itertools
+from collections import defaultdict
+from typing import Any, Dict, Hashable, Optional, Tuple
+try:
+    from mpi4py import MPI
+except Exception:
+    MPI = None
 
 
 def extrapolate_power_law(x, y, x_extra, x_percentile=30.0):
@@ -904,3 +910,500 @@ def timeit(method):
         return result
 
     return timed
+
+
+
+
+class Statistics:
+    """
+    Improved version of Stats: MPI-aware container for accumulating statistics or elementwise sums of arrays.
+
+    This class supports two mutually-exclusive accumulation modes, per label:
+
+    1. **Stats mode** (via :meth:`add` or :meth:`extend`):
+       - Accepts 1-D sample vectors (shape ``(d,)``).
+       - Tracks the sample count, sum vector, and second-moment cross product.
+       - After MPI allreduce, allows queries for mean and covariance.
+
+    2. **Stack mode** (via :meth:`add_stack`):
+       - Accepts arbitrary-shape arrays.
+       - Tracks only the elementwise sum and number of stacked arrays.
+       - After MPI allreduce, allows queries for the stack sum and count.
+
+    Each label (a hashable identifier) can be assigned to exactly one mode
+    (stats or stack). The chosen mode must be consistent across all MPI ranks.
+
+   Example (stats mode with MPI, analytic check)::
+
+        from mpi4py import MPI
+        import numpy as np
+
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+
+        # Each rank contributes the vector [rank+1, 2*(rank+1)]
+        x = np.array([rank + 1, 2 * (rank + 1)], dtype=float)
+
+        stats = Statistics(comm)
+        stats.add("vectors", x)
+        stats.allreduce()
+
+        # Analytic expectations
+        # Global count = number of ranks
+        expected_count = size
+
+        # Sum over ranks = sum_{r=1..size} [r, 2r]
+        expected_sum = np.array([
+            size * (size + 1) / 2,
+            2 * size * (size + 1) / 2
+        ])
+        expected_mean = expected_sum / expected_count
+
+        assert stats.count("vectors") == expected_count
+        assert np.allclose(stats.mean("vectors"), expected_mean)
+    
+    Example (stack mode with MPI, analytic check)::
+
+        from mpi4py import MPI
+        import numpy as np
+
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+
+        base = np.ones((2,2))
+        arr = (rank + 1) * base
+
+        stats = Statistics(comm)
+        stats.add_stack("matrices", arr)
+        stats.allreduce()
+
+        expected_sum = base * (size * (size+1) / 2)
+        assert np.allclose(stats.stack_sum("matrices"), expected_sum)
+        assert stats.stack_count("matrices") == size
+
+
+    Parameters
+    ----------
+    comm : mpi4py.MPI.Comm, optional
+        The MPI communicator. If None, runs in single-process mode.
+    dtype : numpy dtype, default numpy.float64
+        Data type for all accumulated values.
+    
+    """
+
+    def __init__(self, comm: Optional[Any] = None, dtype=np.float64):
+        """
+        Initialize an empty Statistics container.
+
+        Parameters
+        ----------
+        comm : mpi4py.MPI.Comm, optional
+            The MPI communicator. If None, runs in single-process mode.
+        dtype : numpy dtype, default numpy.float64
+            Data type for all accumulated values.
+        """
+        self.comm = comm
+        self.dtype = np.dtype(dtype)
+
+        # Stats-mode partials
+        self._n: Dict[Hashable, int] = defaultdict(int)
+        self._sum: Dict[Hashable, np.ndarray] = {}
+        self._cross: Dict[Hashable, np.ndarray] = {}
+        self._dim_stats: Dict[Hashable, int] = {}
+
+        # Stack-mode partials
+        self._k: Dict[Hashable, int] = defaultdict(int)                 # local count of stacked objects
+        self._stack_sum: Dict[Hashable, np.ndarray] = {}                # local sum over stacked arrays
+        self._shape_stack: Dict[Hashable, Tuple[int, ...]] = {}         # declared shape per label
+
+        # Global reduced results
+        self._N: Dict[Hashable, int] = {}
+        self._SUM: Dict[Hashable, np.ndarray] = {}
+        self._CROSS: Dict[Hashable, np.ndarray] = {}
+
+        self._K: Dict[Hashable, int] = {}
+        self._STACK_SUM: Dict[Hashable, np.ndarray] = {}
+
+        self._reduced = False
+
+    # utilities
+    @property
+    def mpi_enabled(self) -> bool:
+        """
+        Whether MPI is enabled for this instance.
+
+        Returns
+        -------
+        bool
+            True if an MPI communicator is provided and mpi4py is available,
+            otherwise False.
+        """
+        return (self.comm is not None) and (MPI is not None)
+
+    def _ensure_stats_label(self, label: Hashable, d: int):
+        # prevent mixing modes on same label
+        if label in self._shape_stack:
+            raise ValueError(f"Label {label!r} already used in stack mode.")
+        if label not in self._dim_stats:
+            self._dim_stats[label] = int(d)
+            self._sum[label] = np.zeros(d, dtype=self.dtype)
+            self._cross[label] = np.zeros((d, d), dtype=self.dtype)
+        elif self._dim_stats[label] != d:
+            raise ValueError(f"Stats dim mismatch for {label!r}: {self._dim_stats[label]} vs {d}")
+
+    def _ensure_stack_label(self, label: Hashable, shape: Tuple[int, ...]):
+        # prevent mixing modes on same label
+        if label in self._dim_stats:
+            raise ValueError(f"Label {label!r} already used in stats mode.")
+        if label not in self._shape_stack:
+            self._shape_stack[label] = tuple(int(s) for s in shape)
+            self._stack_sum[label] = np.zeros(shape, dtype=self.dtype)
+        elif self._shape_stack[label] != tuple(shape):
+            raise ValueError(f"Stack shape mismatch for {label!r}: {self._shape_stack[label]} vs {tuple(shape)}")
+
+    # ingestion: stats mode
+    def add(self, label: Hashable, x: Any):
+        """
+        Add a single 1-D sample vector to a stats-mode label.
+
+        Parameters
+        ----------
+        label : hashable
+            The label under which to accumulate statistics.
+        x : array_like, shape (d,)
+            Sample vector to add.
+
+        Raises
+        ------
+        ValueError
+            If `x` is not 1-D or if label is already in stack mode.
+        """
+        x = np.asarray(x, dtype=self.dtype).ravel()
+        if x.ndim != 1:
+            raise ValueError("Samples must be 1-D vectors.")
+        d = x.shape[0]
+        self._ensure_stats_label(label, d)
+        self._n[label] += 1
+        self._sum[label] += x
+        self._cross[label] += np.outer(x, x)
+
+    def extend(self, label: Hashable, X: Any):
+        """
+        Add multiple samples to a stats-mode label.
+
+        Parameters
+        ----------
+        label : hashable
+            The label under which to accumulate statistics.
+        X : array_like, shape (m, d) or (d,)
+            - If shape (m, d): m samples of dimension d.
+            - If shape (d,): equivalent to calling :meth:`add`.
+
+        Raises
+        ------
+        ValueError
+            If `X` is not 1-D or 2-D, or if label is already in stack mode.
+        """
+        X = np.asarray(list(X) if not hasattr(X, "shape") else X, dtype=self.dtype)
+        if X.ndim == 1:
+            self.add(label, X)
+            return
+        if X.ndim != 2:
+            raise ValueError("X must be (m, d) or (d,).")
+        m, d = X.shape
+        self._ensure_stats_label(label, d)
+        self._n[label] += m
+        self._sum[label] += X.sum(axis=0)
+        self._cross[label] += X.T @ X   # BLAS-backed Gram update
+
+    # ingestion: stack mode
+    def add_stack(self, label: Hashable, arr: Any):
+        """
+        Add an arbitrary-shape array to a stack-mode label.
+
+        Only the elementwise sum and count of arrays are tracked.
+
+        Parameters
+        ----------
+        label : hashable
+            The label under which to accumulate the stack sum.
+        arr : array_like
+            Array to add. May have any shape; must be consistent per label.
+
+        Raises
+        ------
+        ValueError
+            If array shape mismatches previous arrays for the same label,
+            or if label is already in stats mode.
+        """
+        A = np.asarray(arr, dtype=self.dtype)
+        if A.ndim == 0:
+            # Allow scalars, treat as shape ()
+            shape = ()
+        else:
+            shape = A.shape
+        self._ensure_stack_label(label, shape)
+        self._k[label] += 1
+        self._stack_sum[label] += A
+
+    # reduction helpers
+    def _union_dims(self):
+        """
+        Build union of label->dim/shape for both modes across ranks.
+        Ensures all ranks have consistent dims/shapes for each label.
+        """
+        local = {
+            "stats": [(lab, d) for lab, d in self._dim_stats.items()],
+            "stack": [(lab, shp) for lab, shp in self._shape_stack.items()],
+        }
+        if self.mpi_enabled:
+            all_lists = self.comm.allgather(local)
+            stats_union: Dict[Hashable, int] = {}
+            stack_union: Dict[Hashable, Tuple[int, ...]] = {}
+            for entry in all_lists:
+                for lab, d in entry["stats"]:
+                    if lab in stats_union and stats_union[lab] != d:
+                        raise ValueError(f"Stats dim mismatch for {lab!r} across ranks.")
+                    if (lab in stack_union):
+                        raise ValueError(f"Label {lab!r} used in stats and stack across ranks.")
+                    stats_union[lab] = d
+                for lab, shp in entry["stack"]:
+                    shp = tuple(shp)
+                    if lab in stack_union and stack_union[lab] != shp:
+                        raise ValueError(f"Stack shape mismatch for {lab!r} across ranks.")
+                    if (lab in stats_union):
+                        raise ValueError(f"Label {lab!r} used in stats and stack across ranks.")
+                    stack_union[lab] = shp
+            return stats_union, stack_union
+        else:
+            return dict(self._dim_stats), dict(self._shape_stack)
+
+    def allreduce(self):
+        """
+        Perform an MPI allreduce to combine contributions across all ranks.
+
+        After calling this, the global statistics or stack sums can be queried.
+
+        Reductions performed:
+        - Stats mode: sample counts, sums, and cross products.
+        - Stack mode: stack counts and elementwise sums.
+
+        Raises
+        ------
+        ValueError
+            If different ranks disagree on label dimensions/shapes or mode.
+        """
+        stats_union, stack_union = self._union_dims()
+
+        # Ensure zero entries exist locally for all globally known labels
+        for lab, d in stats_union.items():
+            if lab not in self._dim_stats:
+                self._ensure_stats_label(lab, d)  # creates zero arrays; n remains 0
+        for lab, shp in stack_union.items():
+            if lab not in self._shape_stack:
+                self._ensure_stack_label(lab, shp)  # creates zero arrays; k remains 0
+
+        # Reduce stats
+        for lab, d in stats_union.items():
+            n_loc = np.array(self._n.get(lab, 0), dtype=np.int64)
+            sum_loc = self._sum[lab]
+            cross_loc = self._cross[lab]
+            if self.mpi_enabled:
+                self.comm.Allreduce(MPI.IN_PLACE, n_loc, op=MPI.SUM)
+                self.comm.Allreduce(MPI.IN_PLACE, sum_loc, op=MPI.SUM)
+                self.comm.Allreduce(MPI.IN_PLACE, cross_loc, op=MPI.SUM)
+            self._N[lab] = int(n_loc)
+            self._SUM[lab] = sum_loc
+            self._CROSS[lab] = cross_loc
+
+        # Reduce stack
+        for lab, shp in stack_union.items():
+            k_loc = np.array(self._k.get(lab, 0), dtype=np.int64)
+            stk_loc = self._stack_sum[lab]
+            if self.mpi_enabled:
+                self.comm.Allreduce(MPI.IN_PLACE, k_loc, op=MPI.SUM)
+                self.comm.Allreduce(MPI.IN_PLACE, stk_loc, op=MPI.SUM)
+            self._K[lab] = int(k_loc)
+            self._STACK_SUM[lab] = stk_loc
+
+        self._reduced = True
+
+    # queries
+    def labels_stats(self):
+        """
+        Return labels currently in stats mode.
+
+        Returns
+        -------
+        list of hashable
+            Labels in stats mode. After :meth:`allreduce`, includes all labels
+            seen across all ranks.
+        """
+        return list(self._SUM.keys()) if self._reduced else list(self._dim_stats.keys())
+
+    def labels_stack(self):
+        """
+        Return labels currently in stack mode.
+
+        Returns
+        -------
+        list of hashable
+            Labels in stack mode. After :meth:`allreduce`, includes all labels
+            seen across all ranks.
+        """
+        return list(self._STACK_SUM.keys()) if self._reduced else list(self._shape_stack.keys())
+
+    def count(self, label: Hashable) -> int:
+        """
+        Return the global sample count for a stats-mode label.
+
+        Parameters
+        ----------
+        label : hashable
+            The label of interest.
+
+        Returns
+        -------
+        int
+            Number of samples across all ranks.
+
+        Raises
+        ------
+        KeyError
+            If the label is not in stats mode.
+        RuntimeError
+            If called before :meth:`allreduce`.
+        """
+        self._check_reduced()
+        if label not in self._N:
+            raise KeyError(f"{label!r} is not a stats-mode label.")
+        return self._N[label]
+
+    def stack_count(self, label: Hashable) -> int:
+        """
+        Return the global count of arrays stacked under a label.
+
+        Parameters
+        ----------
+        label : hashable
+            The label of interest.
+
+        Returns
+        -------
+        int
+            Number of arrays stacked across all ranks.
+
+        Raises
+        ------
+        KeyError
+            If the label is not in stack mode.
+        RuntimeError
+            If called before :meth:`allreduce`.
+        """
+        self._check_reduced()
+        if label not in self._K:
+            raise KeyError(f"{label!r} is not a stack-mode label.")
+        return self._K[label]
+
+    def mean(self, label: Hashable) -> np.ndarray:
+        """
+        Compute the global mean vector for a stats-mode label.
+
+        Parameters
+        ----------
+        label : hashable
+            The label of interest.
+
+        Returns
+        -------
+        ndarray, shape (d,)
+            Mean vector. Returns NaN if count is zero.
+
+        Raises
+        ------
+        KeyError
+            If the label is not in stats mode.
+        RuntimeError
+            If called before :meth:`allreduce`.
+        """
+        self._check_reduced()
+        if label not in self._SUM:
+            raise KeyError(f"{label!r} is not a stats-mode label.")
+        n = self._N[label]
+        return self._SUM[label] / n if n > 0 else np.full(self._SUM[label].shape, np.nan, dtype=self.dtype)
+
+    def cov(self, label: Hashable, ddof: int = 1) -> np.ndarray:
+        """
+        Compute the global covariance matrix for a stats-mode label.
+
+        Parameters
+        ----------
+        label : hashable
+            The label of interest.
+        ddof : int, default=1
+            Delta degrees of freedom. The divisor is (n - ddof).
+
+        Returns
+        -------
+        ndarray, shape (d, d)
+            Covariance matrix. Returns NaN if insufficient samples.
+
+        Raises
+        ------
+        KeyError
+            If the label is not in stats mode.
+        RuntimeError
+            If called before :meth:`allreduce`.
+        """
+        self._check_reduced()
+        if label not in self._CROSS:
+            raise KeyError(f"{label!r} is not a stats-mode label.")
+        n = self._N[label]
+        if n <= ddof:
+            d = self._SUM[label].shape[0]
+            return np.full((d, d), np.nan, dtype=self.dtype)
+        S = self._SUM[label]
+        C = self._CROSS[label]
+        return (C - np.outer(S, S) / n) / (n - ddof)
+
+    def stack_sum(self, label: Hashable) -> np.ndarray:
+        """
+        Return the global elementwise sum of arrays stacked under a label.
+
+        Parameters
+        ----------
+        label : hashable
+            The label of interest.
+
+        Returns
+        -------
+        ndarray
+            Array of same shape as inputs to :meth:`add_stack`.
+
+        Raises
+        ------
+        KeyError
+            If the label is not in stack mode.
+        RuntimeError
+            If called before :meth:`allreduce`.
+        """
+        self._check_reduced()
+        if label not in self._STACK_SUM:
+            raise KeyError(f"{label!r} is not a stack-mode label.")
+        return self._STACK_SUM[label]
+
+    def _check_reduced(self):
+        if not self._reduced:
+            raise RuntimeError("Call .allreduce() before requesting global stats/stack.")
+
+
+
+
+
+
+
+
+
+        

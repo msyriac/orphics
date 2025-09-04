@@ -114,6 +114,13 @@ def get_logger(logname):
     
 ### FILE I/O
 
+def print_keys_tree(d, indent=0):
+    for key, value in d.items():
+        print("  " * indent + str(key))
+        if isinstance(value, dict):
+            print_keys_tree(value, indent + 1)
+
+
 def config_from_yaml(filename):
     import yaml
     with open(filename) as f:
