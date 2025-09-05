@@ -977,6 +977,8 @@ def rand_cmb_sim(shape,wcs,lmax,lensed=True,theory=None,dtype=np.float32,seed=No
     if len(shape)==2: shape = (3,)+shape
     return cs.rand_map(shape,wcs,cmb_ps(lmax,lensed=lensed,theory=theory),lmax=lmax,dtype=dtype,seed=seed)
 
+        
+
 def mask_srcs(shape,wcs,srcs_deg,radius_arcmin):
     """
     Create a mask of circular holes in rectangular pixelization given 
@@ -1846,6 +1848,8 @@ def gauss_beam(ell,fwhm):
 def sigma_from_fwhm(fwhm):
     return fwhm/2./np.sqrt(2.*np.log(2.))
 
+def fwhm_from_sigma(sigma):
+    return 2.*np.sqrt(2.*np.log(2.)) * sigma
 
 
 def mask_kspace(shape,wcs, lxcut = None, lycut = None, lmin = None, lmax = None):
@@ -2862,6 +2866,17 @@ def change_alm_lmax(alms, lmax, mmax_out=None):
 
 
 
+def circular_mask(shape,wcs,center_deg,radius_deg,apo_deg=None,smooth_deg=None,lmax=None):
+    srcs_deg = np.zeros((2,1))
+    srcs_deg[:,0] = center_deg[:]
+    mask = 1. - mask_srcs(shape,wcs,srcs_deg,radius_deg*60.)
+    if apo_deg:
+        mask = cosine_apodize(mask,apo_deg)
+    if smooth_deg:
+        ells = np.arange(lmax+1)
+        lfilter = gauss_beam(ells,fwhm_from_sigma(smooth_deg))
+        mask = cs.filter(mask,lfilter,lmax=lmax)
+    return mask
 
 
 
