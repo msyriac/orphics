@@ -8,6 +8,7 @@ from scipy.optimize import curve_fit
 import itertools
 from collections import defaultdict
 from typing import Any, Dict, Hashable, Optional, Tuple
+from pathlib import Path
 try:
     from mpi4py import MPI
 except Exception:
@@ -1421,8 +1422,112 @@ class Statistics:
         if not self._reduced:
             raise RuntimeError("Call .allreduce() before requesting global stats/stack.")
 
+    def _to_state(self) -> dict:
+        """
+        Build a versioned, pickle-friendly snapshot of the *reduced* stats.
+        Requires that .allreduce() has already been called.
+        """
+        self._check_reduced()
+        # Store dtype as NumPy dtype string (e.g., '<f8')
+        dtype_str = str(self.dtype.str)
+
+        # Convert keys to a list to preserve a deterministic order on reload
+        stats_labels = list(self._SUM.keys())
+        stack_labels = list(self._STACK_SUM.keys())
+
+        state = {
+            "version": 1,
+            "dtype": dtype_str,
+            "stats": {
+                "labels": stats_labels,
+                "N": {lab: int(self._N[lab]) for lab in stats_labels},
+                "SUM": {lab: self._SUM[lab] for lab in stats_labels},       # (d,)
+                "CROSS": {lab: self._CROSS[lab] for lab in stats_labels},   # (d,d)
+            },
+            "stack": {
+                "labels": stack_labels,
+                "SUM": {lab: self._STACK_SUM[lab] for lab in stack_labels},  # arbitrary shape
+            },
+        }
+        return state
 
 
+    def save_reduced(self, path: str | Path, compressed: bool = False, root_rank=0):
+        """
+        Save reduced statistics to a .npz file (portable, numpy-only), if root.
+
+        Parameters
+        ----------
+        path : str or Path
+            Destination file.
+        compressed : bool, default True
+            Use np.savez_compressed (smaller, slower) vs np.savez (larger, faster).
+        """
+        self._check_reduced()
+        if self.mpi_enabled and not (self.comm.Get_rank()==root_rank):
+            return
+
+        arrays = {}
+        # stats labels
+        for lab in self._SUM.keys():
+            key_base = f"stats/{lab}"
+            arrays[f"{key_base}/N"] = np.array(self._N[lab], dtype=np.int64)
+            arrays[f"{key_base}/SUM"] = self._SUM[lab]
+            arrays[f"{key_base}/CROSS"] = self._CROSS[lab]
+        # stack labels
+        for lab in self._STACK_SUM.keys():
+            key_base = f"stack/{lab}"
+            arrays[f"{key_base}/SUM"] = self._STACK_SUM[lab]
+
+        path = Path(path)
+        saver = np.savez_compressed if compressed else np.savez
+        saver(path, **arrays)
+
+    @classmethod
+    def load_reduced(cls, path: str | Path, comm=None, dtype=np.float64):
+        """
+        Load reduced statistics from a .npz file created by save_reduced_npz.
+
+        Parameters
+        ----------
+        path : str or Path
+            Source file.
+        comm : MPI.Comm or None
+            Optional MPI communicator for the returned object.
+
+        Returns
+        -------
+        acc : LabeledVectorAllreduce
+            A new accumulator with reduced stats populated.
+        """
+        path = Path(path)
+        data = np.load(path, allow_pickle=False)
+
+        acc = cls(comm=comm, dtype=dtype)  # dtype can be inferred if needed
+        acc._N, acc._SUM, acc._CROSS = {}, {}, {}
+        acc._STACK_SUM = {}
+        acc._dim_stats, acc._dim_stack = {}, {}
+        for key in data.files:
+            parts = key.split("/")
+            if parts[0] == "stats":
+                lab = parts[1]
+                if parts[2] == "N":
+                    acc._N[lab] = int(data[key])
+                elif parts[2] == "SUM":
+                    arr = np.array(data[key])
+                    acc._SUM[lab] = arr
+                    acc._dim_stats[lab] = arr.shape[0]
+                elif parts[2] == "CROSS":
+                    acc._CROSS[lab] = np.array(data[key])
+            elif parts[0] == "stack":
+                lab = parts[1]
+                if parts[2] == "SUM":
+                    arr = np.array(data[key])
+                    acc._STACK_SUM[lab] = arr
+                    acc._dim_stack[lab] = arr.shape
+
+        acc._reduced = True
+        return acc
 
 
 

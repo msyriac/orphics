@@ -16,7 +16,7 @@ import traceback
 from pathlib import Path
 from typing import Iterable, Sequence, Union
 from string import Template
-import html
+import html, h5py
 
 
 try:
@@ -37,6 +37,7 @@ class DummyFile(object):
 
 @contextlib.contextmanager
 def nostdout():
+    # use this context to suppress output from a block
     save_stdout = sys.stdout
     sys.stdout = DummyFile()
     yield
@@ -46,6 +47,7 @@ def nostdout():
 @contextlib.contextmanager
 def no_context():
     yield None
+
 
 def dateversion():
     from datetime import datetime
@@ -63,6 +65,35 @@ def load_pickle(path):
 def print_dict(data):
     o = json.dumps(data,sort_keys=True, indent=4)
     print(o)
+
+def save_dict(path, d, compression="gzip", compression_opts=4):
+    def write_group(g, sub):
+        for k, v in sub.items():
+            if isinstance(v, dict):
+                write_group(g.require_group(k), v)
+            else:
+                if not isinstance(v, np.ndarray):
+                    raise TypeError(f"Leaf at {g.name}/{k} is not a numpy array")
+                # create_dataset overwrites if exists; use maxshape/chunks if you want resizable datasets
+                g.create_dataset(
+                    k, data=v, compression=compression, compression_opts=compression_opts
+                )
+    with h5py.File(path, "w") as f:
+        write_group(f, d)
+
+def load_dict(path):
+    def read_group(g):
+        out = {}
+        for k in g:
+            obj = g[k]
+            if isinstance(obj, h5py.Group):
+                out[k] = read_group(obj)
+            else:  # Dataset
+                out[k] = obj[()]  # read into ndarray
+        return out
+    with h5py.File(path, "r") as f:
+        return read_group(f)
+    
     
 # Checksum
 
@@ -843,26 +874,6 @@ def fisher_plot(chi2ds,xval,yval,paramlabelx,paramlabely,thk=3,cols=itertools.re
         print(bcolors.OKGREEN+"Saved plot to", save_file+bcolors.ENDC)
     return fig,ax
 
-
-# class rpyplot(object):
-#     """
-#     This wrapper interface provides a way to quickly create fig and axs
-#     matplotlib objects for displaying data in a one or two panel plot
-#     where the second panel shows residuals. Boring stuff like titles, axes and
-#     labels are wrapped neatly.
-#     """
-
-#     def __init__(self,):
-#         pass
-
-
-#     def plot(self,x,y,xerr=None,yerr=None,label=None,rtag=None,scatter=False):
-#         pass
-
-#     def addres(self,tag1,tag2,rerr=None):
-#         pass
-
-#     def done(self,filename=None):
         
 
 class WhiskerPlot(object):
