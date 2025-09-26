@@ -2446,7 +2446,11 @@ def flux(thumbs,aperture_radius,annulus_width=None,modrmap=None,pixsizemap=None)
     mean = thumbs[...,np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean(axis=-1)
     if pixsizemap is None: pixsizemap = thumbs.pixsizemap()
     # Subtract the mean, multiply by pixel areas and sum
-    return (((thumbs-mean[:,None,None])*pixsizemap)[...,modrmap<=aperture_radius]).sum(axis=-1)
+    if thumbs.ndim>2:
+        omean = mean[:,None,None]
+    else:
+        omean = mean
+    return (((thumbs-omean)*pixsizemap)[...,modrmap<=aperture_radius]).sum(axis=-1)
 
 
 
