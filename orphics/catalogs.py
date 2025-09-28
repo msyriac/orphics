@@ -10,6 +10,25 @@ from astropy.io import fits
 from orphics import maps
 
 
+def filter_fits(infile, outfile, colname='SNR', threshold=5):
+    with fits.open(infile) as hdul:
+        # Copy everything so headers/extensions are preserved
+        hdul_out = fits.HDUList([hdu.copy() for hdu in hdul])
+
+        # Find the first table HDU
+        for hdu in hdul_out:
+            if isinstance(hdu, (fits.BinTableHDU, fits.TableHDU)):
+                data = hdu.data
+                if colname not in data.names:
+                    raise ValueError(f"No {colname} column found in the first table HDU.")
+                mask = data[colname] > threshold
+                hdu.data = data[mask]
+                break
+
+        # Write to new file
+        hdul_out.writeto(outfile, overwrite=True)
+
+
 def reconstruct_velocities(ras,decs,zs,
                            ras_rand,decs_rand,zs_rand,
                            zeff=0.55,bg=1.92, # cmass defaults
