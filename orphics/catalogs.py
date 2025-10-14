@@ -10,23 +10,63 @@ from astropy.io import fits
 from orphics import maps
 
 
-def filter_fits(infile, outfile, colname='SNR', threshold=5):
+def filter_fits(
+    infile,
+    outfile,
+    colname='SNR',
+    threshold=5,
+    drop_cols=None,
+    strict=True
+):
+    """
+    Filter rows in the first table HDU by (colname > threshold), optionally drop columns.
+    """
     with fits.open(infile) as hdul:
         # Copy everything so headers/extensions are preserved
         hdul_out = fits.HDUList([hdu.copy() for hdu in hdul])
 
         # Find the first table HDU
-        for hdu in hdul_out:
+        for i, hdu in enumerate(hdul_out):
             if isinstance(hdu, (fits.BinTableHDU, fits.TableHDU)):
                 data = hdu.data
+                if data is None or data.size == 0:
+                    break
+
                 if colname not in data.names:
                     raise ValueError(f"No {colname} column found in the first table HDU.")
+
+                # Row filter mask (compute before possibly dropping the col used for filtering)
                 mask = data[colname] > threshold
-                hdu.data = data[mask]
+
+                if drop_cols:
+                    # Build keep list
+                    missing = [n for n in drop_cols if n not in data.names]
+                    if missing and strict:
+                        raise ValueError(f"Columns not found: {missing}")
+                    drop_set = set(drop_cols)
+                    keep_cols = [n for n in data.names if n not in drop_set]
+
+                    if not keep_cols:
+                        raise ValueError("Dropping all columns would leave an empty table.")
+
+                    # Rebuild HDU with only the kept columns, then apply the row mask
+                    hdu_cls = fits.BinTableHDU if isinstance(hdu, fits.BinTableHDU) else fits.TableHDU
+                    new_cols = fits.ColDefs([hdu.columns[name] for name in keep_cols])
+                    new_hdu = hdu_cls.from_columns(new_cols, header=hdu.header, name=hdu.name)
+
+                    # Apply the row mask (same row order as original)
+                    new_hdu.data = new_hdu.data[mask]
+
+                    hdul_out[i] = new_hdu
+                else:
+                    # No column drop: simple in-place row filter is fine
+                    hdu.data = data[mask]
+
                 break
 
         # Write to new file
         hdul_out.writeto(outfile, overwrite=True)
+
 
 
 def reconstruct_velocities(ras,decs,zs,
