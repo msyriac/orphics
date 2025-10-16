@@ -2416,7 +2416,7 @@ def cutout_gnomonic(map,rot=None,coord=None,
 
 ### STACKING
 
-def flux(thumbs,aperture_radius,annulus_width=None,modrmap=None,pixsizemap=None):
+def flux(thumbs,aperture_radius,annulus_width=None,modrmap=None,pixsizemap=None,debug_plot=None):
     """
     Flux from aperture photometry.
 
@@ -2443,13 +2443,29 @@ def flux(thumbs,aperture_radius,annulus_width=None,modrmap=None,pixsizemap=None)
     if modrmap is None: modrmap = thumbs.modrmap()
     if annulus_width is None: annulus_width = (np.sqrt(2.)-1.) * aperture_radius
     # Get the mean background level from the annulus
-    mean = thumbs[...,np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))].mean(axis=-1)
     if pixsizemap is None: pixsizemap = thumbs.pixsizemap()
+    annulus_mask = np.logical_and(modrmap>aperture_radius,modrmap<(aperture_radius+annulus_width))
+    if debug_plot is not None:
+        from orphics import io
+        oth = thumbs.copy()
+        oth[...,annulus_mask] = np.nan
+        io.plot_img(oth,f'{debug_plot}_annulus.png')
+    num = (thumbs * pixsizemap)[..., annulus_mask].sum(axis=-1)
+    den = pixsizemap[annulus_mask].sum()
+    mean = num / den
+
     # Subtract the mean, multiply by pixel areas and sum
     if thumbs.ndim>2:
         omean = mean[:,None,None]
     else:
         omean = mean
+
+    if debug_plot is not None:
+        oth = thumbs.copy()
+        oth[...,modrmap<=aperture_radius] = np.nan
+        io.plot_img(oth,f'{debug_plot}_disk.png')
+        io.plot_img(thumbs-omean,f'{debug_plot}_meansub.png')
+        
     return (((thumbs-omean)*pixsizemap)[...,modrmap<=aperture_radius]).sum(axis=-1)
 
 
