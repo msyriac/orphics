@@ -6,21 +6,48 @@ Utilities for dealing with galaxy catalogs, projecting catalogs into pixelated m
 import numpy as np
 from pixell import enmap,utils
 import healpy as hp
-from astropy.io import fits
 from orphics import maps
-
+import pandas as pd
+from astropy.io import fits
+from astropy.table import Table
+import numpy as np
 
 def filter_fits(
-    infile,
-    outfile,
-    colname='SNR',
-    threshold=5,
-    drop_cols=None,
-    strict=True
+        infile,
+        conditions=None,              # dict like {"SNR":5, "LAMBDA":20}; all must pass (logical AND)
+        drop_cols=None,
+        strict=True,
+        # Mask-related
+        mask=None,
+        mask_threshold=0.5,
+        ra_name='RADeg',
+        dec_name='decDeg',
+        verbose=True,
+        outfile=None,
 ):
     """
-    Filter rows in the first table HDU by (colname > threshold), optionally drop columns.
+    Filter rows in the first table HDU by multiple conditions and an optional sky mask.
+
+    Parameters
+    ----------
+    infile : str
+        Input FITS file (catalog).
+    conditions : str | None
+        If provided, apply the SQLite query
+    drop_cols : list[str] | None
+        Column names to drop from the output (after filtering rows).
+    strict : bool
+        If True, missing columns in `thresholds`/`drop_cols`/`ra_name`/`dec_name` raise; otherwise they’re skipped.
+    mask : enmap.ndmap | None
+        A pixell/enmap mask (or any FITS/WCS mask). Rows whose (RA, Dec) sample < `mask_threshold` are dropped.
+    mask_threshold : float
+        Minimum mask value to keep a row (>=).
+    ra_name, dec_name : str
+        Column names (degrees) used to sample the mask.
+    outfile : str, optional
+        Optional output FITS file (filtered copy) to save to.
     """
+
     with fits.open(infile) as hdul:
         # Copy everything so headers/extensions are preserved
         hdul_out = fits.HDUList([hdu.copy() for hdu in hdul])
@@ -32,40 +59,64 @@ def filter_fits(
                 if data is None or data.size == 0:
                     break
 
-                if colname not in data.names:
-                    raise ValueError(f"No {colname} column found in the first table HDU.")
+                # Build combined row mask (start true)
+                df = Table(hdu.data).to_pandas()
+                row_mask = np.ones(len(df), dtype=bool)
+                if verbose: print(f"Starting with {len(data)} objects.")
+                
+                # Column thresholds
+                if conditions is not None:
+                    try:
+                        query_mask = df.query(conditions, engine='python').index
+                        mask_arr = np.zeros(len(df), dtype=bool)
+                        mask_arr[query_mask] = True
+                        row_mask &= mask_arr
+                    except Exception as e:
+                        raise ValueError(f"Failed to evaluate query '{conditions}': {e}")
+                            
 
-                # Row filter mask (compute before possibly dropping the col used for filtering)
-                mask = data[colname] > threshold
+                # Sky mask (optional)
+                if mask is not None:
+                    for needed in (ra_name, dec_name):
+                        if needed not in data.names:
+                            raise ValueError(f"Masking requested but '{needed}' column not found.")
+                    else:
+                        pos = np.zeros((2,len(data)))
+                        pos[0,:] = np.asarray(data[dec_name], dtype=float)*utils.degree
+                        pos[1,:] = np.asarray(data[ra_name], dtype=float)*utils.degree
+                        row_mask &= (mask.at(pos,order=0) >= mask_threshold)
 
+                # If we ended up masking everything
+                if not np.any(row_mask):
+                    raise ValueError("All rows dropped.")
+
+                # Drop columns (after computing masks)
                 if drop_cols:
-                    # Build keep list
                     missing = [n for n in drop_cols if n not in data.names]
                     if missing and strict:
                         raise ValueError(f"Columns not found: {missing}")
                     drop_set = set(drop_cols)
                     keep_cols = [n for n in data.names if n not in drop_set]
-
                     if not keep_cols:
                         raise ValueError("Dropping all columns would leave an empty table.")
-
-                    # Rebuild HDU with only the kept columns, then apply the row mask
                     hdu_cls = fits.BinTableHDU if isinstance(hdu, fits.BinTableHDU) else fits.TableHDU
                     new_cols = fits.ColDefs([hdu.columns[name] for name in keep_cols])
                     new_hdu = hdu_cls.from_columns(new_cols, header=hdu.header, name=hdu.name)
-
-                    # Apply the row mask (same row order as original)
-                    new_hdu.data = new_hdu.data[mask]
-
+                    new_hdu.data = new_hdu.data[row_mask]
                     hdul_out[i] = new_hdu
                 else:
-                    # No column drop: simple in-place row filter is fine
-                    hdu.data = data[mask]
+                    hdul_out[i].data = data[row_mask]
 
+                if verbose: print(f"Ended with {len(hdul_out[i].data)} objects.")
                 break
 
-        # Write to new file
-        hdul_out.writeto(outfile, overwrite=True)
+        if outfile is None:
+            return hdul_out
+        else:
+            # Write to new file
+            hdul_out.writeto(outfile, overwrite=True)
+
+
 
 
 
@@ -243,7 +294,10 @@ class Pow2Cat(object):
         return ras,decs,alms,retmap
 
 def load_fits(fits_file,column_names,hdu_num=1,Nmax=None):
-    hdu = fits.open(fits_file)
+    if isinstance(fits_file,str):
+        hdu = fits.open(fits_file)
+    else:
+        hdu = fits_file
     columns = {}
     for col in column_names:
         columns[col] = hdu[hdu_num].data[col][:Nmax]
@@ -277,7 +331,9 @@ def select_region(ra_col,dec_col,other_cols,ra_min,ra_max,dec_min,dec_max):
     return ra_ret,dec_ret,ret_cols
 
 
-def random_catalog(shape,wcs,N,edge_avoid_deg=0.):
+
+
+def random_catalog_flat(shape,wcs,N,edge_avoid_deg=0.):
 
     box = enmap.box(shape,wcs)
     dec0 = min(box[0,0],box[1,0]) + edge_avoid_deg*np.pi/180.

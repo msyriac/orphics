@@ -98,7 +98,7 @@ class FixedLens(object):
         # Random unlensed
         umap = enmap.rand_map(self.ushape, self.uwcs, self.cltt, seed=seed)
         # Lensed
-        lmap = enlensing.lens_map(umap, self.grad_phi)
+        lmap = enlensing.lens_map(umap, self.grad_phi, order=5)
         # Downgraded
         dmap = enmap.downgrade_fft(lmap, self.dfact)
         # Cropped
