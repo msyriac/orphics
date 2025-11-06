@@ -15,7 +15,7 @@ def get_masked_ivar(ivar,grow_arcmin=10.0,threshold=1e-10):
     mask = ivar.copy()
     mask[ivar<=threshold]=0
     mask[ivar>threshold]=1
-    gmask=maps.grow_mask(mask,grow_arcmin/60.0)
+    gmask=grow_mask(mask,grow_arcmin/60.0)
     ivar[~gmask.astype(bool)] = 0
     return ivar
 
