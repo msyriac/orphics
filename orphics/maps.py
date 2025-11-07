@@ -10,6 +10,40 @@ import warnings
 import healpy as hp
 from . import cosmology, stats
 from scipy.special import i0  # Modified Bessel function I0
+from itertools import product
+
+
+def get_normalized_center(shape,wcs):
+    Ny,Nx = shape[-2:]
+
+    def _middle(N):
+        x = N//2
+        if N%2==0: return [x-1,x]
+        else: return [x]
+
+    pixs = list(product(_middle(Ny),_middle(Nx)))
+    print(pixs)
+    norm = 1./len(pixs)
+    temp = enmap.zeros((Ny,Nx),wcs)
+    for pix in pixs:
+        temp[pix] = norm
+    return temp
+    
+
+
+class FourierStack(object):
+    def __init__(self,shape,wcs,bin_edges,normalize='phys'):
+        self.binner = stats.bin2D(modlmap,bin_edges)
+        temp = get_normalized_center(shape,wcs)
+        self.ktemp = enmap.fft(temp,normalize=normalize)
+
+    def apply(self,kmap):
+        return self.binner.bin((kmap*self.ktemp.conj()).real)
+
+
+def fourier_stack(kmap,bin_edges):
+    fs = FourierStack(kmap.shape[:-2],kmap.wcs,bin_edges)
+    return fs.apply(kmap)
 
 def get_masked_ivar(ivar,grow_arcmin=10.0,threshold=1e-10):
     mask = ivar.copy()
