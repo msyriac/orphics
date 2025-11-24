@@ -13,6 +13,31 @@ from scipy.special import i0  # Modified Bessel function I0
 from itertools import product
 
 
+def autofiltered_maps(imap_fname,  # path to map
+                      ivar_fname=None,mask=None, # either path to ivar or ndmap of mask itself
+                      threshold=1e-8,apod_deg=1.5,grow_deg=1.5, # parameters for converting ivar to mask
+                      lxcut=10,lycut=10,lmin=None, lmax=None): # k-space filtering by default
+    """
+    Quick map visualization, applying a gentle filter by default, 
+    generating masks automatically from the ivar outputs.
+    """
+    imap = enmap.read_map(imap_fname,sel=np.s_[0]) # read just temperature
+    if mask is None:
+        ivar = enmap.read_map(ivar_fname)
+        ivar[ivar>threshold] = 1 # select observed regions; threshold defaults to small float
+        mask = cosine_apodize(grow_mask(ivar,apod_deg),grow_deg) # grow the mask and then apodize it
+    # kspace filter the mask with a plus shape
+    if (lxcut is not None) or (lycut is not None):
+        kmask = mask_kspace(imap.shape,imap.wcs,lxcut=lxcut,lycut=lycut,
+                                 lmin=lmin,lmax=lmax).astype(float)
+        fmap = filter_map(mask*imap,kmask)
+    else:
+        fmap = imap
+    # mask out the masked region
+    fmap[mask<=(1-threshold)] = 0
+    return fmap, mask
+
+
 def get_normalized_center(shape,wcs):
     Ny,Nx = shape[-2:]
 
