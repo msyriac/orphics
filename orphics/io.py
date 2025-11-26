@@ -48,6 +48,19 @@ def nostdout():
 def no_context():
     yield None
 
+def proceedyn():
+    while True:
+        choice = input("Proceed? (Y/N): ").strip().lower()
+
+        if choice == "y":
+            print("Continuing...")
+            break
+        elif choice == "n":
+            print("Exiting.")
+            exit()
+        else:
+            print("Invalid input. Please type Y or N.")
+
 
 def dateversion():
     from datetime import datetime
@@ -404,7 +417,7 @@ def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,
 
 def datify(timestamps, xaxis = False):
     if xaxis: plt.gcf().autofmt_xdate()
-    return [datetime.fromtimestamp(t) for t in timestamps]
+    return [datetime.fromtimestamp(t) for t in np.atleast_1d(timestamps)]
         
 class Plotter(object):
     '''

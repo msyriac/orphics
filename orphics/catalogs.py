@@ -12,6 +12,57 @@ from astropy.io import fits
 from astropy.table import Table
 import numpy as np
 
+import numpy as np
+from pixell import enmap
+
+def binned_map(
+        ra_deg,
+        dec_deg,
+        shape,
+        wcs,
+        weights=None,
+):
+    """
+    Bin sky coordinates (RA, Dec in degrees) into a 2D enmap ndmap using a
+    simple pixel histogram (with optional weights).
+
+    Parameters
+    ----------
+    ra_deg : array_like
+        Right ascension values in degrees.
+    dec_deg : array_like
+        Declination values in degrees.
+    shape : tuple
+        Map shape (Ny, Nx) consistent with the WCS.
+    wcs : astropy.wcs.WCS or pixell WCS
+        Map WCS describing the projection.
+    weights : array_like or None, optional
+        Weights for each sample. If None, all points contribute 1 count.
+
+    Returns
+    -------
+    ndmap : enmap.ndmap
+        A 2D map of the binned counts (or weighted counts).
+
+    """
+
+    ra_rad  = np.deg2rad(ra_deg)
+    dec_rad = np.deg2rad(dec_deg)
+    coords = np.vstack([dec_rad, ra_rad])
+    pix = enmap.sky2pix(shape, wcs, coords)
+    Ny, Nx = shape[-2:]
+
+    # Histogram over pixel indices
+    hist, _, _ = np.histogram2d(
+        pix[0], pix[1],
+        bins=[Ny, Nx],
+        weights=weights,
+        range=[[0, Ny], [0, Nx]],
+        density=False
+    )
+
+    return enmap.ndmap(hist, wcs)
+
 def filter_fits(
         infile,
         conditions=None,              # dict like {"SNR":5, "LAMBDA":20}; all must pass (logical AND)
