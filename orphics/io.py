@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Iterable, Sequence, Union
 from string import Template
 import html, h5py
-
+from datetime import datetime
 
 try:
     dout_dir = os.environ['WWW']+"plots/"
@@ -47,6 +47,19 @@ def nostdout():
 @contextlib.contextmanager
 def no_context():
     yield None
+
+def proceedyn():
+    while True:
+        choice = input("Proceed? (Y/N): ").strip().lower()
+
+        if choice == "y":
+            print("Continuing...")
+            break
+        elif choice == "n":
+            print("Exiting.")
+            exit()
+        else:
+            print("Invalid input. Please type Y or N.")
 
 
 def dateversion():
@@ -402,6 +415,10 @@ def high_res_plot_img(array,filename=None,down=None,verbose=True,overwrite=True,
         if verbose: print(bcolors.OKGREEN+"Saved high-res plot to", filename+bcolors.ENDC)
 
 
+def datify(timestamps, xaxis = False):
+    if xaxis: plt.gcf().autofmt_xdate()
+    return [datetime.fromtimestamp(t) for t in np.atleast_1d(timestamps)]
+        
 class Plotter(object):
     '''
     Fast, easy, and pretty publication-quality plots
