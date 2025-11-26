@@ -22,7 +22,6 @@ def get_normalized_center(shape,wcs):
         else: return [x]
 
     pixs = list(product(_middle(Ny),_middle(Nx)))
-    print(pixs)
     norm = 1./len(pixs)
     temp = enmap.zeros((Ny,Nx),wcs)
     for pix in pixs:
@@ -33,6 +32,7 @@ def get_normalized_center(shape,wcs):
 
 class FourierStack(object):
     def __init__(self,shape,wcs,bin_edges,normalize='phys'):
+        modlmap = enmap.modlmap(shape,wcs)
         self.binner = stats.bin2D(modlmap,bin_edges)
         temp = get_normalized_center(shape,wcs)
         self.ktemp = enmap.fft(temp,normalize=normalize)
@@ -42,7 +42,7 @@ class FourierStack(object):
 
 
 def fourier_stack(kmap,bin_edges):
-    fs = FourierStack(kmap.shape[:-2],kmap.wcs,bin_edges)
+    fs = FourierStack(kmap.shape[-2:],kmap.wcs,bin_edges)
     return fs.apply(kmap)
 
 def get_masked_ivar(ivar,grow_arcmin=10.0,threshold=1e-10):
