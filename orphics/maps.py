@@ -13,19 +13,26 @@ from scipy.special import i0  # Modified Bessel function I0
 from itertools import product
 
 
-def autofiltered_maps(imap_fname,  # path to map
-                      ivar_fname=None,mask=None, # either path to ivar or ndmap of mask itself
+def autofiltered_maps(imap,  # path to map, or map itself
+                      ivar=None,mask=None, # either path to ivar or ndmap of mask itself
                       threshold=1e-8,apod_deg=1.5,grow_deg=1.5, # parameters for converting ivar to mask
                       lxcut=10,lycut=10,lmin=None, lmax=None): # k-space filtering by default
     """
     Quick map visualization, applying a gentle filter by default, 
     generating masks automatically from the ivar outputs.
     """
-    imap = enmap.read_map(imap_fname,sel=np.s_[0]) # read just temperature
+    if isinstance(imap,str):
+        imap = enmap.read_map(imap,sel=np.s_[0]) # read just temperature
+    else:
+        if imap.ndim!=2: raise ValueError
     if mask is None:
-        ivar = enmap.read_map(ivar_fname)
+        if isinstance(ivar,str):
+            ivar = enmap.read_map(ivar)
+        else:
+            if ivar.ndim!=2: raise ValueError
+            
         ivar[ivar>threshold] = 1 # select observed regions; threshold defaults to small float
-        mask = cosine_apodize(grow_mask(ivar,apod_deg),grow_deg) # grow the mask and then apodize it
+        mask = cosine_apodize(grow_mask(ivar,grow_deg),apod_deg) # grow the mask and then apodize it
     # kspace filter the mask with a plus shape
     if (lxcut is not None) or (lycut is not None):
         kmask = mask_kspace(imap.shape,imap.wcs,lxcut=lxcut,lycut=lycut,
@@ -1078,10 +1085,12 @@ def grow_mask(mask,width_deg):
     """
     Grow the masked (zeroed) region by width_deg in degrees.
     """
+    if width_deg is None: return mask
     r = width_deg * np.pi / 180.
     return  mask.distance_transform(rmax=r)>=r
 
 def cosine_apodize(bmask,width_deg):
+    if width_deg is None: return bmask
     r = width_deg * np.pi / 180.
     return 0.5*(1-np.cos(bmask.distance_transform(rmax=r)*(np.pi/r)))
 
