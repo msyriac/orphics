@@ -11,9 +11,7 @@ import pandas as pd
 from astropy.io import fits
 from astropy.table import Table
 import numpy as np
-
-import numpy as np
-from pixell import enmap
+import json
 
 def binned_map(
         ra_deg,
@@ -168,6 +166,88 @@ def filter_fits(
             hdul_out.writeto(outfile, overwrite=True)
 
 
+
+
+
+def _to_python(value):
+    """Convert numpy scalar to native Python type so json.dump doesn't choke."""
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.bool_,)):
+        return bool(value)
+    if isinstance(value, (bytes,)):
+        return value.decode()
+    return value
+
+def fits_catalog_to_json(
+    fits_file,
+    ra_col,
+    dec_col,
+    name_col=None,
+    extra_cols=None,
+    hdu_num=1,
+    Nmax=None,
+    output_file=None,
+):
+    """Convert a FITS catalog to the JSON source catalog format
+    (e.g. for tilemaker).
+
+    Parameters
+    ----------
+    fits_file : str or HDUList
+        Path to FITS file or an already-opened HDUList.
+    ra_col : str
+        Column name for RA (degrees).
+    dec_col : str
+        Column name for Dec (degrees).
+    name_col : str, optional
+        Column name for source names. If None, names are generated as "Source_0", "Source_1", ...
+    extra_cols : list of str, optional
+        Additional column names to include in the 'extra' dict.
+    hdu_num : int
+        HDU index to read from.
+    Nmax : int, optional
+        Maximum number of sources to include.
+    output_file : str, optional
+        If provided, write JSON to this path.
+
+    Returns
+    -------
+    list of dict
+    """
+    from astropy.io import fits
+
+    all_cols = [ra_col, dec_col]
+    if name_col:
+        all_cols.append(name_col)
+    if extra_cols:
+        all_cols.extend(extra_cols)
+
+    columns = load_fits(fits_file, all_cols, hdu_num=hdu_num, Nmax=Nmax)
+
+    n_sources = len(columns[ra_col])
+    catalog = []
+
+    for i in range(n_sources):
+        entry = {
+            "ra": _to_python(columns[ra_col][i]),
+            "dec": _to_python(columns[dec_col][i]),
+            "name": str(columns[name_col][i]).strip() if name_col else f"Source_{i}",
+            "extra": {}
+        }
+        if extra_cols:
+            entry["extra"] = {
+                col: _to_python(columns[col][i]) for col in extra_cols
+            }
+        catalog.append(entry)
+
+    if output_file:
+        with open(output_file, "w") as f:
+            json.dump(catalog, f, indent=2)
+
+    return catalog
 
 
 
