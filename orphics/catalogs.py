@@ -18,7 +18,7 @@ def binned_map(
         dec_deg,
         shape,
         wcs,
-        weights=None,
+        weights=None,pix=None,
 ):
     """
     Bin sky coordinates (RA, Dec in degrees) into a 2D enmap ndmap using a
@@ -44,10 +44,11 @@ def binned_map(
 
     """
 
-    ra_rad  = np.deg2rad(ra_deg)
-    dec_rad = np.deg2rad(dec_deg)
-    coords = np.vstack([dec_rad, ra_rad])
-    pix = enmap.sky2pix(shape, wcs, coords)
+    if pix is None:
+        ra_rad  = np.deg2rad(ra_deg)
+        dec_rad = np.deg2rad(dec_deg)
+        coords = np.vstack([dec_rad, ra_rad])
+        pix = enmap.sky2pix(shape, wcs, coords)
     Ny, Nx = shape[-2:]
 
     # Histogram over pixel indices
@@ -59,7 +60,7 @@ def binned_map(
         density=False
     )
 
-    return enmap.ndmap(hist, wcs)
+    return enmap.ndmap(hist, wcs), pix
 
 def filter_fits(
         infile,
