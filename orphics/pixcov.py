@@ -1,7 +1,6 @@
 from __future__ import print_function
 import numpy as np
-from pixell import enmap,utils
-from enlib import bench
+from pixell import enmap,utils,bench
 import os,sys
 from time import time
 
@@ -191,7 +190,7 @@ def tpcov_from_ivar(n,ivar,cmb_theory_fn,beam_fn):
     tcov = stamp_pixcov_from_theory(enmap.enmap(cmb2d_TEB,sliced.wcs),n2d_IQU=0.,beam2d=beam2d,return_pow=False)    
     return tcov + ncov_IQU
 
-def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=None,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None,tot_pow2d=None,store_pcov=False,pcov=None):
+def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=None,context_width=None,n=None,beam2d=None,deproject=True,iau=False,res=None,tot_pow2d=None,store_pcov=False,pcov=None,eigval_floor=None):
 
     """
     Make covariances for brute force maxlike inpainting of CMB maps.
@@ -258,7 +257,13 @@ def make_geometry(shape=None,wcs=None,hole_radius=None,cmb2d_TEB=None,n2d_IQU=No
     mul2 = Cinv[m1][:,m2]
     mean_mul = -np.linalg.solve(cslice,mul2)
     cov = np.linalg.inv(Cinv[m1][:,m1])
-    cov_root = utils.eigpow(cov,0.5)
+    if eigval_floor is not None:
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        eigvals = np.maximum(eigvals, eigval_floor * np.max(eigvals))
+        eigvals = np.maximum(eigvals, 0)
+        cov_root = eigvecs * np.sqrt(eigvals)[None, :]
+    else:
+        cov_root = utils.eigpow(cov,0.5)
 
     geometry = {}
     geometry['covsqrt'] = cov_root
@@ -288,7 +293,7 @@ def paste(stamp,m,paste_this):
     return a
 
 
-def inpaint_stamp(stamp,geometry):
+def inpaint_stamp(stamp,geometry,add_noise=True,rng=None):
     cov_root = geometry['covsqrt']
     mean_mul = geometry['meanmul']
     Npix = geometry['n']
@@ -309,11 +314,17 @@ def inpaint_stamp(stamp,geometry):
 
     # Get the mean infill
     mean = np.dot(mean_mul,cstamp[m2])
-    # Get a random realization (this could be moved outside the loop)
-    r = np.random.normal(0.,1.,size=(m1.size))
-    rand = np.dot(cov_root,r)
-    # Total
-    sim = mean + rand
+
+    if add_noise:
+        # Get a random realization (this could be moved outside the loop)
+        if rng is not None:
+            r = rng.standard_normal(m1.size)
+        else:
+            r = np.random.normal(0.,1.,size=(m1.size))
+        rand = np.dot(cov_root,r)
+        sim = mean + rand
+    else:
+        sim = mean
 
     # Paste into returned map
     rstamp = paste(stamp,m1,sim)
