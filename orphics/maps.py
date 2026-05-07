@@ -1155,7 +1155,7 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
     
     """
     if (N_ell_standard is None) and not(lknee is None):
-        ells = np.arange(lmax)
+        ells = np.arange(lmax+1)
         N_ell_standard = atm_factor(ells,lknee,alpha) + 1.
         N_ell_standard[~np.isfinite(N_ell_standard)] = 0
         if lmin is not None:
@@ -1169,7 +1169,7 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
         smap = cs.rand_map((1,)+shape,wcs,ps=N_ell_standard[None,None],seed=seed)[0]
         out = rms_from_ivar(ivar,parea=parea,cylindrical=cylindrical) * smap *np.pi / 180./ 60.
         if return_N_ell:
-            return out, N_ell_standard
+            return out, ells, N_ell_standard
         else:
             return out
 
