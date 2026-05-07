@@ -121,41 +121,96 @@ def get_columns(obs, keys):
     # Convert to NumPy arrays
     return {key: np.array(col) for key, col in zip(keys, columns)}
 
-def object_path_annotation(ctime1,ctime2,objs=['Sun', 'Moon'],line_width = 3,circle_width  = 3):
 
-    ccolor = {'Sun':'orange',
-              'Moon':'black'}
-    cradius  = {'Sun': 30,
-                'Moon': 10}
-    
+
+
+# Sidereal orbital periods in seconds (approx)
+BODY_PERIOD = {
+    "Moon":    27.321661  * 86400.0,
+    "Sun":    365.256     * 86400.0,   # apparent solar path (Earth's sidereal year)
+    "Mercury": 87.969     * 86400.0,
+    "Venus":  224.701     * 86400.0,
+    "Mars":   686.980     * 86400.0,
+    "Jupiter":4332.589    * 86400.0,
+    "Saturn": 10759.22    * 86400.0,
+    "Uranus": 30685.4     * 86400.0,
+    "Neptune":60189.0     * 86400.0,
+}
+
+# Per-body styling (pixels + color); tweak to taste
+BODY_STYLE = {
+    "Sun":     dict(radius_pix=40, width_pix=4, color="orange"),
+    "Moon":    dict(radius_pix=20, width_pix=3, color="black"),
+    "Mercury": dict(radius_pix=10, width_pix=2, color="gray"),
+    "Venus":   dict(radius_pix=10, width_pix=2, color="blue"),
+    "Mars":    dict(radius_pix=10, width_pix=2, color="red"),
+    "Jupiter": dict(radius_pix=10, width_pix=2, color="brown"),
+    "Saturn":  dict(radius_pix=10, width_pix=2, color="purple"),
+    "Uranus":  dict(radius_pix=10, width_pix=2, color="cyan"),
+    "Neptune": dict(radius_pix=10, width_pix=2, color="green"),
+}
+
+
+def body_circle_annotations(
+    ctime1,
+    ctime2,
+    bodies=None,
+    points_per_orbit=20,
+    min_points=3,
+    max_points=200,
+    default_radius=12,
+    default_width=2,
+    default_color="white",
+    text_size = 18,
+):
+    """
+    Build an enplot 'annotate' list of circles showing positions of
+    multiple solar-system bodies between ctime1 and ctime2.
+
+    Sampling density for each body scales with (ctime2-ctime1)/orbital_period.
+    """
+    if bodies is None:
+        bodies = ["Sun", "Moon", "Mercury", "Venus",
+                  "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"]
+
+    dt = float(ctime2 - ctime1)
     annotations = []
 
-    for obj in objs:
-        radec, dist = ephem.eval(obj, [ctime1,ctime2])
-        radec = np.rad2deg(radec)
-        dec1_deg = radec[0,1]
-        dec2_deg = radec[1,1]
-        ra1_deg = radec[0,0]
-        ra2_deg = radec[1,0]
-        circle_radius = cradius[obj]      # pixels
+    for body in bodies:
+        period = BODY_PERIOD.get(body, None)
+        if period is None:
+            # Skip unknown bodies rather than crashing
+            continue
 
-        circle_color  = ccolor[obj]
+        # Choose sampling times for this body
+        if dt <= 0:
+            ctimes = np.array([ctime1], dtype=float)
+        else:
+            orbits = dt / period
+            n_desired = int(np.ceil(orbits * points_per_orbit))
+            n = max(min_points, min(max_points, n_desired))
+            ctimes = np.linspace(ctime1, ctime2, n)
 
+        # Evaluate ephemeris
+        radec, dist = ephem.eval(body, ctimes)
+        ra_deg  = np.degrees(radec[:, 0])
+        dec_deg = np.degrees(radec[:, 1])
+
+        # Get style for this body
+        style      = BODY_STYLE.get(body, {})
+        radius_pix = style.get("radius_pix", default_radius)
+        width_pix  = style.get("width_pix",  default_width)
+        color      = style.get("color",      default_color)
+
+        # Make one circle per sample
+        for ra, dec in zip(ra_deg, dec_deg):
+            annotations.append(
+                ["circle", float(dec), float(ra), 0, 0,
+                 radius_pix, width_pix, color]
+            )
         annotations.append(
-            ["circle", dec1_deg, ra1_deg, 0, 0, circle_radius, circle_width, circle_color]
+            ["text", float(dec), float(ra), 0, 0,
+             body, text_size, color]
         )
 
-        annotations.append(
-            ["circle", dec2_deg, ra2_deg, 0, 0, circle_radius, circle_width, circle_color]
-        )
-
-
-        line_color = ccolor[obj]
-
-        annotations.append(
-            ["line",
-             dec1_deg, ra1_deg, 0, 0,     # start lat/lon
-             dec2_deg, ra2_deg, 0, 0,     # end lat/lon
-             line_width, line_color]
-        )
     return annotations
