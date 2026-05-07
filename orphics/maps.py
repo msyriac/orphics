@@ -1142,7 +1142,7 @@ def rednoise(ells,rms_noise,lknee=0.,alpha=1.):
 
 def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
                         N_ell_standard=None,parea=None,cylindrical=False,
-                        seed=None,lmin=None):
+                        seed=None,lmin=None, return_N_ell = False):
     """
     Produces a simulated noise map (using SHTs)
     corresponding to a Gaussian map which when its
@@ -1167,7 +1167,11 @@ def modulated_noise_map(ivar,lknee=None,alpha=None,lmax=None,
         return np.random.standard_normal(shape) / np.sqrt(ivar)
     else:
         smap = cs.rand_map((1,)+shape,wcs,ps=N_ell_standard[None,None],seed=seed)[0]
-        return rms_from_ivar(ivar,parea=parea,cylindrical=cylindrical) * smap *np.pi / 180./ 60.
+        out = rms_from_ivar(ivar,parea=parea,cylindrical=cylindrical) * smap *np.pi / 180./ 60.
+        if return_N_ell:
+            return out, N_ell_standard
+        else:
+            return out
 
 
 def galactic_mask(shape,wcs,nside,theta1,theta2,order=0):

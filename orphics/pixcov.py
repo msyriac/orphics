@@ -1,7 +1,6 @@
 from __future__ import print_function
 import numpy as np
-from pixell import enmap,utils
-from enlib import bench
+from pixell import enmap,utils,bench
 import os,sys
 from time import time
 
