@@ -759,7 +759,7 @@ def rand_map(shape,wcs,pol=False,lensed_cls=True,fwhm=None,lmax=6000,
 def field_variance(cls):
     """
     Return the real-space variance
-    sigma^2 = \sum_l 2l+1  C_l / 4pi
+    sigma^2 = \\sum_l 2l+1  C_l / 4pi
     of a field that has power spectrum
     C_l. This has the same units as the
     power spectrum.
