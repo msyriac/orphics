@@ -1,8 +1,15 @@
-from __future__ import print_function, annotations
 import matplotlib
+matplotlib.use('Agg')
 import matplotlib as mpl
 from cycler import cycler
 import matplotlib.pyplot as plt
+plt.rcParams.update({
+    'figure.dpi': 150, 'savefig.dpi': 300,
+    'font.size': 11, 'font.family': 'serif',
+    'mathtext.fontset': 'cm',      
+    'axes.spines.top': False, 'axes.spines.right': False,
+    'axes.grid': True, 'grid.alpha': 0.3,
+})
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import json
 import hashlib
