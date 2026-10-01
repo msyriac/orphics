@@ -3,7 +3,7 @@ Utilities for ILC noise, source counts and associated power spectra, etc..
 
 """
 
-import glob,os,sys,itertools,warnings
+import glob,os,sys,itertools,warnings,functools
 import numpy as np
 from scipy.interpolate import interp1d
 from orphics import maps, cosmology, io
@@ -78,6 +78,18 @@ def cltsz(atsz,nu1,nu2,clyy):
 
 
 # Copied from szar
+@functools.lru_cache(maxsize=None)
+def _default_theory():
+    """cosmology.default_theory(), loaded once per process."""
+    return cosmology.default_theory()
+
+@functools.lru_cache(maxsize=None)
+def _load_template(fname,delimiter=None):
+    """Read a template file once per process. The returned arrays are read-only."""
+    arrs = np.loadtxt(fname,unpack=True,delimiter=delimiter)
+    for a in arrs: a.setflags(write=False)
+    return arrs
+
 def dl_filler(ells,ls,cls,fill_type="extrapolate",fill_positive=False,silence=False):
     ells = np.asarray(ells)
     if not(silence):
@@ -113,7 +125,7 @@ def power_y_template(ells,A_tsz=None,fill_type="extrapolate",silence=False):
     ells = np.asarray(ells)
     assert np.all(ells>=0)
     root = os.path.dirname(__file__)+f"/../data/"
-    ls,icls = np.loadtxt(root+"/foregrounds/sz_template_battaglia.csv",unpack=True,delimiter=',')
+    ls,icls = _load_template(root+"/foregrounds/sz_template_battaglia.csv",delimiter=',')
     dls = dl_filler(ells,ls,icls,fill_type=fill_type,fill_positive=True,silence=silence)
     nu0 = 150.0 ; tcmb = TCMB_uK
     with np.errstate(divide='ignore'): cls = A_tsz * dls*2.*np.pi*np.nan_to_num(1./ells/(ells+1.)) / ffunc(nu0)**2./tcmb**2.
@@ -613,14 +625,14 @@ def ffunc(nu,tcmb=None):
 
 def power_ksz_reion(ells,A_rksz=1,fill_type="extrapolate",silence=False):
     root = os.path.dirname(__file__)+f"/../data/"
-    ls,icls = np.loadtxt(root+f"foregrounds/early_ksz.txt",unpack=True)
+    ls,icls = _load_template(root+"foregrounds/early_ksz.txt")
     dls = dl_filler(ells,ls,icls,fill_type=fill_type,fill_positive=True,silence=silence)
     with np.errstate(divide='ignore',over='ignore'): cls = A_rksz * dls*2.*np.pi*np.nan_to_num(1./ells/(ells+1.))
     return cls
 
 def power_ksz_late(ells,A_lksz=1,fill_type="extrapolate",silence=False):
     root = os.path.dirname(__file__)+f"/../data/"
-    ls,icls = np.loadtxt(root+f"foregrounds/late_ksz.txt",unpack=True)
+    ls,icls = _load_template(root+"foregrounds/late_ksz.txt")
     dls = dl_filler(ells,ls,icls,fill_type=fill_type,fill_positive=True,silence=silence)
     with np.errstate(divide='ignore'): cls = A_lksz * dls*2.*np.pi*np.nan_to_num(1./ells/(ells+1.))
     return cls
@@ -826,7 +838,7 @@ def model_vec(all_params, params, ell, freqs, dT_guess, beams, lknees, alphas, c
 
 def sky_model(ell,  nu_i, nu_j, p, freqs, return_fg=False, **kwargs):
     fclyy = lambda x: power_y_template(x)
-    theory = cosmology.default_theory()
+    theory = _default_theory()
     cl_cmb_tmpl = p['A_cmb']*theory.lCl('TT',ell)
     cl_yy_temp = fclyy(ell)
     fg = fg_cl(ell, p, nu_i, nu_j, cl_yy_temp, freqs, **kwargs)
@@ -864,7 +876,7 @@ def quick_fit(
         plot: bool=True,delta_ell: np.ndarray=20):
 
     fclyy = lambda x: power_y_template(x)
-    theory = cosmology.default_theory()
+    theory = _default_theory()
     fcltt = lambda x: theory.lCl('TT',x) + power_ksz_reion(x) + power_ksz_late(x)
     
 
