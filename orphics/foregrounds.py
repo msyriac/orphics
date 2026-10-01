@@ -704,6 +704,50 @@ def wnoise_cl(sigma_uk_arcmin):
 
         
 
+def poisson_param_name(k, i):
+    return f"Sps{k}_{i}"
+
+
+def poisson_cl(p, nu_i, nu_j):
+    """
+    Poisson (shot-noise) power between channels nu_i and nu_j.
+
+    Two parameterizations are supported, selected by the keys present in p:
+
+    - Per-channel populations (default): C_ij = 1e-6 * sum_k S_k,i S_k,j, where
+      S_k,i = p["Sps{k}_{i}"] is the square-root amplitude of source population k
+      in channel i, in units of 1e-3 uK. The matrix C_ij is positive semi-definite
+      for any parameter values, so foreground correlation coefficients cannot
+      exceed 1. With non-negative S, all Poisson cross-spectra are non-negative.
+    - Per-pair amplitudes (legacy): C_ij = p["Aps_{i}_{j}"]. Kept so that older fit
+      results can still be evaluated. This form is not guaranteed to be a valid
+      covariance and should not be used for new fits.
+
+    Parameters
+    ----------
+    p : dict
+        Parameter dictionary.
+    nu_i, nu_j : int
+        Channel indices.
+
+    Returns
+    -------
+    float
+        Poisson C_ell (constant in ell) in uK^2.
+    """
+    key = f"Aps_{min(nu_i, nu_j)}_{max(nu_i, nu_j)}"
+    if key in p:
+        return p[key]
+    out = 0.0
+    k = 0
+    while poisson_param_name(k, nu_i) in p:
+        out += p[poisson_param_name(k, nu_i)] * p[poisson_param_name(k, nu_j)]
+        k += 1
+    if k == 0:
+        raise KeyError(f"No Poisson parameters found for channels {nu_i}, {nu_j}")
+    return 1e-6 * out
+
+
 def fg_cl(ell, p, nu_i, nu_j, cl_tsz_tmpl, freqs, pivot_cib=150., components=None ):
     """Foregrounds only (no CMB, no noise)."""
     ell0 = 3000.
@@ -716,7 +760,7 @@ def fg_cl(ell, p, nu_i, nu_j, cl_tsz_tmpl, freqs, pivot_cib=150., components=Non
     
     # Poisson point sources
     if 'poisson' in components:
-        out = out + p[f"Aps_{nu_i}_{nu_j}"] #np.sqrt(p[f"Aps_{nu_i}"] * p[f"Aps_{nu_j}"])
+        out = out + poisson_cl(p, nu_i, nu_j)
 
     # Clustered CIB
     if 'cib' in components:
@@ -1312,7 +1356,8 @@ def fit_cross_leastsq(
     method="trf",
     max_nfev=2000,
     xtol=1e-10,
-    verbose=0
+    verbose=0,
+    poisson_npop=2,             # number of Poisson source populations; None for legacy per-pair amplitudes
 ):
     """
     Nonlinear weighted least-squares fit using index-keyed (i,j) pairs.
@@ -1322,6 +1367,11 @@ def fit_cross_leastsq(
       - ell_cuts[(i,j)] -> boolean keep mask (Nb,) OR list of (lmin,lmax) to INCLUDE
     Frequencies:
       - nu_i = freqs_ghz[i - index_base], nu_j = freqs_ghz[j - index_base]
+    Poisson term:
+      - poisson_npop=K adds K non-negative square-root amplitudes per channel,
+        Sps{k}_{i}, so that the Poisson matrix is positive semi-definite (see
+        poisson_cl). poisson_npop=None adds one free amplitude per pair,
+        Aps_{i}_{j}, which can give correlation coefficients above 1.
     
     """
     # ---------- validate shapes ----------
@@ -1405,10 +1455,21 @@ def fit_cross_leastsq(
             
     # ---------- parameters (free vs fixed) ----------
     # Add point source parameters
-    for pair in pairs:
-        i0, j0 = _norm_idx_pair(pair)
-        params0[f'Aps_{i0}_{j0}'] = 1e-5
-        bounds[f'Aps_{i0}_{j0}'] = (0,np.inf)
+    params0 = dict(params0)
+    bounds = {} if bounds is None else dict(bounds)
+    if poisson_npop is None:
+        for pair in pairs:
+            i0, j0 = _norm_idx_pair(pair)
+            params0[f'Aps_{i0}_{j0}'] = 1e-5
+            bounds[f'Aps_{i0}_{j0}'] = (0,np.inf)
+    else:
+        chans = sorted({i for pair in pairs for i in _norm_idx_pair(pair)})
+        for k in range(poisson_npop):
+            for i0 in chans:
+                name = poisson_param_name(k, i0)
+                # Unequal starting values break the symmetry between populations
+                params0.setdefault(name, 1.5 / (k + 1))
+                bounds.setdefault(name, (0, np.inf))
     
     fixed = {} if fixed is None else ( {name: params0[name] for name in fixed} if not isinstance(fixed, dict) else fixed.copy() )
     free_names = [n for n in params0.keys() if n not in fixed]
