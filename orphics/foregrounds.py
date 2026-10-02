@@ -760,6 +760,45 @@ def poisson_cl(p, nu_i, nu_j):
     return 1e-6 * out
 
 
+def cib_cl(ell, p, nu1, nu2, pivot_cib=150., ell0=3000.):
+    """
+    Clustered CIB power between frequencies nu1 and nu2 (GHz), in K_CMB units (uK^2).
+
+    C_ell = Acib_150 * s(nu1) * s(nu2) * (ell/ell0)^-1.2, where s is the per-map spectral
+    scaling normalized to 1 at pivot_cib. Two forms are supported, selected by the keys of p:
+
+    - Modified blackbody (if p has "beta_cib"): s(nu) = dust_mu(nu, beta_cib, T_cib, pivot_cib),
+      i.e. (nu/nu0)^beta_cib B_nu(T_cib)/B_nu0(T_cib), converted from intensity to K_CMB.
+      This follows the CIB from 70 to 545 GHz.
+    - Power law (legacy): s(nu) = (nu/pivot_cib)^(alpha_cib/2), directly in K_CMB. This
+      omits the intensity to K_CMB conversion and strongly underestimates the CIB above
+      217 GHz; it is kept so that older fit results can still be evaluated.
+
+    Parameters
+    ----------
+    ell : array-like
+        Multipoles.
+    p : dict
+        Parameters: Acib_150 and either (beta_cib, T_cib) or alpha_cib.
+    nu1, nu2 : float
+        Frequencies in GHz.
+    pivot_cib : float, optional
+        Pivot frequency in GHz at which Acib_150 is defined.
+    ell0 : float, optional
+        Pivot multipole.
+
+    Returns
+    -------
+    ndarray
+        Clustered CIB C_ell.
+    """
+    if "beta_cib" in p:
+        s1, s2 = (dust_mu(nu, beta_d=p["beta_cib"], Tdust_K=p["T_cib"], nu0_ghz=pivot_cib) for nu in (nu1, nu2))
+    else:
+        s1, s2 = ((nu/pivot_cib)**(p["alpha_cib"]/2.) for nu in (nu1, nu2))
+    return p["Acib_150"] * s1 * s2 * (ell/ell0)**(-1.2)
+
+
 def fg_cl(ell, p, nu_i, nu_j, cl_tsz_tmpl, freqs, pivot_cib=150., components=None ):
     """Foregrounds only (no CMB, no noise)."""
     ell0 = 3000.
@@ -776,9 +815,7 @@ def fg_cl(ell, p, nu_i, nu_j, cl_tsz_tmpl, freqs, pivot_cib=150., components=Non
 
     # Clustered CIB
     if 'cib' in components:
-        Acib150, alpha = p["Acib_150"], p["alpha_cib"] # change name to beta
-        out = out +( np.sqrt((Acib150 * (nu1/pivot_cib)**alpha) *
-                         (Acib150 * (nu2/pivot_cib)**alpha)) * (ell/ell0)**(-1.2))
+        out = out + cib_cl(ell, p, nu1, nu2, pivot_cib=pivot_cib, ell0=ell0)
 
     # Thermal SZ
     if 'tsz' in components:
