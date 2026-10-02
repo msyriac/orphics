@@ -73,8 +73,65 @@ def g_tsz(nu_ghz, T_cmb=2.726):
     x = (h * nu_ghz * 1e9) / (k * T_cmb)
     return x * (np.exp(x) + 1.0) / (np.exp(x) - 1.0) - 4.0
 
+class Passband(object):
+    """
+    Instrument passband for band-integrated ("color-corrected") foreground SEDs.
+
+    A map calibrated to CMB temperature responds to a component with monochromatic K_CMB
+    scaling s(nu) as
+
+        s_band = int tau(nu) dBnudT(nu) s(nu) dnu / int tau(nu) dBnudT(nu) dnu,
+
+    where tau is the passband transmission (Planck 2013 IX, Sec. 3.2; the integral used by
+    tilec.fg.get_mix_bandpassed). With the ACT DR6 passbands from LAMBDA, used as given,
+    this reproduces the published ACT color corrections.
+
+    Parameters
+    ----------
+    nu_ghz : array_like
+        Frequencies in GHz.
+    trans : array_like
+        Transmission at nu_ghz; the overall normalization does not matter.
+    name : str, optional
+        Label, e.g. the array and band.
+    """
+    def __init__(self, nu_ghz, trans, name=None):
+        self.nu = np.asarray(nu_ghz, dtype=float)
+        self.w = np.asarray(trans, dtype=float) * dBnudT(self.nu)
+        self.norm = _trapezoid(self.w, self.nu)
+        self.name = name
+
+    @classmethod
+    def from_file(cls, fname, name=None):
+        """Read a passband from a text file with columns: frequency (GHz), transmission."""
+        nu, trans = np.loadtxt(fname, usecols=(0,1), unpack=True)
+        return cls(nu, trans, name=name)
+
+    def integrate(self, sed):
+        """Band-integrated value of sed, a function of frequency in GHz giving the K_CMB scaling."""
+        return _trapezoid(self.w*sed(self.nu), self.nu)/self.norm
+
+    def __repr__(self):
+        return f"Passband({self.name}, {self.nu.min():.0f}-{self.nu.max():.0f} GHz)"
+
+
+def _trapezoid(y, x):
+    return (np.trapezoid if hasattr(np, 'trapezoid') else np.trapz)(y, x)
+
+
+def tsz_scale(nu):
+    """tSZ spectral function g(nu), band-integrated if nu is a Passband."""
+    return nu.integrate(g_tsz) if isinstance(nu, Passband) else g_tsz(nu)
+
+
+def mbb_scale(nu, beta, T, nu0):
+    """Modified-blackbody scaling in K_CMB normalized to 1 at nu0 (dust_mu), band-integrated if nu is a Passband."""
+    sed = lambda v: dust_mu(v, beta_d=beta, Tdust_K=T, nu0_ghz=nu0)
+    return nu.integrate(sed) if isinstance(nu, Passband) else sed(nu)
+
+
 def cltsz(atsz,nu1,nu2,clyy):
-    return atsz * g_tsz(nu1) * g_tsz(nu2) * clyy * TCMB_uK**2.
+    return atsz * tsz_scale(nu1) * tsz_scale(nu2) * clyy * TCMB_uK**2.
 
 
 # Copied from szar
@@ -780,8 +837,8 @@ def cib_cl(ell, p, nu1, nu2, pivot_cib=150., ell0=3000.):
         Multipoles.
     p : dict
         Parameters: Acib_150 and either (beta_cib, T_cib) or alpha_cib.
-    nu1, nu2 : float
-        Frequencies in GHz.
+    nu1, nu2 : float or Passband
+        Frequencies in GHz, or passbands to integrate over.
     pivot_cib : float, optional
         Pivot frequency in GHz at which Acib_150 is defined.
     ell0 : float, optional
@@ -793,8 +850,10 @@ def cib_cl(ell, p, nu1, nu2, pivot_cib=150., ell0=3000.):
         Clustered CIB C_ell.
     """
     if "beta_cib" in p:
-        s1, s2 = (dust_mu(nu, beta_d=p["beta_cib"], Tdust_K=p["T_cib"], nu0_ghz=pivot_cib) for nu in (nu1, nu2))
+        s1, s2 = (mbb_scale(nu, p["beta_cib"], p["T_cib"], pivot_cib) for nu in (nu1, nu2))
     else:
+        if isinstance(nu1, Passband) or isinstance(nu2, Passband):
+            raise ValueError("The legacy power-law CIB (alpha_cib) is not defined for passbands; use beta_cib")
         s1, s2 = ((nu/pivot_cib)**(p["alpha_cib"]/2.) for nu in (nu1, nu2))
     return p["Acib_150"] * s1 * s2 * (ell/ell0)**(-1.2)
 
@@ -1346,8 +1405,8 @@ def dust_C_ell_Louis25(ell, nu_i_ghz, nu_j_ghz, a_amp,
     Parameters
     ----------
     ell : array-like of multipoles
-    nu_i_ghz, nu_j_ghz : float
-        Frequencies in GHz for the two maps being crossed.
+    nu_i_ghz, nu_j_ghz : float or Passband
+        Frequencies in GHz for the two maps being crossed, or passbands to integrate over.
     a_amp : float
         Amplitude at the pivot scale (ell0) and pivot frequency (nu0), in D_ell units (uK^2).
     XY : {"TT","TE","EE"}
@@ -1380,8 +1439,8 @@ def dust_C_ell_Louis25(ell, nu_i_ghz, nu_j_ghz, a_amp,
     pos = ell > 0
     scale_ell[pos] = (ell[pos] / float(ell0)) ** float(alpha)
 
-    s_i = dust_mu(nu_i_ghz, beta_d=beta_d, Tdust_K=Tdust_K, nu0_ghz=nu0_ghz)
-    s_j = dust_mu(nu_j_ghz, beta_d=beta_d, Tdust_K=Tdust_K, nu0_ghz=nu0_ghz)
+    s_i = mbb_scale(nu_i_ghz, beta_d, Tdust_K, nu0_ghz)
+    s_j = mbb_scale(nu_j_ghz, beta_d, Tdust_K, nu0_ghz)
 
     D = float(a_amp) * scale_ell * (s_i * s_j)
     C = np.zeros_like(D)
@@ -1435,8 +1494,9 @@ def fit_cross_leastsq(
             raise ValueError("ell length must match P.shape[1].")
 
 
-    freqs_ghz = np.asarray(freqs_ghz, dtype=float)
-    Nf = freqs_ghz.size
+    # Entries may be frequencies in GHz or Passband objects (band-integrated SEDs)
+    freqs_ghz = [f if isinstance(f, Passband) else float(f) for f in freqs_ghz]
+    Nf = len(freqs_ghz)
     if Nf < 1:
         raise ValueError("freqs_ghz must contain at least one frequency.")
 
