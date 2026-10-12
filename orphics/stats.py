@@ -579,6 +579,7 @@ class Stats(object):
     An MPI enabled helper container for
     1) 1d measurements whose statistics need to be calculated
     2) 2d cumulative stacks
+    3) catalog information for each measurement/stack
 
     where different MPI cores may be calculating different number
     of 1d measurements or 2d stacks.
@@ -604,6 +605,7 @@ class Stats(object):
         self.vectors = {}
         self.little_stack = {}
         self.little_stack_count = {}
+        self.cat_labels = []
         self.tag_start = tag_start
         self.root = root
         if loopover is None:
@@ -648,6 +650,16 @@ class Stats(object):
         if not(exclude):
             self.little_stack[label] += arr
             self.little_stack_count[label] += 1
+            
+    def add_to_cat(self,label,value,exclude=False):
+        """
+        Using self.add_to_stats to append catalog info values to a named "label".
+        Keeps track of labels to exclude from calculating statistics.
+        """
+        self.add_to_stats(label,value,exclude=exclude)
+        if not(label in self.cat_labels):
+            self.cat_labels.append(label)
+        
 
 
     def get_stacks(self,verbose=True):
@@ -731,8 +743,9 @@ class Stats(object):
 
             if not(skip_stats):
                 for k,label in enumerate(self.vectors.keys()):
-                    self.stats[label] = get_stats(self.vectors[label])
-
+                    if not(label in list(self.cat_labels)):
+                        self.stats[label] = get_stats(self.vectors[label])
+    
     
     def dump(self,path):
         for d,name in zip([self.vectors,self.stacks],['vectors','stack']):
@@ -741,6 +754,7 @@ class Stats(object):
         for key in self.stats.keys():
             for skey in self.stats[key].keys():
                 np.savetxt(f"{path}/mstats_dump_stats_{key}_{skey}.txt",np.atleast_1d(self.stats[key][skey]))
+        ### TODO: add dumping cat info
         
 def load_stats(path):                
     import glob,re
